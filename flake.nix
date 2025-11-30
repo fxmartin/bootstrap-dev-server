@@ -1,5 +1,5 @@
 # ABOUTME: Nix flake for CX11 Dev Server Environment
-# ABOUTME: Provides development shells with Claude Code, Python, Node.js, and CLI tools
+# ABOUTME: Provides development shells with Claude Code, MCP servers, Python, Node.js, and CLI tools
 {
   description = "CX11 Dev Server Environment";
 
@@ -12,14 +12,32 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # MCP servers for Claude Code (Context7, GitHub, Sequential Thinking)
+    mcp-servers-nix = {
+      url = "github:nix-community/mcp-servers-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, claude-code-nix }:
+  outputs = { self, nixpkgs, flake-utils, claude-code-nix, mcp-servers-nix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
+        };
+
+        # Generate MCP server configuration
+        mcpConfig = mcp-servers-nix.lib.mkConfig pkgs {
+          programs = {
+            # Context7 MCP server - No authentication required
+            context7.enable = true;
+            # GitHub MCP server - Requires GITHUB_PERSONAL_ACCESS_TOKEN
+            github.enable = true;
+            # Sequential Thinking MCP server - No authentication required
+            sequential-thinking.enable = true;
+          };
         };
       in
       {
@@ -45,6 +63,7 @@
             pkgs.tree
             pkgs.htop
             pkgs.btop
+            pkgs.gotop  # Terminal-based graphical activity monitor
 
             # Editors
             pkgs.neovim
@@ -92,11 +111,40 @@
             # Direnv
             eval "$(direnv hook bash)"
 
+            # Set up Claude Code MCP configuration if not exists
+            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
+            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+
+            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
+              mkdir -p "$CLAUDE_CONFIG_DIR"
+              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "📝 IMPORTANT: Configure GitHub MCP Server"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo ""
+              echo "1. Create GitHub Personal Access Token:"
+              echo "   → Visit: https://github.com/settings/tokens"
+              echo "   → Click 'Generate new token (classic)'"
+              echo "   → Scopes: ✓ repo, ✓ read:org, ✓ read:user"
+              echo ""
+              echo "2. Add token to config.json:"
+              echo "   → Edit: $CLAUDE_CONFIG_JSON"
+              echo "   → Find 'github' section, add to 'env':"
+              echo "     \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"ghp_...\""
+              echo ""
+              echo "3. Verify: claude mcp list"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo ""
+            fi
+
             echo ""
             echo "🚀 Dev Server Environment Loaded"
             echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
             echo "   Python: $(python3 --version)"
             echo "   Node:   $(node --version)"
+            echo "   MCP:    Context7, GitHub, Sequential Thinking"
             echo ""
           '';
         };
@@ -111,7 +159,20 @@
             pkgs.jq
             pkgs.ripgrep
             pkgs.neovim
+            pkgs.gotop
           ];
+
+          shellHook = ''
+            # Set up Claude Code MCP configuration if not exists
+            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
+            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+
+            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
+              mkdir -p "$CLAUDE_CONFIG_DIR"
+              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+            fi
+          '';
         };
 
         # Python-focused shell
@@ -126,7 +187,20 @@
             pkgs.ruff
             pkgs.git
             pkgs.neovim
+            pkgs.gotop
           ];
+
+          shellHook = ''
+            # Set up Claude Code MCP configuration if not exists
+            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
+            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+
+            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
+              mkdir -p "$CLAUDE_CONFIG_DIR"
+              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+            fi
+          '';
         };
       });
 }
