@@ -251,9 +251,112 @@ claude
 
 ## Setting Up a CX11 Server on Hetzner Cloud
 
-This section walks you through creating a real CX11 VPS on Hetzner Cloud—perfect for production or always-on development environments.
+This section covers two methods for creating a CX11 VPS on Hetzner Cloud:
+1. **Automated** (recommended): One command with `hcloud-provision.sh`
+2. **Manual**: Step-by-step via Hetzner Console
 
-### Prerequisites
+---
+
+### Method 1: Automated Provisioning (Recommended)
+
+Use the `hcloud-provision.sh` script to create and configure a server with a single command.
+
+#### Prerequisites
+
+```bash
+# Install hcloud CLI
+brew install hcloud    # macOS
+# or: snap install hcloud (Linux)
+
+# Install jq (for JSON parsing)
+brew install jq
+
+# Ensure you have an SSH key
+ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519
+```
+
+#### Quick Start
+
+```bash
+# Download the provisioning script
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/hcloud-provision.sh -o hcloud-provision.sh
+chmod +x hcloud-provision.sh
+
+# Run it (will prompt for Hetzner API token)
+./hcloud-provision.sh
+```
+
+The script will:
+1. Authenticate with Hetzner Cloud API
+2. Upload your SSH key
+3. Create a CX11 server with Ubuntu 24.04
+4. Wait for server to boot
+5. Create your user account with sudo
+6. Run the full bootstrap script
+7. Print connection instructions
+
+#### Options
+
+```bash
+# Custom server name
+./hcloud-provision.sh --name my-dev-server
+
+# Different location (US East)
+./hcloud-provision.sh --location ash
+
+# Larger server type
+./hcloud-provision.sh --type cx21
+
+# Different username
+./hcloud-provision.sh --user myname
+
+# List all servers
+./hcloud-provision.sh --list
+
+# Delete a server
+./hcloud-provision.sh --delete cx11-dev
+```
+
+#### Available Locations
+
+| Code | Location | Region |
+|------|----------|--------|
+| `fsn1` | Falkenstein | Germany (EU) |
+| `nbg1` | Nuremberg | Germany (EU) |
+| `hel1` | Helsinki | Finland (EU) |
+| `ash` | Ashburn | Virginia (US East) |
+| `hil` | Hillsboro | Oregon (US West) |
+
+#### Available Server Types
+
+| Type | vCPU | RAM | SSD | Cost |
+|------|------|-----|-----|------|
+| `cx11` | 1 | 2 GB | 20 GB | ~€4.51/mo |
+| `cx21` | 2 | 4 GB | 40 GB | ~€5.83/mo |
+| `cx31` | 2 | 8 GB | 80 GB | ~€10.59/mo |
+| `cx41` | 4 | 16 GB | 160 GB | ~€18.59/mo |
+
+#### Environment Variables
+
+```bash
+# Set token to skip interactive prompt
+export HCLOUD_TOKEN="your-api-token"
+
+# Customize defaults
+export SERVER_NAME="my-server"
+export SERVER_LOCATION="ash"
+export SSH_USER="developer"
+
+./hcloud-provision.sh
+```
+
+---
+
+### Method 2: Manual Setup via Console
+
+If you prefer manual control, follow these steps.
+
+#### Prerequisites
 
 - Hetzner Cloud account ([sign up](https://accounts.hetzner.com/signUp))
 - SSH key pair on your local machine
@@ -693,7 +796,8 @@ After installation:
 │   └── share/
 │       └── nix-install/   # Sparse clone of repository
 │           └── bootstrap-dev-server/
-│               ├── bootstrap-dev-server.sh
+│               ├── bootstrap-dev-server.sh  # Main bootstrap (runs on server)
+│               ├── hcloud-provision.sh      # Hetzner provisioning (runs locally)
 │               ├── flake.nix
 │               └── README.md
 ├── .bashrc                # Shell integration added

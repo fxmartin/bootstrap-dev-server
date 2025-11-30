@@ -1,0 +1,555 @@
+#!/usr/bin/env bash
+# ABOUTME: Hetzner Cloud provisioning script for CX11 dev server
+# ABOUTME: Creates VM, configures SSH, and runs bootstrap automatically
+#===============================================================================
+# Hetzner Cloud CX11 Provisioner
+#
+# Usage:
+#   ./hcloud-provision.sh                    # Interactive mode
+#   ./hcloud-provision.sh --name myserver    # With custom name
+#   ./hcloud-provision.sh --delete myserver  # Delete existing server
+#
+# Prerequisites:
+#   - hcloud CLI installed (brew install hcloud)
+#   - Hetzner API token (from https://console.hetzner.cloud/)
+#   - SSH key at ~/.ssh/id_ed25519 (or specify with --ssh-key)
+#
+# What this script does:
+#   1. Authenticates with Hetzner Cloud API
+#   2. Uploads your SSH key (if not already present)
+#   3. Creates a CX11 server with Ubuntu 24.04
+#   4. Waits for server to be ready
+#   5. Creates your user account with sudo access
+#   6. Runs the bootstrap script on the server
+#   7. Prints connection instructions
+#===============================================================================
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
+
+#===============================================================================
+# Configuration
+#===============================================================================
+SERVER_NAME="${SERVER_NAME:-cx11-dev}"
+SERVER_TYPE="${SERVER_TYPE:-cx11}"
+SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
+SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
+SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
+SSH_USER="${SSH_USER:-fx}"
+BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh"
+
+#===============================================================================
+# Help
+#===============================================================================
+show_help() {
+    cat << 'EOF'
+Hetzner Cloud CX11 Provisioner
+
+USAGE:
+    ./hcloud-provision.sh [OPTIONS]
+
+OPTIONS:
+    --name NAME         Server name (default: cx11-dev)
+    --type TYPE         Server type (default: cx11)
+    --location LOC      Datacenter location (default: fsn1)
+    --user USER         Username to create (default: fx)
+    --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_ed25519)
+    --delete NAME       Delete server with given name
+    --list              List all servers
+    --help              Show this help
+
+LOCATIONS:
+    fsn1    Falkenstein, Germany (EU)
+    nbg1    Nuremberg, Germany (EU)
+    hel1    Helsinki, Finland (EU)
+    ash     Ashburn, Virginia (US East)
+    hil     Hillsboro, Oregon (US West)
+
+SERVER TYPES:
+    cx11    1 vCPU,  2GB RAM,  20GB SSD (~€4.51/mo)
+    cx21    2 vCPU,  4GB RAM,  40GB SSD (~€5.83/mo)
+    cx31    2 vCPU,  8GB RAM,  80GB SSD (~€10.59/mo)
+    cx41    4 vCPU, 16GB RAM, 160GB SSD (~€18.59/mo)
+
+EXAMPLES:
+    # Create default CX11 server
+    ./hcloud-provision.sh
+
+    # Create with custom name in US
+    ./hcloud-provision.sh --name my-dev --location ash
+
+    # Create larger server
+    ./hcloud-provision.sh --name powerful --type cx31
+
+    # Delete a server
+    ./hcloud-provision.sh --delete cx11-dev
+
+    # List all servers
+    ./hcloud-provision.sh --list
+
+ENVIRONMENT VARIABLES:
+    HCLOUD_TOKEN        Hetzner API token (avoids interactive prompt)
+    SERVER_NAME         Default server name
+    SERVER_TYPE         Default server type
+    SERVER_LOCATION     Default location
+    SSH_USER            Default username
+EOF
+}
+
+#===============================================================================
+# Parse Arguments
+#===============================================================================
+DELETE_SERVER=""
+LIST_SERVERS=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --name)
+            SERVER_NAME="$2"
+            shift 2
+            ;;
+        --type)
+            SERVER_TYPE="$2"
+            shift 2
+            ;;
+        --location)
+            SERVER_LOCATION="$2"
+            shift 2
+            ;;
+        --user)
+            SSH_USER="$2"
+            shift 2
+            ;;
+        --ssh-key)
+            SSH_KEY_PATH="$2"
+            shift 2
+            ;;
+        --delete)
+            DELETE_SERVER="$2"
+            shift 2
+            ;;
+        --list)
+            LIST_SERVERS=true
+            shift
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+#===============================================================================
+# Check Prerequisites
+#===============================================================================
+check_prerequisites() {
+    log_step "Checking prerequisites..."
+
+    # Check hcloud CLI
+    if ! command -v hcloud &>/dev/null; then
+        log_error "hcloud CLI not found"
+        echo ""
+        echo "Install with:"
+        echo "  macOS:  brew install hcloud"
+        echo "  Linux:  snap install hcloud"
+        echo "  Other:  https://github.com/hetznercloud/cli/releases"
+        exit 1
+    fi
+    log_ok "hcloud CLI found: $(hcloud version)"
+
+    # Check SSH key
+    if [[ ! -f "$SSH_KEY_PATH" ]]; then
+        log_error "SSH private key not found: $SSH_KEY_PATH"
+        echo ""
+        echo "Generate one with:"
+        echo "  ssh-keygen -t ed25519 -C \"your-email@example.com\""
+        exit 1
+    fi
+
+    if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
+        log_error "SSH public key not found: ${SSH_KEY_PATH}.pub"
+        exit 1
+    fi
+    log_ok "SSH key found: $SSH_KEY_PATH"
+
+    # Check jq for JSON parsing
+    if ! command -v jq &>/dev/null; then
+        log_warn "jq not found, installing..."
+        if command -v brew &>/dev/null; then
+            brew install jq
+        elif command -v apt-get &>/dev/null; then
+            sudo apt-get install -y jq
+        else
+            log_error "Please install jq manually"
+            exit 1
+        fi
+    fi
+    log_ok "jq found"
+}
+
+#===============================================================================
+# Authenticate with Hetzner
+#===============================================================================
+authenticate_hcloud() {
+    log_step "Authenticating with Hetzner Cloud..."
+
+    # Check if already authenticated
+    if hcloud context active &>/dev/null; then
+        local active_context
+        active_context=$(hcloud context active)
+        log_ok "Already authenticated (context: $active_context)"
+        return 0
+    fi
+
+    # Check for token in environment
+    if [[ -n "${HCLOUD_TOKEN:-}" ]]; then
+        log_info "Using HCLOUD_TOKEN from environment"
+        hcloud context create dev-server
+        return 0
+    fi
+
+    # Interactive authentication
+    echo ""
+    log_info "Hetzner Cloud authentication required"
+    echo ""
+    echo "1. Go to: https://console.hetzner.cloud/"
+    echo "2. Select your project → Security → API Tokens"
+    echo "3. Generate API Token (Read & Write)"
+    echo "4. Copy the token"
+    echo ""
+
+    read -r -p "Paste your Hetzner API token: " token
+    if [[ -z "$token" ]]; then
+        log_error "Token cannot be empty"
+        exit 1
+    fi
+
+    # Create context with token
+    export HCLOUD_TOKEN="$token"
+    hcloud context create dev-server
+
+    log_ok "Authenticated with Hetzner Cloud"
+}
+
+#===============================================================================
+# Upload SSH Key
+#===============================================================================
+upload_ssh_key() {
+    log_step "Checking SSH key in Hetzner..."
+
+    local pub_key
+    pub_key=$(cat "${SSH_KEY_PATH}.pub")
+
+    # Check if key already exists (by fingerprint)
+    local existing_keys
+    existing_keys=$(hcloud ssh-key list -o json)
+
+    local key_fingerprint
+    key_fingerprint=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" | awk '{print $2}')
+
+    if echo "$existing_keys" | jq -e ".[] | select(.fingerprint == \"$key_fingerprint\")" &>/dev/null; then
+        SSH_KEY_NAME=$(echo "$existing_keys" | jq -r ".[] | select(.fingerprint == \"$key_fingerprint\") | .name")
+        log_ok "SSH key already exists: $SSH_KEY_NAME"
+        return 0
+    fi
+
+    # Upload new key
+    log_info "Uploading SSH key: $SSH_KEY_NAME"
+    if ! hcloud ssh-key create --name "$SSH_KEY_NAME" --public-key "$pub_key"; then
+        log_error "Failed to upload SSH key"
+        exit 1
+    fi
+
+    log_ok "SSH key uploaded: $SSH_KEY_NAME"
+}
+
+#===============================================================================
+# Create Server
+#===============================================================================
+create_server() {
+    log_step "Creating server: $SERVER_NAME"
+
+    # Check if server already exists
+    if hcloud server describe "$SERVER_NAME" &>/dev/null; then
+        log_warn "Server '$SERVER_NAME' already exists"
+        echo ""
+        read -r -p "Delete and recreate? (y/N): " response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            log_info "Deleting existing server..."
+            hcloud server delete "$SERVER_NAME"
+            sleep 2
+        else
+            log_info "Using existing server"
+            return 0
+        fi
+    fi
+
+    echo ""
+    log_info "Server configuration:"
+    echo "  Name:     $SERVER_NAME"
+    echo "  Type:     $SERVER_TYPE"
+    echo "  Image:    $SERVER_IMAGE"
+    echo "  Location: $SERVER_LOCATION"
+    echo "  SSH Key:  $SSH_KEY_NAME"
+    echo ""
+
+    # Create server
+    if ! hcloud server create \
+        --name "$SERVER_NAME" \
+        --type "$SERVER_TYPE" \
+        --image "$SERVER_IMAGE" \
+        --location "$SERVER_LOCATION" \
+        --ssh-key "$SSH_KEY_NAME"; then
+        log_error "Failed to create server"
+        exit 1
+    fi
+
+    log_ok "Server created: $SERVER_NAME"
+}
+
+#===============================================================================
+# Wait for Server
+#===============================================================================
+wait_for_server() {
+    log_step "Waiting for server to be ready..."
+
+    local max_attempts=60
+    local attempt=0
+
+    while [[ $attempt -lt $max_attempts ]]; do
+        local status
+        status=$(hcloud server describe "$SERVER_NAME" -o json | jq -r '.status')
+
+        if [[ "$status" == "running" ]]; then
+            log_ok "Server is running"
+            break
+        fi
+
+        echo -n "."
+        sleep 2
+        ((attempt++))
+    done
+
+    if [[ $attempt -ge $max_attempts ]]; then
+        log_error "Server failed to start within timeout"
+        exit 1
+    fi
+
+    # Get server IP
+    SERVER_IP=$(hcloud server describe "$SERVER_NAME" -o json | jq -r '.public_net.ipv4.ip')
+    log_ok "Server IP: $SERVER_IP"
+
+    # Wait for SSH to be available
+    log_info "Waiting for SSH to be available..."
+    attempt=0
+    while [[ $attempt -lt 30 ]]; do
+        if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes \
+            -i "$SSH_KEY_PATH" "root@$SERVER_IP" "echo ok" &>/dev/null; then
+            log_ok "SSH is available"
+            return 0
+        fi
+        echo -n "."
+        sleep 2
+        ((attempt++))
+    done
+
+    log_error "SSH connection timeout"
+    exit 1
+}
+
+#===============================================================================
+# Setup User Account
+#===============================================================================
+setup_user_account() {
+    log_step "Setting up user account: $SSH_USER"
+
+    # Commands to run on server as root
+    ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" "root@$SERVER_IP" << REMOTE_SCRIPT
+set -e
+
+# Create user if not exists
+if ! id "$SSH_USER" &>/dev/null; then
+    adduser --disabled-password --gecos "" "$SSH_USER"
+    echo "$SSH_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$SSH_USER
+    chmod 440 /etc/sudoers.d/$SSH_USER
+fi
+
+# Setup SSH for user
+mkdir -p /home/$SSH_USER/.ssh
+cp /root/.ssh/authorized_keys /home/$SSH_USER/.ssh/
+chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/.ssh
+chmod 700 /home/$SSH_USER/.ssh
+chmod 600 /home/$SSH_USER/.ssh/authorized_keys
+
+echo "User $SSH_USER created with SSH access"
+REMOTE_SCRIPT
+
+    log_ok "User account created: $SSH_USER"
+}
+
+#===============================================================================
+# Run Bootstrap Script
+#===============================================================================
+run_bootstrap() {
+    log_step "Running bootstrap script on server..."
+
+    echo ""
+    log_warn "This will take 5-15 minutes. The script will:"
+    echo "  1. Update system and install base packages"
+    echo "  2. Install GitHub CLI (requires OAuth)"
+    echo "  3. Harden SSH and configure firewall"
+    echo "  4. Install Nix with flakes"
+    echo "  5. Create dev environment with Claude Code"
+    echo ""
+
+    read -r -p "Continue with bootstrap? (Y/n): " response
+    if [[ "$response" =~ ^[Nn]$ ]]; then
+        log_info "Skipping bootstrap. Run manually with:"
+        echo "  ssh $SSH_USER@$SERVER_IP"
+        echo "  curl -fsSL $BOOTSTRAP_URL | bash"
+        return 0
+    fi
+
+    # Run bootstrap as the user (not root)
+    log_info "Connecting to server and running bootstrap..."
+    echo ""
+
+    ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" -t "$SSH_USER@$SERVER_IP" \
+        "curl -fsSL '$BOOTSTRAP_URL' | bash"
+
+    log_ok "Bootstrap complete!"
+}
+
+#===============================================================================
+# Print Summary
+#===============================================================================
+print_summary() {
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  ✅ Hetzner CX11 Server Provisioned Successfully!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${BLUE}Server Details:${NC}"
+    echo -e "    Name:     ${YELLOW}$SERVER_NAME${NC}"
+    echo -e "    Type:     ${YELLOW}$SERVER_TYPE${NC}"
+    echo -e "    IP:       ${YELLOW}$SERVER_IP${NC}"
+    echo -e "    Location: ${YELLOW}$SERVER_LOCATION${NC}"
+    echo ""
+    echo -e "  ${BLUE}Connect:${NC}"
+    echo -e "    SSH:  ${YELLOW}ssh $SSH_USER@$SERVER_IP${NC}"
+    echo -e "    Mosh: ${YELLOW}mosh $SSH_USER@$SERVER_IP${NC}"
+    echo ""
+    echo -e "  ${BLUE}Quick Start:${NC}"
+    echo -e "    ${YELLOW}ssh $SSH_USER@$SERVER_IP${NC}"
+    echo -e "    ${YELLOW}dev${NC}       # Enter dev environment"
+    echo -e "    ${YELLOW}claude${NC}    # Start Claude Code"
+    echo ""
+    echo -e "  ${BLUE}SSH Config (add to ~/.ssh/config):${NC}"
+    cat << EOF
+    Host $SERVER_NAME
+        HostName $SERVER_IP
+        User $SSH_USER
+        IdentityFile $SSH_KEY_PATH
+EOF
+    echo ""
+    echo -e "  ${BLUE}Monthly Cost:${NC} ~€4.51 (CX11)"
+    echo ""
+    echo -e "  ${BLUE}Management:${NC}"
+    echo -e "    Delete:   ${YELLOW}hcloud server delete $SERVER_NAME${NC}"
+    echo -e "    Snapshot: ${YELLOW}hcloud server create-image $SERVER_NAME${NC}"
+    echo -e "    Console:  ${YELLOW}https://console.hetzner.cloud/${NC}"
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+}
+
+#===============================================================================
+# Delete Server
+#===============================================================================
+delete_server() {
+    local name="$1"
+    log_step "Deleting server: $name"
+
+    if ! hcloud server describe "$name" &>/dev/null; then
+        log_error "Server '$name' not found"
+        exit 1
+    fi
+
+    echo ""
+    log_warn "This will permanently delete the server and all its data!"
+    read -r -p "Are you sure? Type server name to confirm: " confirm
+
+    if [[ "$confirm" != "$name" ]]; then
+        log_info "Deletion cancelled"
+        exit 0
+    fi
+
+    hcloud server delete "$name"
+    log_ok "Server '$name' deleted"
+}
+
+#===============================================================================
+# List Servers
+#===============================================================================
+list_servers() {
+    log_step "Listing servers..."
+    echo ""
+    hcloud server list
+}
+
+#===============================================================================
+# Main
+#===============================================================================
+main() {
+    echo ""
+    echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║       Hetzner Cloud CX11 Provisioner                              ║${NC}"
+    echo -e "${BLUE}║       Automated Ubuntu 24.04 + Nix + Claude Code Setup            ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # Handle special commands
+    if [[ "$LIST_SERVERS" == true ]]; then
+        check_prerequisites
+        authenticate_hcloud
+        list_servers
+        exit 0
+    fi
+
+    if [[ -n "$DELETE_SERVER" ]]; then
+        check_prerequisites
+        authenticate_hcloud
+        delete_server "$DELETE_SERVER"
+        exit 0
+    fi
+
+    # Normal provisioning flow
+    check_prerequisites
+    authenticate_hcloud
+    upload_ssh_key
+    create_server
+    wait_for_server
+    setup_user_account
+    run_bootstrap
+    print_summary
+}
+
+main "$@"
