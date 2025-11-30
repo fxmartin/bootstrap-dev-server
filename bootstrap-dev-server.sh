@@ -29,7 +29,11 @@ DEV_USER="${DEV_USER:-$(whoami)}"
 SSH_PORT="${SSH_PORT:-22}"
 MOSH_PORT_START="${MOSH_PORT_START:-60000}"
 MOSH_PORT_END="${MOSH_PORT_END:-60010}"
-FLAKE_REPO="${FLAKE_REPO:-}"  # Optional: github:user/repo for your flake
+
+# Repository configuration
+GITHUB_REPO="fxmartin/nix-install"
+REPO_CLONE_DIR="${HOME}/.local/share/nix-install"
+BOOTSTRAP_SUBDIR="bootstrap-dev-server"
 
 #===============================================================================
 # Preflight Checks
@@ -74,6 +78,7 @@ install_base_packages() {
     # Minimal base packages (most tools will come from Nix)
     sudo apt-get install -y -qq \
         curl \
+        wget \
         git \
         xz-utils \
         ufw \
@@ -82,6 +87,169 @@ install_base_packages() {
         unattended-upgrades
     
     log_ok "Base packages installed"
+}
+
+#===============================================================================
+# Install GitHub CLI
+#===============================================================================
+install_github_cli() {
+    log_info "Installing GitHub CLI..."
+
+    if command -v gh &>/dev/null; then
+        log_ok "GitHub CLI already installed: $(gh --version | head -1)"
+        return 0
+    fi
+
+    # Add GitHub CLI repository (official method for Ubuntu)
+    log_info "Adding GitHub CLI apt repository..."
+
+    # Install required packages for adding repository
+    sudo apt-get install -y -qq software-properties-common
+
+    # Add GitHub CLI GPG key
+    sudo mkdir -p -m 755 /etc/apt/keyrings
+    if ! wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null; then
+        log_error "Failed to download GitHub CLI GPG key"
+        return 1
+    fi
+    sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+
+    # Add repository
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+        sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+
+    # Install gh
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq gh
+
+    log_ok "GitHub CLI installed: $(gh --version | head -1)"
+}
+
+#===============================================================================
+# Configure Git Identity
+#===============================================================================
+configure_git_identity() {
+    log_info "Configuring Git identity..."
+
+    # Check if git is already configured
+    local current_name current_email
+    current_name=$(git config --global user.name 2>/dev/null || echo "")
+    current_email=$(git config --global user.email 2>/dev/null || echo "")
+
+    if [[ -n "$current_name" ]] && [[ -n "$current_email" ]]; then
+        log_ok "Git already configured: $current_name <$current_email>"
+        return 0
+    fi
+
+    echo ""
+    log_info "Git identity not configured. Please provide your details:"
+    echo ""
+
+    # Prompt for name
+    read -r -p "  Full Name: " git_name
+    if [[ -z "$git_name" ]]; then
+        log_error "Name cannot be empty"
+        return 1
+    fi
+
+    # Prompt for email
+    read -r -p "  Email: " git_email
+    if [[ -z "$git_email" ]]; then
+        log_error "Email cannot be empty"
+        return 1
+    fi
+
+    # Configure git
+    git config --global user.name "$git_name"
+    git config --global user.email "$git_email"
+
+    # Set sensible defaults
+    git config --global init.defaultBranch main
+    git config --global pull.rebase false
+
+    log_ok "Git configured: $git_name <$git_email>"
+}
+
+#===============================================================================
+# Authenticate GitHub CLI
+#===============================================================================
+authenticate_github_cli() {
+    log_info "Checking GitHub CLI authentication..."
+
+    # Check if already authenticated
+    if gh auth status >/dev/null 2>&1; then
+        local gh_user
+        gh_user=$(gh api user --jq '.login' 2>/dev/null || echo "unknown")
+        log_ok "GitHub CLI already authenticated as: $gh_user"
+        return 0
+    fi
+
+    echo ""
+    log_info "GitHub CLI authentication required"
+    log_info "This will open a browser for OAuth authentication"
+    echo ""
+    log_warn "If running headless, you'll get a URL to open on another device"
+    echo ""
+
+    # Authenticate with web flow
+    # --hostname github.com: Target GitHub (not enterprise)
+    # --git-protocol https: Use HTTPS for git (simpler for servers)
+    # --web: Browser-based OAuth flow
+    if ! gh auth login --hostname github.com --git-protocol https --web; then
+        log_error "GitHub CLI authentication failed"
+        log_error ""
+        log_error "Troubleshooting:"
+        log_error "  1. Check internet connection"
+        log_error "  2. Try manual auth: gh auth login"
+        log_error "  3. For headless: gh auth login --with-token"
+        return 1
+    fi
+
+    # Verify authentication
+    local gh_user
+    gh_user=$(gh api user --jq '.login' 2>/dev/null || echo "unknown")
+    log_ok "GitHub CLI authenticated as: $gh_user"
+}
+
+#===============================================================================
+# Clone Repository (Sparse Checkout - bootstrap-dev-server only)
+#===============================================================================
+clone_bootstrap_repo() {
+    log_info "Cloning bootstrap-dev-server from GitHub..."
+
+    # Check if already cloned
+    if [[ -d "${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}" ]]; then
+        log_ok "Repository already cloned at ${REPO_CLONE_DIR}"
+
+        # Pull latest changes
+        log_info "Pulling latest changes..."
+        if (cd "${REPO_CLONE_DIR}" && git pull --quiet); then
+            log_ok "Repository updated"
+        else
+            log_warn "Failed to pull updates (continuing with existing files)"
+        fi
+        return 0
+    fi
+
+    # Create parent directory
+    mkdir -p "$(dirname "${REPO_CLONE_DIR}")"
+
+    # Clone with sparse checkout (only bootstrap-dev-server folder)
+    log_info "Using sparse checkout for ${BOOTSTRAP_SUBDIR} folder only..."
+
+    # Initialize empty repository
+    git clone --filter=blob:none --no-checkout --depth 1 --sparse \
+        "https://github.com/${GITHUB_REPO}.git" "${REPO_CLONE_DIR}"
+
+    # Configure sparse checkout
+    cd "${REPO_CLONE_DIR}"
+    git sparse-checkout set "${BOOTSTRAP_SUBDIR}"
+
+    # Checkout the files
+    git checkout
+
+    log_ok "Repository cloned (sparse) at ${REPO_CLONE_DIR}"
+    log_info "Only ${BOOTSTRAP_SUBDIR}/ folder downloaded"
 }
 
 #===============================================================================
@@ -252,24 +420,31 @@ create_dev_flake() {
     log_info "Creating dev environment flake..."
 
     local FLAKE_DIR="$HOME/.config/nix-dev-env"
-    local FLAKE_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/flake.nix"
+    local SOURCE_FLAKE="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/flake.nix"
 
     mkdir -p "$FLAKE_DIR"
 
-    # Download flake.nix from GitHub
-    log_info "Downloading flake.nix from GitHub..."
-    if ! curl -fsSL -o "$FLAKE_DIR/flake.nix" "$FLAKE_URL"; then
-        log_error "Failed to download flake.nix from $FLAKE_URL"
+    # Copy flake.nix from cloned repository
+    log_info "Copying flake.nix from local repository..."
+
+    if [[ ! -f "$SOURCE_FLAKE" ]]; then
+        log_error "Source flake not found: $SOURCE_FLAKE"
+        log_error "Ensure clone_bootstrap_repo() was called first"
         return 1
     fi
 
-    # Verify download
+    if ! cp "$SOURCE_FLAKE" "$FLAKE_DIR/flake.nix"; then
+        log_error "Failed to copy flake.nix"
+        return 1
+    fi
+
+    # Verify copy
     if [[ ! -s "$FLAKE_DIR/flake.nix" ]]; then
-        log_error "Downloaded flake.nix is empty"
+        log_error "Copied flake.nix is empty"
         return 1
     fi
 
-    # Initialize git repo for flake (required)
+    # Initialize git repo for flake (required by Nix)
     cd "$FLAKE_DIR"
     if [[ ! -d .git ]]; then
         git init -q
@@ -277,6 +452,7 @@ create_dev_flake() {
     git add -A
 
     log_ok "Dev flake created at $FLAKE_DIR"
+    log_info "Source: $SOURCE_FLAKE"
 }
 
 #===============================================================================
@@ -435,6 +611,9 @@ print_summary() {
     echo -e "  ${BLUE}Maintenance:${NC}"
     echo -e "    ${YELLOW}dev-update${NC}  - Update all Nix packages"
     echo ""
+    echo -e "  ${BLUE}Repository:${NC}"
+    echo -e "    ${YELLOW}${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}${NC}"
+    echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 }
 
@@ -448,18 +627,31 @@ main() {
     echo -e "${BLUE}║       Ubuntu 24.04 + Nix Flakes + Claude Code                 ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    
+
+    # Phase 1: Preflight and base packages
     preflight_checks
     install_base_packages
+
+    # Phase 2: Git and GitHub setup
+    install_github_cli
+    configure_git_identity
+    authenticate_github_cli
+    clone_bootstrap_repo
+
+    # Phase 3: Security hardening
     harden_ssh
     regenerate_host_keys
     configure_firewall
     configure_fail2ban
+
+    # Phase 4: Nix installation and configuration
     install_nix
     create_dev_flake
     setup_shell_integration
     create_claude_md
     warm_nix_cache
+
+    # Done
     print_summary
 }
 
