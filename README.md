@@ -23,10 +23,12 @@ This script automates the complete setup of a secure development server, designe
 ### Development Environment
 - **Nix** with flakes enabled (via Determinate Systems installer)
 - **Claude Code** (Anthropic's AI coding assistant) with auto-updates
+- **MCP Servers**: Context7, GitHub, Sequential Thinking (pre-configured)
+- **GitHub CLI** with OAuth authentication
 - **Python 3.12** with uv, pip, virtualenv, ruff
 - **Node.js 22** LTS
 - **Podman** for rootless containers
-- **Modern CLI tools**: ripgrep, fd, bat, eza, fzf, lazygit, delta, httpie
+- **Modern CLI tools**: ripgrep, fd, bat, eza, fzf, lazygit, delta, httpie, gotop
 - **Shell enhancements**: starship prompt, zoxide, direnv, tmux
 
 ### Idempotent Design
@@ -215,12 +217,15 @@ curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap
 ```
 
 The script will:
-1. Update the system
-2. Harden SSH (disable password auth after your key is added)
-3. Configure firewall
-4. Install Nix with flakes
-5. Create the dev environment
-6. Pre-build all packages (takes 5-10 min first time)
+1. Update the system and install base packages
+2. Install GitHub CLI and authenticate via OAuth
+3. Configure Git identity (prompts for name/email if not set)
+4. Sparse clone the bootstrap-dev-server folder from GitHub
+5. Harden SSH (disable password auth after your key is added)
+6. Configure firewall and Fail2Ban
+7. Install Nix with flakes
+8. Create the dev environment with MCP servers
+9. Pre-build all packages (takes 5-10 min first time)
 
 ### Step 8: Reconnect and Verify
 
@@ -262,6 +267,7 @@ The default `dev` shell includes:
 
 **AI & Coding**
 - Claude Code (auto-updated via sadjow/claude-code-nix)
+- MCP Servers: Context7, GitHub, Sequential Thinking
 
 **Languages**
 - Python 3.12 + pip + virtualenv + uv + ruff
@@ -276,6 +282,11 @@ The default `dev` shell includes:
 - `jq` / `yq` - JSON/YAML processors
 - `httpie` - HTTP client
 - `websocat` - WebSocket client
+
+**System Monitoring**
+- `htop` - Interactive process viewer
+- `btop` - Resource monitor
+- `gotop` - Terminal-based graphical activity monitor
 
 **Git & Dev**
 - `lazygit` - Terminal UI for git
@@ -303,6 +314,36 @@ dev-update
 cd ~/.config/nix-dev-env
 nix flake update
 ```
+
+### MCP Server Configuration
+
+Claude Code MCP servers are automatically configured on first `dev` shell entry:
+
+- **Context7**: Documentation lookup (no authentication required)
+- **GitHub**: Repository access (requires Personal Access Token)
+- **Sequential Thinking**: Enhanced reasoning (no authentication required)
+
+**To configure GitHub MCP server:**
+
+1. Create a GitHub Personal Access Token:
+   - Visit: https://github.com/settings/tokens
+   - Click "Generate new token (classic)"
+   - Scopes: `repo`, `read:org`, `read:user`
+
+2. Add token to config:
+   ```bash
+   # Edit the MCP config
+   nano ~/.config/claude/config.json
+
+   # Find the "github" section and add to "env":
+   "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token_here"
+   ```
+
+3. Verify MCP servers:
+   ```bash
+   dev
+   claude mcp list
+   ```
 
 ### Adding Project-Specific Tools
 
@@ -445,9 +486,18 @@ After installation:
 ```
 ~
 ├── .config/
+│   ├── claude/
+│   │   └── config.json    # MCP server configuration
 │   └── nix-dev-env/
 │       ├── flake.nix      # Main dev environment definition
 │       └── flake.lock     # Locked package versions
+├── .local/
+│   └── share/
+│       └── nix-install/   # Sparse clone of repository
+│           └── bootstrap-dev-server/
+│               ├── bootstrap-dev-server.sh
+│               ├── flake.nix
+│               └── README.md
 ├── .bashrc                # Shell integration added
 ├── CLAUDE.md              # Claude Code instructions template
 └── projects/              # Suggested project directory
@@ -474,4 +524,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
+- [nix-community/mcp-servers-nix](https://github.com/nix-community/mcp-servers-nix) for MCP server packaging
 - [Anthropic](https://anthropic.com) for Claude Code
+- [GitHub CLI](https://cli.github.com/) for seamless GitHub integration
