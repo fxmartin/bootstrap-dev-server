@@ -2,7 +2,7 @@
 #===============================================================================
 # CX11 Dev Server Bootstrap Script
 # 
-# Usage: curl -fsSL https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/bootstrap-dev-server.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
 #
 # Idempotent: Safe to run multiple times
 # Requirements: Fresh Ubuntu 24.04 server with sudo access
