@@ -5,7 +5,7 @@ A single-command bootstrap script that transforms a fresh Ubuntu 24.04 server in
 **One curl. Fully idempotent. Production-ready.**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
 ```
 
 ---
@@ -40,13 +40,13 @@ Safe to run multiple times. The script detects existing configurations and skips
 
 ```bash
 # Basic install (uses defaults)
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
 
 # Custom SSH port
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server.sh | SSH_PORT=2222 bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | SSH_PORT=2222 bash
 
 # Regenerate SSH host keys (fresh install)
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server.sh | REGEN_HOST_KEYS=true bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | REGEN_HOST_KEYS=true bash
 ```
 
 ### After Installation
@@ -211,7 +211,7 @@ Now SSH into your VM and run the bootstrap:
 ssh fx@10.211.55.X
 
 # Run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
 ```
 
 The script will:
