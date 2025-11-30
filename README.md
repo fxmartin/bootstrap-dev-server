@@ -249,6 +249,204 @@ claude
 
 ---
 
+## Setting Up a CX11 Server on Hetzner Cloud
+
+This section walks you through creating a real CX11 VPS on Hetzner Cloud—perfect for production or always-on development environments.
+
+### Prerequisites
+
+- Hetzner Cloud account ([sign up](https://accounts.hetzner.com/signUp))
+- SSH key pair on your local machine
+- Credit card or PayPal for billing (~€4.51/month for CX11)
+
+### Step 1: Create SSH Key (if needed)
+
+On your **local machine**:
+
+```bash
+# Generate ED25519 key (recommended)
+ssh-keygen -t ed25519 -C "your-email@example.com"
+
+# Copy your public key to clipboard (macOS)
+cat ~/.ssh/id_ed25519.pub | pbcopy
+
+# Or display it to copy manually
+cat ~/.ssh/id_ed25519.pub
+```
+
+### Step 2: Add SSH Key to Hetzner
+
+1. Log into [Hetzner Cloud Console](https://console.hetzner.cloud/)
+2. Select your project (or create one)
+3. Go to **Security** → **SSH Keys**
+4. Click **Add SSH Key**
+5. Paste your public key
+6. Name it (e.g., "MacBook Pro")
+7. Click **Add SSH Key**
+
+### Step 3: Create the Server
+
+1. Go to **Servers** → **Add Server**
+
+2. **Location**: Choose nearest datacenter
+   - `Falkenstein` (Germany) - lowest latency for EU
+   - `Ashburn` (US East) - for North America
+   - `Hillsboro` (US West) - for US West Coast
+
+3. **Image**: Select **Ubuntu** → **24.04**
+
+4. **Type**: Select **Shared vCPU** → **CX11**
+
+   | Spec | Value |
+   |------|-------|
+   | vCPU | 1 (shared) |
+   | RAM | 2 GB |
+   | SSD | 20 GB |
+   | Traffic | 20 TB |
+   | Cost | ~€4.51/month |
+
+5. **Networking**:
+   - ✅ Public IPv4 (required)
+   - ✅ Public IPv6 (recommended)
+
+6. **SSH Keys**: Select the key you added in Step 2
+
+7. **Name**: `cx11-dev` (or your preference)
+
+8. Click **Create & Buy now**
+
+### Step 4: Connect to Your Server
+
+Wait ~30 seconds for the server to boot, then:
+
+```bash
+# Get the IP from Hetzner Console
+# Connect as root initially
+ssh root@YOUR_SERVER_IP
+
+# Verify you're connected
+uname -a
+```
+
+### Step 5: Create Your User Account
+
+```bash
+# Create user (replace 'fx' with your username)
+adduser fx
+
+# Add to sudo group
+usermod -aG sudo fx
+
+# Copy SSH key to new user
+mkdir -p /home/fx/.ssh
+cp ~/.ssh/authorized_keys /home/fx/.ssh/
+chown -R fx:fx /home/fx/.ssh
+chmod 700 /home/fx/.ssh
+chmod 600 /home/fx/.ssh/authorized_keys
+
+# Test sudo access
+su - fx
+sudo whoami  # Should output: root
+
+# Exit back to root
+exit
+```
+
+### Step 6: Run the Bootstrap Script
+
+```bash
+# Switch to your user
+su - fx
+
+# Run the bootstrap script
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+```
+
+The script will:
+1. Update the system and install base packages
+2. Install GitHub CLI and authenticate via OAuth
+3. Configure Git identity
+4. Sparse clone the bootstrap-dev-server folder
+5. **Harden SSH** (disable root login, password auth)
+6. Configure UFW firewall and Fail2Ban
+7. Install Nix with flakes
+8. Create the dev environment with MCP servers
+9. Pre-build all packages
+
+> ⚠️ **Important**: After SSH hardening, you can only connect as your user (not root) using SSH keys.
+
+### Step 7: Reconnect and Verify
+
+```bash
+# Disconnect
+exit
+exit
+
+# Reconnect as your user (not root!)
+ssh fx@YOUR_SERVER_IP
+
+# Or use Mosh for persistent sessions
+mosh fx@YOUR_SERVER_IP
+
+# Enter the dev environment
+dev
+
+# Verify Claude Code
+claude --version
+
+# Check MCP servers
+claude mcp list
+```
+
+### Step 8: (Optional) Set Up DNS
+
+Point a domain to your server for easier access:
+
+1. In your DNS provider, add an A record:
+   ```
+   dev.yourdomain.com → YOUR_SERVER_IP
+   ```
+
+2. Update your SSH config (`~/.ssh/config` on your Mac):
+   ```
+   Host cx11
+       HostName dev.yourdomain.com
+       User fx
+       IdentityFile ~/.ssh/id_ed25519
+   ```
+
+3. Now connect with just:
+   ```bash
+   ssh cx11
+   # or
+   mosh cx11
+   ```
+
+### Hetzner-Specific Tips
+
+**Snapshots**: Create snapshots before major changes
+- Go to Server → Snapshots → Create Snapshot
+- Cost: €0.01/GB/month
+
+**Firewall**: Hetzner has its own firewall (in addition to UFW)
+- Go to Security → Firewalls
+- Create rules to allow only SSH (22/tcp) and Mosh (60000-60010/udp)
+
+**Backups**: Enable automatic backups
+- Go to Server → Backups → Enable
+- Cost: 20% of server price (~€0.90/month)
+
+**Monitoring**: Free basic monitoring included
+- Go to Server → Graphs
+- Shows CPU, disk, network usage
+
+**Rescue Mode**: If locked out
+- Go to Server → Rescue → Enable
+- Reboot and connect to rescue system
+- Mount disk and fix issues
+
+---
+
 ## Post-Installation Usage
 
 ### Available Commands
@@ -527,3 +725,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [nix-community/mcp-servers-nix](https://github.com/nix-community/mcp-servers-nix) for MCP server packaging
 - [Anthropic](https://anthropic.com) for Claude Code
 - [GitHub CLI](https://cli.github.com/) for seamless GitHub integration
+- [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
