@@ -250,144 +250,24 @@ install_nix() {
 #===============================================================================
 create_dev_flake() {
     log_info "Creating dev environment flake..."
-    
+
     local FLAKE_DIR="$HOME/.config/nix-dev-env"
-    
+    local FLAKE_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/flake.nix"
+
     mkdir -p "$FLAKE_DIR"
-    
-    # Create flake.nix
-    cat > "$FLAKE_DIR/flake.nix" << 'FLAKEEOF'
-{
-  description = "CX11 Dev Server Environment";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    
-    # Claude Code with auto-updates
-    claude-code-nix = {
-      url = "github:sadjow/claude-code-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+    # Download flake.nix from GitHub
+    log_info "Downloading flake.nix from GitHub..."
+    if ! curl -fsSL -o "$FLAKE_DIR/flake.nix" "$FLAKE_URL"; then
+        log_error "Failed to download flake.nix from $FLAKE_URL"
+        return 1
+    fi
 
-  outputs = { self, nixpkgs, flake-utils, claude-code-nix }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
-        };
-      in
-      {
-        # Default dev shell
-        devShells.default = pkgs.mkShell {
-          name = "dev-server";
-          
-          buildInputs = [
-            # Claude Code
-            claude-code-nix.packages.${system}.claude-code
-            
-            # Core CLI tools
-            pkgs.git
-            pkgs.curl
-            pkgs.wget
-            pkgs.jq
-            pkgs.yq
-            pkgs.ripgrep
-            pkgs.fd
-            pkgs.bat
-            pkgs.eza
-            pkgs.fzf
-            pkgs.tree
-            pkgs.htop
-            pkgs.btop
-            
-            # Editors
-            pkgs.neovim
-            pkgs.helix
-            
-            # Shell enhancements
-            pkgs.tmux
-            pkgs.zoxide
-            pkgs.starship
-            pkgs.direnv
-            
-            # Python
-            pkgs.python312
-            pkgs.python312Packages.pip
-            pkgs.python312Packages.virtualenv
-            pkgs.uv  # Fast Python package installer
-            
-            # Node.js
-            pkgs.nodejs_22
-            
-            # Container tools
-            pkgs.podman
-            pkgs.podman-compose
-            
-            # Network tools
-            pkgs.httpie
-            pkgs.websocat
-            
-            # Development utilities
-            pkgs.gh  # GitHub CLI
-            pkgs.lazygit
-            pkgs.delta  # Git diff viewer
-          ];
-          
-          shellHook = ''
-            export EDITOR=nvim
-            export VISUAL=nvim
-            
-            # Starship prompt
-            eval "$(starship init bash)"
-            
-            # Zoxide (smart cd)
-            eval "$(zoxide init bash)"
-            
-            # Direnv
-            eval "$(direnv hook bash)"
-            
-            echo ""
-            echo "🚀 Dev Server Environment Loaded"
-            echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
-            echo "   Python: $(python3 --version)"
-            echo "   Node:   $(node --version)"
-            echo ""
-          '';
-        };
-        
-        # Minimal shell (just Claude + basics)
-        devShells.minimal = pkgs.mkShell {
-          name = "minimal";
-          buildInputs = [
-            claude-code-nix.packages.${system}.claude-code
-            pkgs.git
-            pkgs.curl
-            pkgs.jq
-            pkgs.ripgrep
-            pkgs.neovim
-          ];
-        };
-        
-        # Python-focused shell
-        devShells.python = pkgs.mkShell {
-          name = "python-dev";
-          buildInputs = [
-            claude-code-nix.packages.${system}.claude-code
-            pkgs.python312
-            pkgs.python312Packages.pip
-            pkgs.python312Packages.virtualenv
-            pkgs.uv
-            pkgs.ruff
-            pkgs.git
-            pkgs.neovim
-          ];
-        };
-      });
-}
-FLAKEEOF
+    # Verify download
+    if [[ ! -s "$FLAKE_DIR/flake.nix" ]]; then
+        log_error "Downloaded flake.nix is empty"
+        return 1
+    fi
 
     # Initialize git repo for flake (required)
     cd "$FLAKE_DIR"
@@ -395,7 +275,7 @@ FLAKEEOF
         git init -q
     fi
     git add -A
-    
+
     log_ok "Dev flake created at $FLAKE_DIR"
 }
 
