@@ -1,345 +1,132 @@
-# CX11 Dev Server Bootstrap
+# Claude Code Dev Server
 
-A single-command bootstrap script that transforms a fresh Ubuntu 24.04 server into a fully hardened, Nix-powered development environment with Claude Code.
-
-**One curl. Fully idempotent. Production-ready.**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
-```
+A single-command bootstrap that transforms a fresh Ubuntu 24.04 server into a fully hardened, Nix-powered development environment with Claude Code.
 
 ---
 
-## What This Does
+## Why a Remote Dev Server?
 
-This script automates the complete setup of a secure development server, designed to mirror a Hetzner CX11 VPS locally or provision cloud servers consistently.
+**Claude Code is CLI-first.** Unlike traditional IDEs with desktop apps, Claude Code runs entirely in the terminal. This creates an opportunity: *your development environment can live anywhere*.
 
-### Security Hardening
-- **SSH hardened** with key-only authentication, disabled root login, strong ciphers
-- **UFW firewall** configured for SSH and Mosh only
-- **Fail2Ban** installed with 24-hour bans after 3 failed attempts
-- **Unattended upgrades** enabled for automatic security patches
+I manage multiple MacBooks and found myself constantly context-switching between machines, losing track of where my latest code changes lived. The solution? A **persistent cloud dev server** that I can access from anywhere:
 
-### Development Environment
-- **Nix** with flakes enabled (via Determinate Systems installer)
-- **Claude Code** (Anthropic's AI coding assistant) with auto-updates
-- **MCP Servers**: Context7, GitHub, Sequential Thinking (pre-configured)
-- **GitHub CLI** with OAuth authentication
-- **Python 3.12** with uv, pip, virtualenv, ruff
-- **Node.js 22** LTS
-- **Podman** for rootless containers
-- **Modern CLI tools**: ripgrep, fd, bat, eza, fzf, lazygit, delta, httpie, gotop
-- **Shell enhancements**: starship prompt, zoxide, direnv, tmux
+- **From my MacBook Pro** via Terminal or Ghostty
+- **From my MacBook Air** when traveling light
+- **From my iPad** via [Blink Shell](https://blink.sh/) on the couch or in a café
+- **From any machine** with an SSH client
 
-### Idempotent Design
-Safe to run multiple times. The script detects existing configurations and skips or updates appropriately.
+The server maintains the **single source of truth** for all my projects. No more "which laptop has the latest changes?" Every session picks up exactly where I left off.
 
----
+### The Benefits
 
-## Quick Start
-
-### For Existing Ubuntu Servers
-
-```bash
-# Basic install (uses defaults)
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
-
-# Custom SSH port
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | SSH_PORT=2222 bash
-
-# Regenerate SSH host keys (fresh install)
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | REGEN_HOST_KEYS=true bash
-```
-
-### After Installation
-
-```bash
-# Reconnect or reload shell
-source ~/.bashrc
-
-# Enter the dev environment
-dev
-
-# Start Claude Code
-claude
-```
+| Benefit | Description |
+|---------|-------------|
+| **Always Available** | Your dev environment is always on, always accessible |
+| **Single Source of Truth** | All projects, all progress, one location |
+| **Device Agnostic** | SSH from Mac, iPad, Linux, Windows—anything |
+| **Persistent Sessions** | Mosh + tmux = sessions that survive disconnects |
+| **Consistent Environment** | Same tools, same config, every time |
+| **Cost Effective** | ~€4.51/month for a CX11 (less than a coffee) |
 
 ---
 
-## Setting Up a Local VM with Parallels Desktop
+## Quick Start: Hetzner Cloud
 
-This section walks you through creating an Ubuntu 24.04 VM on macOS using Parallels Desktop—perfect for prototyping your Hetzner CX11 setup locally.
+The recommended approach is a Hetzner Cloud VPS. It's affordable, reliable, and the automated provisioning script handles everything.
 
 ### Prerequisites
 
-- macOS 11+ (Big Sur or later)
-- Parallels Desktop 18+ (Pro or Standard edition)
-- At least 20GB free disk space
-- Internet connection
-
-### Step 1: Download Ubuntu 24.04 Server ISO
-
-1. Go to [ubuntu.com/download/server](https://ubuntu.com/download/server)
-2. Download **Ubuntu Server 24.04 LTS** (not Desktop—we want lean)
-3. Save the ISO to your Downloads folder (~2.5GB)
-
-> **Why Server instead of Desktop?** Server edition has no GUI overhead, matches production environments, and boots faster. You'll SSH into it anyway.
-
-### Step 2: Create the Virtual Machine
-
-1. **Open Parallels Desktop**
-
-2. **Create New VM**
-   - Click **File → New** (or the `+` button)
-   - Select **Install Windows or another OS from DVD or image file**
-   - Click **Continue**
-
-3. **Select the ISO**
-   - Click **Choose Manually**
-   - Navigate to your downloaded `ubuntu-24.04-live-server-amd64.iso`
-   - Click **Continue**
-
-4. **Name and Location**
-   - Name: `cx11-dev` (or whatever you prefer)
-   - Check **Customize settings before installation**
-   - Click **Create**
-
-### Step 3: Configure VM Resources (Match CX11 Specs)
-
-The Hetzner CX11 has: 1 vCPU, 2GB RAM, 20GB SSD. For local dev, we'll be slightly more generous:
-
-1. **Hardware Tab**
-   
-   | Setting | Value | Notes |
-   |---------|-------|-------|
-   | **CPU & Memory → Processors** | 2 | Matches CX11 shared vCPU performance |
-   | **CPU & Memory → Memory** | 2048 MB | Exact CX11 spec (increase to 4GB if you have RAM) |
-   | **Hard Disk → Size** | 20 GB | CX11 default |
-
-2. **Options Tab**
-   
-   | Setting | Value |
-   |---------|-------|
-   | **Startup and Shutdown → Start view** | Headless (optional, for server feel) |
-   | **Sharing → Share Mac folders** | Disabled (cleaner isolation) |
-
-3. **Network Tab**
-   
-   | Setting | Value | Notes |
-   |---------|-------|-------|
-   | **Source** | Shared Network | Allows SSH from Mac |
-   | **Type** | Virtio | Best performance |
-
-4. Click **Continue** to start the installation
-
-### Step 4: Install Ubuntu Server
-
-The Ubuntu installer will boot. Follow these steps:
-
-1. **Language**: English (or your preference)
-
-2. **Keyboard**: Detect or select manually
-
-3. **Installation Type**: **Ubuntu Server** (not minimized)
-
-4. **Network**: Should auto-configure via DHCP. Note the IP if shown.
-
-5. **Proxy**: Leave blank (unless you need one)
-
-6. **Mirror**: Keep default archive.ubuntu.com
-
-7. **Storage**: 
-   - Select **Use an entire disk**
-   - Uncheck **Set up this disk as an LVM group** (simpler)
-   - Confirm the disk layout
-
-8. **Profile Setup**:
-   ```
-   Your name: Your Name
-   Server name: cx11-dev
-   Username: fx (or your preferred username)
-   Password: [choose a strong password]
-   ```
-
-9. **Ubuntu Pro**: Skip (select **Skip for now**)
-
-10. **SSH Setup**: 
-    - ✅ **Install OpenSSH server**
-    - Skip importing SSH keys (we'll add them after)
-
-11. **Featured Snaps**: Don't select any (we're using Nix)
-
-12. **Wait for installation** to complete (~5-10 minutes)
-
-13. **Reboot** when prompted
-
-### Step 5: First Boot & Get IP Address
-
-After reboot:
-
-1. Log in with your username and password
-
-2. Get the VM's IP address:
-   ```bash
-   ip addr show | grep "inet " | grep -v 127.0.0.1
-   ```
-   You'll see something like `inet 10.211.55.X/24`. Note this IP.
-
-3. **Optional**: Set a static IP in Parallels for consistency
-   - Parallels → Preferences → Network → Change Settings
-   - Add a DHCP reservation for your VM's MAC address
-
-### Step 6: Copy Your SSH Key
-
-From your **Mac terminal** (not the VM):
-
-```bash
-# Generate a key if you don't have one
-ssh-keygen -t ed25519 -C "your-email@example.com"
-
-# Copy your public key to the VM
-ssh-copy-id fx@10.211.55.X  # Use your VM's IP
-
-# Test the connection
-ssh fx@10.211.55.X
-```
-
-### Step 7: Run the Bootstrap Script
-
-Now SSH into your VM and run the bootstrap:
-
-```bash
-# SSH into the VM
-ssh fx@10.211.55.X
-
-# Run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
-```
-
-The script will:
-1. Update the system and install base packages
-2. Install GitHub CLI and authenticate via OAuth
-3. Configure Git identity (prompts for name/email if not set)
-4. Sparse clone the bootstrap-dev-server folder from GitHub
-5. Harden SSH (disable password auth after your key is added)
-6. Configure firewall and Fail2Ban
-7. Install Nix with flakes
-8. Create the dev environment with MCP servers
-9. Pre-build all packages (takes 5-10 min first time)
-
-### Step 8: Reconnect and Verify
-
-```bash
-# Exit and reconnect
-exit
-ssh fx@10.211.55.X
-
-# Or use Mosh for persistent sessions
-mosh fx@10.211.55.X
-
-# Enter the dev environment
-dev
-
-# Verify Claude Code
-claude --version
-
-# Start a Claude session
-claude
-```
-
----
-
-## Setting Up a CX11 Server on Hetzner Cloud
-
-This section covers two methods for creating a CX11 VPS on Hetzner Cloud:
-1. **Automated** (recommended): One command with `hcloud-provision.sh`
-2. **Manual**: Step-by-step via Hetzner Console
-
----
-
-### Method 1: Automated Provisioning (Recommended)
-
-Use the `hcloud-provision.sh` script to create and configure a server with a single command.
-
-#### Prerequisites
-
 ```bash
 # Install hcloud CLI
-brew install hcloud    # macOS
-# or: snap install hcloud (Linux)
+brew install hcloud jq    # macOS
+# or: snap install hcloud && sudo apt install jq (Linux)
 
-# Install jq (for JSON parsing)
-brew install jq
-
-# Ensure you have an SSH key
-ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519
+# The script will generate a dedicated SSH key if needed
 ```
 
-#### Quick Start
+### One Command Provisioning
 
 ```bash
-# Download the provisioning script
+# Download and run the provisioning script
 curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/hcloud-provision.sh -o hcloud-provision.sh
 chmod +x hcloud-provision.sh
-
-# Run it (will prompt for Hetzner API token)
 ./hcloud-provision.sh
 ```
 
 The script will:
-1. Authenticate with Hetzner Cloud API
-2. Upload your SSH key
-3. Create a CX11 server with Ubuntu 24.04
-4. Wait for server to boot
-5. Create your user account with sudo
+1. Generate a dedicated SSH key (`~/.ssh/id_devserver`) if needed
+2. Authenticate with Hetzner Cloud API (prompts for token)
+3. Upload your SSH key
+4. Create a CPX11 server with Ubuntu 24.04
+5. Create your user account with sudo access
 6. Run the full bootstrap script
 7. Print connection instructions
 
-#### Options
+### Connect and Start Coding
+
+```bash
+ssh myserver          # Uses the SSH config created by provisioning
+dev                   # Enter the Nix dev environment
+claude                # Start Claude Code
+```
+
+That's it. You're coding in the cloud.
+
+---
+
+## Hetzner Cloud Setup (Detailed)
+
+### Provisioning Options
 
 ```bash
 # Custom server name
 ./hcloud-provision.sh --name my-dev-server
 
-# Different location (US East)
+# Different datacenter (US East for North America)
 ./hcloud-provision.sh --location ash
 
-# Larger server type
-./hcloud-provision.sh --type cx21
+# Larger server for heavier workloads
+./hcloud-provision.sh --type cpx21
 
-# Different username
-./hcloud-provision.sh --user myname
+# Auto-confirm (no prompts)
+./hcloud-provision.sh --yes
 
-# List all servers
+# Skip bootstrap (just create server)
+./hcloud-provision.sh --no-bootstrap
+
+# List all your servers
 ./hcloud-provision.sh --list
 
 # Delete a server
-./hcloud-provision.sh --delete cx11-dev
+./hcloud-provision.sh --delete my-dev-server
 ```
 
-#### Available Locations
+### Available Locations
 
-| Code | Location | Region |
-|------|----------|--------|
-| `fsn1` | Falkenstein | Germany (EU) |
-| `nbg1` | Nuremberg | Germany (EU) |
-| `hel1` | Helsinki | Finland (EU) |
-| `ash` | Ashburn | Virginia (US East) |
-| `hil` | Hillsboro | Oregon (US West) |
+| Code | Location | Region | Best For |
+|------|----------|--------|----------|
+| `fsn1` | Falkenstein | Germany (EU) | Europe |
+| `nbg1` | Nuremberg | Germany (EU) | Europe |
+| `hel1` | Helsinki | Finland (EU) | Northern Europe |
+| `ash` | Ashburn | Virginia (US) | US East Coast |
+| `hil` | Hillsboro | Oregon (US) | US West Coast |
 
-#### Available Server Types
+### Server Types
 
-| Type | vCPU | RAM | SSD | Cost |
-|------|------|-----|-----|------|
-| `cx11` | 1 | 2 GB | 20 GB | ~€4.51/mo |
-| `cx21` | 2 | 4 GB | 40 GB | ~€5.83/mo |
-| `cx31` | 2 | 8 GB | 80 GB | ~€10.59/mo |
-| `cx41` | 4 | 16 GB | 160 GB | ~€18.59/mo |
+| Type | vCPU | RAM | SSD | Monthly Cost |
+|------|------|-----|-----|--------------|
+| `cpx11` | 2 | 2 GB | 40 GB | ~€4.51 |
+| `cpx21` | 3 | 4 GB | 80 GB | ~€8.21 |
+| `cpx31` | 4 | 8 GB | 160 GB | ~€15.09 |
+| `cax11` | 2 | 4 GB | 40 GB | ~€3.85 (ARM) |
+| `cax21` | 4 | 8 GB | 80 GB | ~€7.25 (ARM) |
 
-#### Environment Variables
+> **Recommendation**: Start with `cpx11`. It handles Claude Code and typical development workloads well. Scale up if you need more RAM for larger language models or complex builds.
+
+### Environment Variables
 
 ```bash
-# Set token to skip interactive prompt
+# Skip interactive API token prompt
 export HCLOUD_TOKEN="your-api-token"
 
 # Customize defaults
@@ -350,318 +137,215 @@ export SSH_USER="developer"
 ./hcloud-provision.sh
 ```
 
----
+### Manual Setup via Console
 
-### Method 2: Manual Setup via Console
-
-If you prefer manual control, follow these steps.
-
-#### Prerequisites
-
-- Hetzner Cloud account ([sign up](https://accounts.hetzner.com/signUp))
-- SSH key pair on your local machine
-- Credit card or PayPal for billing (~€4.51/month for CX11)
-
-### Step 1: Create SSH Key (if needed)
-
-On your **local machine**:
-
-```bash
-# Generate ED25519 key (recommended)
-ssh-keygen -t ed25519 -C "your-email@example.com"
-
-# Copy your public key to clipboard (macOS)
-cat ~/.ssh/id_ed25519.pub | pbcopy
-
-# Or display it to copy manually
-cat ~/.ssh/id_ed25519.pub
-```
-
-### Step 2: Add SSH Key to Hetzner
-
-1. Log into [Hetzner Cloud Console](https://console.hetzner.cloud/)
-2. Select your project (or create one)
-3. Go to **Security** → **SSH Keys**
-4. Click **Add SSH Key**
-5. Paste your public key
-6. Name it (e.g., "MacBook Pro")
-7. Click **Add SSH Key**
-
-### Step 3: Create the Server
-
-1. Go to **Servers** → **Add Server**
-
-2. **Location**: Choose nearest datacenter
-   - `Falkenstein` (Germany) - lowest latency for EU
-   - `Ashburn` (US East) - for North America
-   - `Hillsboro` (US West) - for US West Coast
-
-3. **Image**: Select **Ubuntu** → **24.04**
-
-4. **Type**: Select **Shared vCPU** → **CX11**
-
-   | Spec | Value |
-   |------|-------|
-   | vCPU | 1 (shared) |
-   | RAM | 2 GB |
-   | SSD | 20 GB |
-   | Traffic | 20 TB |
-   | Cost | ~€4.51/month |
-
-5. **Networking**:
-   - ✅ Public IPv4 (required)
-   - ✅ Public IPv6 (recommended)
-
-6. **SSH Keys**: Select the key you added in Step 2
-
-7. **Name**: `cx11-dev` (or your preference)
-
-8. Click **Create & Buy now**
-
-### Step 4: Connect to Your Server
-
-Wait ~30 seconds for the server to boot, then:
-
-```bash
-# Get the IP from Hetzner Console
-# Connect as root initially
-ssh root@YOUR_SERVER_IP
-
-# Verify you're connected
-uname -a
-```
-
-### Step 5: Create Your User Account
-
-```bash
-# Create user (replace 'fx' with your username)
-adduser fx
-
-# Add to sudo group
-usermod -aG sudo fx
-
-# Copy SSH key to new user
-mkdir -p /home/fx/.ssh
-cp ~/.ssh/authorized_keys /home/fx/.ssh/
-chown -R fx:fx /home/fx/.ssh
-chmod 700 /home/fx/.ssh
-chmod 600 /home/fx/.ssh/authorized_keys
-
-# Test sudo access
-su - fx
-sudo whoami  # Should output: root
-
-# Exit back to root
-exit
-```
-
-### Step 6: Run the Bootstrap Script
-
-```bash
-# Switch to your user
-su - fx
-
-# Run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
-```
-
-The script will:
-1. Update the system and install base packages
-2. Install GitHub CLI and authenticate via OAuth
-3. Configure Git identity
-4. Sparse clone the bootstrap-dev-server folder
-5. **Harden SSH** (disable root login, password auth)
-6. Configure UFW firewall and Fail2Ban
-7. Install Nix with flakes
-8. Create the dev environment with MCP servers
-9. Pre-build all packages
-
-> ⚠️ **Important**: After SSH hardening, you can only connect as your user (not root) using SSH keys.
-
-### Step 7: Reconnect and Verify
-
-```bash
-# Disconnect
-exit
-exit
-
-# Reconnect as your user (not root!)
-ssh fx@YOUR_SERVER_IP
-
-# Or use Mosh for persistent sessions
-mosh fx@YOUR_SERVER_IP
-
-# Enter the dev environment
-dev
-
-# Verify Claude Code
-claude --version
-
-# Check MCP servers
-claude mcp list
-```
-
-### Step 8: (Optional) Set Up DNS
-
-Point a domain to your server for easier access:
-
-1. In your DNS provider, add an A record:
-   ```
-   dev.yourdomain.com → YOUR_SERVER_IP
-   ```
-
-2. Update your SSH config (`~/.ssh/config` on your Mac):
-   ```
-   Host cx11
-       HostName dev.yourdomain.com
-       User fx
-       IdentityFile ~/.ssh/id_ed25519
-   ```
-
-3. Now connect with just:
-   ```bash
-   ssh cx11
-   # or
-   mosh cx11
-   ```
-
-### Hetzner-Specific Tips
-
-**Snapshots**: Create snapshots before major changes
-- Go to Server → Snapshots → Create Snapshot
-- Cost: €0.01/GB/month
-
-**Firewall**: Hetzner has its own firewall (in addition to UFW)
-- Go to Security → Firewalls
-- Create rules to allow only SSH (22/tcp) and Mosh (60000-60010/udp)
-
-**Backups**: Enable automatic backups
-- Go to Server → Backups → Enable
-- Cost: 20% of server price (~€0.90/month)
-
-**Monitoring**: Free basic monitoring included
-- Go to Server → Graphs
-- Shows CPU, disk, network usage
-
-**Rescue Mode**: If locked out
-- Go to Server → Rescue → Enable
-- Reboot and connect to rescue system
-- Mount disk and fix issues
+If you prefer manual control, see [Manual Hetzner Setup](#appendix-a-manual-hetzner-setup).
 
 ---
 
-## Post-Installation Usage
+## What Gets Installed
+
+The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev environment:
+
+### Security Hardening
+- **SSH hardened**: Key-only auth, no root login, strong ciphers
+- **UFW firewall**: SSH and Mosh only
+- **Fail2Ban**: 24-hour bans after 3 failed attempts
+- **Unattended upgrades**: Automatic security patches
+
+### Development Environment
+- **Claude Code** with auto-updates
+- **MCP Servers**: Context7, GitHub, Sequential Thinking
+- **Python 3.12** + uv, pip, ruff
+- **Node.js 22** LTS
+- **Podman** for rootless containers
+- **Modern CLI tools**: ripgrep, fd, bat, eza, fzf, lazygit, delta, httpie
+- **Shell enhancements**: starship prompt, zoxide, direnv, tmux
 
 ### Available Commands
 
 | Command | Description |
 |---------|-------------|
-| `dev` | Enter full dev environment (Claude + Python + Node + all tools) |
-| `dev minimal` | Minimal environment (just Claude + basics) |
-| `dev python` | Python-focused environment with ruff, uv |
-| `dev-update` | Update all Nix packages to latest |
-| `claude` | Start Claude Code (must be in a dev shell) |
+| `dev` | Enter full dev environment |
+| `dev minimal` | Minimal environment (Claude + basics) |
+| `dev python` | Python-focused environment |
+| `dev-update` | Update all Nix packages |
+| `claude` | Start Claude Code |
 
-### Environment Details
+---
 
-The default `dev` shell includes:
+## Accessing from iPad with Blink Shell
 
-**AI & Coding**
-- Claude Code (auto-updated via sadjow/claude-code-nix)
-- MCP Servers: Context7, GitHub, Sequential Thinking
+[Blink Shell](https://blink.sh/) is a professional SSH client for iOS/iPadOS with Mosh support.
 
-**Languages**
-- Python 3.12 + pip + virtualenv + uv + ruff
-- Node.js 22 LTS
+### Setup
 
-**CLI Tools**
-- `ripgrep` (rg) - Fast grep
-- `fd` - Fast find
-- `bat` - Cat with syntax highlighting
-- `eza` - Modern ls
-- `fzf` - Fuzzy finder
-- `jq` / `yq` - JSON/YAML processors
-- `httpie` - HTTP client
-- `websocat` - WebSocket client
+1. **Install Blink** from the App Store
 
-**System Monitoring**
-- `htop` - Interactive process viewer
-- `btop` - Resource monitor
-- `gotop` - Terminal-based graphical activity monitor
+2. **Copy your SSH private key to iPad**
 
-**Git & Dev**
-- `lazygit` - Terminal UI for git
-- `delta` - Beautiful git diffs
-- `gh` - GitHub CLI
-- `neovim` / `helix` - Modern editors
+   **Option A: AirDrop (Recommended)**
+   ```bash
+   # On your Mac, open the key in Finder for AirDrop
+   open -R ~/.ssh/id_devserver
+   # Right-click → Share → AirDrop → Select your iPad
+   # On iPad: Save to Files app
+   ```
 
-**Containers**
-- `podman` - Rootless containers
-- `podman-compose` - Docker Compose compatible
+   **Option B: Copy via clipboard (if same iCloud account)**
+   ```bash
+   # On Mac, copy the private key content
+   cat ~/.ssh/id_devserver | pbcopy
+   # On iPad in Blink: Settings → Keys → + → Create New
+   # Name: devserver
+   # Paste the key content in the "Private Key" field
+   ```
 
-**Shell**
-- `tmux` - Terminal multiplexer
-- `starship` - Cross-shell prompt
-- `zoxide` - Smart cd
-- `direnv` - Per-directory environments
+   **Option C: iCloud Drive**
+   ```bash
+   # Copy to iCloud Drive (temporary - delete after import!)
+   cp ~/.ssh/id_devserver ~/Library/Mobile\ Documents/com~apple~CloudDocs/
+   # On iPad: Files app → iCloud Drive → select the key
+   # After importing to Blink, DELETE from iCloud Drive for security
+   ```
 
-### Updating Packages
+3. **Import key in Blink**:
+   - Settings → Keys → + (Add)
+   - If using AirDrop/iCloud: "Import from File" → select the key
+   - If using clipboard: "Create New" → paste content
+   - Name it: `devserver`
+
+4. **Create a host**:
+   - Settings → Hosts → + (Add Host)
+   - Alias: `dev` (or whatever you like)
+   - Hostname: Your server IP or domain
+   - User: `fx` (your username)
+   - Key: Select `devserver`
+   - Port: 22
+
+5. **Connect**:
+   ```
+   mosh dev
+   ```
+
+> **Security Note**: After copying your key to iPad, delete any temporary copies (iCloud Drive, Downloads). The key should only exist in Blink's secure storage and on your Mac.
+
+### Why Mosh?
+
+Mosh (Mobile Shell) is essential for mobile development:
+- **Survives disconnects**: WiFi drops, cellular handoffs, iPad sleep
+- **Instant echo**: Characters appear immediately, no lag feeling
+- **Roaming**: Change networks without reconnecting
 
 ```bash
-# Update all Nix packages
-dev-update
-
-# Or manually
-cd ~/.config/nix-dev-env
-nix flake update
+# From your Mac or iPad
+mosh myserver
 ```
+
+---
+
+## Cost-Free Local Alternatives
+
+If you want to test the setup locally before committing to a cloud server, or prefer local development:
+
+### Option 1: Docker/Podman Container
+
+The fastest way to try the environment locally:
+
+```bash
+# Using Docker
+docker run -it --name claude-dev ubuntu:24.04 bash
+
+# Or using Podman (rootless)
+podman run -it --name claude-dev ubuntu:24.04 bash
+
+# Inside the container, run the bootstrap
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+```
+
+**Pros**: Quick, disposable, no VM overhead
+**Cons**: No Mosh (container networking), ephemeral by default
+
+To persist your work:
+```bash
+# Create with volume mount
+docker run -it -v ~/projects:/home/fx/projects --name claude-dev ubuntu:24.04 bash
+```
+
+### Option 2: Parallels Desktop VM (macOS)
+
+For a more production-like local environment:
+
+1. **Download Ubuntu Server 24.04** from [ubuntu.com/download/server](https://ubuntu.com/download/server)
+
+2. **Create VM** in Parallels:
+   - 2 CPU, 2-4GB RAM, 20GB disk
+   - Network: Shared (for SSH access from Mac)
+
+3. **Install Ubuntu Server** (not Desktop—we want lean)
+
+4. **Copy SSH key and bootstrap**:
+   ```bash
+   # From Mac terminal
+   ssh-keygen -t ed25519 -f ~/.ssh/id_devserver  # if not exists
+   ssh-copy-id -i ~/.ssh/id_devserver fx@<VM_IP>
+
+   # SSH in and bootstrap
+   ssh fx@<VM_IP>
+   curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+   ```
+
+**Pros**: Full VM isolation, Mosh works, matches cloud setup exactly
+**Cons**: Uses local resources, not accessible from other devices
+
+See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detailed steps.
+
+---
+
+## Post-Installation
 
 ### MCP Server Configuration
 
-Claude Code MCP servers are automatically configured on first `dev` shell entry:
+Claude Code MCP servers are automatically configured:
 
-- **Context7**: Documentation lookup (no authentication required)
+- **Context7**: Documentation lookup (no auth required)
 - **GitHub**: Repository access (requires Personal Access Token)
-- **Sequential Thinking**: Enhanced reasoning (no authentication required)
+- **Sequential Thinking**: Enhanced reasoning (no auth required)
 
 **To configure GitHub MCP server:**
 
 1. Create a GitHub Personal Access Token:
    - Visit: https://github.com/settings/tokens
-   - Click "Generate new token (classic)"
    - Scopes: `repo`, `read:org`, `read:user`
 
 2. Add token to config:
    ```bash
-   # Edit the MCP config
    nano ~/.config/claude/config.json
-
-   # Find the "github" section and add to "env":
+   # Add to "github" section → "env":
    "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token_here"
    ```
 
-3. Verify MCP servers:
+3. Verify:
    ```bash
    dev
    claude mcp list
    ```
 
-### Adding Project-Specific Tools
+### Project-Specific Environments
 
-Create a `flake.nix` in your project directory:
+Create a `flake.nix` in any project for custom dependencies:
 
 ```nix
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  
+
   outputs = { nixpkgs, ... }:
     let
-      system = "x86_64-linux";  # or aarch64-linux for ARM
+      system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
     in {
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
-          # Add project-specific packages here
           postgresql
           redis
         ];
@@ -673,29 +357,51 @@ Create a `flake.nix` in your project directory:
 Then:
 ```bash
 cd your-project
-git add flake.nix
 nix develop
 ```
 
 ---
 
-## Configuration Options
+## SSH Key Security
 
-Set these environment variables before running the script:
+This project uses a **dedicated SSH key** (`~/.ssh/id_devserver`) for dev server access, separate from your GitHub or other service keys.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEV_USER` | Current user | Username for setup |
-| `SSH_PORT` | 22 | SSH port number |
-| `MOSH_PORT_START` | 60000 | Mosh UDP port range start |
-| `MOSH_PORT_END` | 60010 | Mosh UDP port range end |
-| `REGEN_HOST_KEYS` | false | Regenerate SSH host keys |
-| `FORCE_SSH_UPDATE` | false | Overwrite existing SSH config |
+### Why a Dedicated Key?
 
-Example:
+| Benefit | Description |
+|---------|-------------|
+| **Isolation** | Compromised key doesn't affect GitHub, GitLab, etc. |
+| **Auditability** | Easy to identify dev server access |
+| **Rotation** | Rotate without affecting other services |
+
+### Adding a Passphrase (Recommended)
+
+The provisioning script creates the key without a passphrase for automation. Add one after:
+
 ```bash
-curl -fsSL https://example.com/bootstrap.sh | \
-    SSH_PORT=2222 REGEN_HOST_KEYS=true bash
+# Use the helper script
+./scripts/secure-ssh-key.sh
+
+# Or manually
+ssh-keygen -p -f ~/.ssh/id_devserver
+
+# Add to ssh-agent with Keychain (macOS)
+ssh-add --apple-use-keychain ~/.ssh/id_devserver
+```
+
+### SSH Config Security
+
+The provisioning script creates secure SSH config entries:
+
+```
+Host myserver
+    HostName 1.2.3.4
+    User fx
+    IdentityFile ~/.ssh/id_devserver
+    IdentitiesOnly yes         # Only use specified key
+    AddKeysToAgent yes         # Auto-add to ssh-agent
+    UseKeychain yes            # Store passphrase in Keychain
+    ForwardAgent no            # Don't forward agent (security)
 ```
 
 ---
@@ -704,29 +410,23 @@ curl -fsSL https://example.com/bootstrap.sh | \
 
 ### SSH Configuration
 
-After running the script, SSH is configured with:
-
+After bootstrap, SSH is hardened:
 - **Key-only authentication** (passwords disabled)
 - **Root login disabled**
-- **Strong ciphers only**: chacha20-poly1305, aes256-gcm, aes256-ctr
-- **Strong key exchange**: curve25519-sha256, diffie-hellman-group18-sha512
-- **Max 3 auth attempts** before disconnect
+- **Strong ciphers**: chacha20-poly1305, aes256-gcm
+- **Max 3 auth attempts**
 - **30-second login grace period**
 
 ### Firewall Rules
 
-UFW is configured to:
-- **Deny all incoming** by default
-- **Allow outgoing** by default
-- **Allow SSH** (port 22 or custom)
-- **Allow Mosh** (UDP 60000-60010)
+UFW allows only:
+- SSH (port 22)
+- Mosh (UDP 60000-60010)
 
 ### Fail2Ban
 
+- **3 failed attempts** → 24-hour ban
 - Monitors `/var/log/auth.log`
-- **3 failed attempts** triggers ban
-- **24-hour ban** duration
-- Localhost excluded from bans
 
 ---
 
@@ -734,49 +434,49 @@ UFW is configured to:
 
 ### Can't SSH after running script
 
-The script disables password authentication. Ensure you've copied your SSH key **before** running:
-
+SSH key must be copied **before** bootstrap (it disables password auth):
 ```bash
-ssh-copy-id user@server-ip
+ssh-copy-id -i ~/.ssh/id_devserver user@server-ip
 ```
 
-If locked out, use Parallels console (VM window) or Hetzner rescue mode.
-
-### Nix command not found after install
-
-Source the Nix profile:
-```bash
-. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-```
-
-Or reconnect your SSH session.
+If locked out: Use Hetzner rescue mode or VM console.
 
 ### Claude Code authentication
 
 First run requires OAuth:
 ```bash
-dev        # Enter dev environment
-claude     # Opens browser for auth
+dev
+claude  # Provides URL for headless auth
 ```
 
-If headless, Claude will provide a URL to open on another device.
+### Nix command not found
+
+Source the profile or reconnect:
+```bash
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+```
 
 ### Slow first `nix develop`
 
-First run downloads and builds all packages. Subsequent runs are instant due to Nix's caching. To pre-warm:
-
+First run downloads packages. Subsequent runs are instant. Pre-warm with:
 ```bash
 cd ~/.config/nix-dev-env
 nix build .#devShells.x86_64-linux.default --no-link
 ```
 
-### Mosh connection refused
+---
 
-Ensure UFW allows Mosh ports:
-```bash
-sudo ufw status
-sudo ufw allow 60000:60010/udp
-```
+## Configuration Options
+
+Environment variables for the bootstrap script:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEV_USER` | Current user | Username for setup |
+| `SSH_PORT` | 22 | SSH port |
+| `MOSH_PORT_START` | 60000 | Mosh UDP range start |
+| `MOSH_PORT_END` | 60010 | Mosh UDP range end |
+| `REGEN_HOST_KEYS` | false | Regenerate SSH host keys |
 
 ---
 
@@ -788,31 +488,158 @@ After installation:
 ~
 ├── .config/
 │   ├── claude/
-│   │   └── config.json    # MCP server configuration
+│   │   └── config.json        # MCP server configuration
 │   └── nix-dev-env/
-│       ├── flake.nix      # Main dev environment definition
-│       └── flake.lock     # Locked package versions
-├── .local/
-│   └── share/
-│       └── nix-install/   # Sparse clone of repository
-│           └── bootstrap-dev-server/
-│               ├── bootstrap-dev-server.sh  # Main bootstrap (runs on server)
-│               ├── hcloud-provision.sh      # Hetzner provisioning (runs locally)
-│               ├── flake.nix
-│               └── README.md
-├── .bashrc                # Shell integration added
-├── CLAUDE.md              # Claude Code instructions template
-└── projects/              # Suggested project directory
+│       ├── flake.nix          # Dev environment definition
+│       └── flake.lock         # Locked package versions
+├── .local/share/nix-install/  # Sparse clone of this repo
+├── .bashrc                    # Shell integration
+├── CLAUDE.md                  # Claude Code instructions
+└── projects/                  # Your projects
 ```
 
 ---
 
-## Contributing
+## Appendix A: Manual Hetzner Setup
 
-1. Fork the repository
-2. Create a feature branch
-3. Test on a fresh Ubuntu 24.04 VM
-4. Submit a pull request
+If you prefer manual control over automated provisioning:
+
+### Step 1: Create SSH Key
+
+```bash
+ssh-keygen -t ed25519 -C "devserver-$(date +%Y%m%d)" -f ~/.ssh/id_devserver
+cat ~/.ssh/id_devserver.pub | pbcopy  # Copy to clipboard
+```
+
+### Step 2: Add Key to Hetzner
+
+1. Log into [Hetzner Cloud Console](https://console.hetzner.cloud/)
+2. Go to **Security** → **SSH Keys** → **Add SSH Key**
+3. Paste your public key
+
+### Step 3: Create Server
+
+1. **Servers** → **Add Server**
+2. **Location**: Choose nearest (fsn1 for EU, ash for US East)
+3. **Image**: Ubuntu 24.04
+4. **Type**: CPX11 (or larger)
+5. **SSH Key**: Select yours
+6. **Name**: `cx11-dev`
+7. **Create & Buy now**
+
+### Step 4: Connect and Bootstrap
+
+```bash
+# Connect as root initially
+ssh -i ~/.ssh/id_devserver root@YOUR_SERVER_IP
+
+# Create your user
+adduser fx
+usermod -aG sudo fx
+mkdir -p /home/fx/.ssh
+cp ~/.ssh/authorized_keys /home/fx/.ssh/
+chown -R fx:fx /home/fx/.ssh
+chmod 700 /home/fx/.ssh
+chmod 600 /home/fx/.ssh/authorized_keys
+
+# Switch to user and bootstrap
+su - fx
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+```
+
+### Step 5: Reconnect
+
+```bash
+# Disconnect and reconnect as your user (not root!)
+ssh -i ~/.ssh/id_devserver fx@YOUR_SERVER_IP
+
+# Or add to SSH config for convenience
+cat >> ~/.ssh/config << EOF
+
+Host cx11
+    HostName YOUR_SERVER_IP
+    User fx
+    IdentityFile ~/.ssh/id_devserver
+    IdentitiesOnly yes
+    ForwardAgent no
+EOF
+
+ssh cx11
+```
+
+### Hetzner Tips
+
+- **Snapshots**: Create before major changes (€0.01/GB/month)
+- **Backups**: Enable automatic backups (20% of server price)
+- **Firewall**: Hetzner has its own firewall (Security → Firewalls)
+- **Rescue Mode**: If locked out, enable rescue mode to fix issues
+
+---
+
+## Appendix B: Parallels VM Setup
+
+Detailed instructions for setting up a local VM with Parallels Desktop on macOS.
+
+### Prerequisites
+
+- macOS 11+ (Big Sur or later)
+- Parallels Desktop 18+
+- 20GB+ free disk space
+
+### Step 1: Download Ubuntu Server
+
+1. Go to [ubuntu.com/download/server](https://ubuntu.com/download/server)
+2. Download **Ubuntu Server 24.04 LTS** (~2.5GB)
+
+### Step 2: Create VM
+
+1. **File → New** in Parallels
+2. **Install from image** → Select the ISO
+3. Name: `dev-server`
+4. **Customize before installation**:
+   - CPU: 2 cores
+   - Memory: 2048-4096 MB
+   - Disk: 20 GB
+   - Network: Shared
+
+### Step 3: Install Ubuntu
+
+1. Language, keyboard, network (DHCP)
+2. **Use entire disk** (no LVM for simplicity)
+3. Username: `fx`, strong password
+4. **Install OpenSSH server** ✓
+5. Skip snaps
+6. Reboot
+
+### Step 4: Get VM IP
+
+```bash
+# In VM console
+ip addr show | grep "inet " | grep -v 127.0.0.1
+# Note the 10.211.55.X address
+```
+
+### Step 5: Copy Key and Bootstrap
+
+```bash
+# From Mac terminal
+ssh-keygen -t ed25519 -f ~/.ssh/id_devserver  # if not exists
+ssh-copy-id -i ~/.ssh/id_devserver fx@10.211.55.X
+
+# SSH in
+ssh -i ~/.ssh/id_devserver fx@10.211.55.X
+
+# Bootstrap
+curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+```
+
+### Step 6: Verify
+
+```bash
+ssh fx@10.211.55.X
+dev
+claude --version
+```
 
 ---
 
@@ -826,7 +653,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
-- [nix-community/mcp-servers-nix](https://github.com/nix-community/mcp-servers-nix) for MCP server packaging
 - [Anthropic](https://anthropic.com) for Claude Code
-- [GitHub CLI](https://cli.github.com/) for seamless GitHub integration
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
+- [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client

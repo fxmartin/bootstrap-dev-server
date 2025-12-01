@@ -12,7 +12,7 @@
 # Prerequisites:
 #   - hcloud CLI installed (brew install hcloud)
 #   - Hetzner API token (from https://console.hetzner.cloud/)
-#   - SSH key at ~/.ssh/id_ed25519 (or specify with --ssh-key)
+#   - SSH key at ~/.ssh/id_devserver (or specify with --ssh-key)
 #
 # What this script does:
 #   1. Authenticates with Hetzner Cloud API
@@ -48,7 +48,7 @@ SERVER_TYPE="${SERVER_TYPE:-cpx11}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
-SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_devserver}"
 SSH_USER="${SSH_USER:-fx}"
 BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh"
 
@@ -67,7 +67,7 @@ OPTIONS:
     --type TYPE         Server type (default: cpx11)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
-    --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_ed25519)
+    --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
     --yes, -y           Auto-confirm bootstrap (no prompt)
     --no-bootstrap      Skip bootstrap, only create server
     --delete NAME       Delete server with given name
@@ -124,6 +124,56 @@ ENVIRONMENT VARIABLES:
     SERVER_LOCATION     Default location
     SSH_USER            Default username
 EOF
+}
+
+#===============================================================================
+# Generate Dedicated SSH Key
+#===============================================================================
+generate_dedicated_key() {
+    local key_path="$1"
+    local key_comment="${2:-devserver-$(date +%Y%m%d)}"
+
+    if [[ -f "$key_path" ]]; then
+        log_info "SSH key already exists: $key_path"
+        return 0
+    fi
+
+    log_info "Generating dedicated ED25519 SSH key for dev server access..."
+    echo ""
+    log_warn "SECURITY NOTE: This key is for dev server access ONLY."
+    log_warn "Do NOT use this key for GitHub, GitLab, or other services."
+    echo ""
+
+    # Ensure .ssh directory exists with proper permissions
+    mkdir -p "$(dirname "$key_path")"
+    chmod 700 "$(dirname "$key_path")"
+
+    # Generate ED25519 key without passphrase (for automation)
+    # User should add passphrase after provisioning with: ssh-keygen -p -f ~/.ssh/id_devserver
+    if ! ssh-keygen -t ed25519 -C "$key_comment" -f "$key_path" -N ""; then
+        log_error "Failed to generate SSH key"
+        return 1
+    fi
+
+    # Set proper permissions
+    chmod 600 "$key_path"
+    chmod 644 "${key_path}.pub"
+
+    echo ""
+    log_ok "SSH key generated: $key_path"
+    echo ""
+    log_warn "╔════════════════════════════════════════════════════════════════════╗"
+    log_warn "║  IMPORTANT: Key created WITHOUT passphrase for automation.         ║"
+    log_warn "║                                                                     ║"
+    log_warn "║  After provisioning, ADD a passphrase for security:                ║"
+    log_warn "║    ssh-keygen -p -f $key_path"
+    log_warn "║                                                                     ║"
+    log_warn "║  Then add to ssh-agent with Keychain:                              ║"
+    log_warn "║    ssh-add --apple-use-keychain $key_path"
+    log_warn "╚════════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    return 0
 }
 
 #===============================================================================
@@ -202,13 +252,20 @@ check_prerequisites() {
     fi
     log_ok "hcloud CLI found: $(hcloud version)"
 
-    # Check SSH key
+    # Check SSH key - generate dedicated key if not exists
     if [[ ! -f "$SSH_KEY_PATH" ]]; then
-        log_error "SSH private key not found: $SSH_KEY_PATH"
+        log_info "SSH key not found: $SSH_KEY_PATH"
         echo ""
-        echo "Generate one with:"
-        echo "  ssh-keygen -t ed25519 -C \"your-email@example.com\""
-        exit 1
+        read -r -p "Generate a new dedicated dev server SSH key? (Y/n): " response
+        if [[ "$response" =~ ^[Nn]$ ]]; then
+            log_error "SSH key required. Generate manually or specify with --ssh-key"
+            exit 1
+        fi
+
+        if ! generate_dedicated_key "$SSH_KEY_PATH"; then
+            log_error "Failed to generate SSH key"
+            exit 1
+        fi
     fi
 
     if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
@@ -484,10 +541,22 @@ update_ssh_config() {
     log_step "Updating SSH config..."
 
     local ssh_config="$HOME/.ssh/config"
-    local entry="Host $SERVER_NAME
+    # Security-hardened SSH config entry:
+    # - IdentitiesOnly: Only use the specified key, don't try others
+    # - AddKeysToAgent: Auto-add key to ssh-agent on first use
+    # - UseKeychain: Store passphrase in macOS Keychain (ignored on Linux)
+    # - ForwardAgent: Disabled for security (don't forward agent to server)
+    # - StrictHostKeyChecking: accept-new accepts new hosts, warns on changes
+    local entry="# Dev Server: $SERVER_NAME (provisioned $(date +%Y-%m-%d))
+Host $SERVER_NAME
     HostName $SERVER_IP
     User $SSH_USER
-    IdentityFile $SSH_KEY_PATH"
+    IdentityFile $SSH_KEY_PATH
+    IdentitiesOnly yes
+    AddKeysToAgent yes
+    UseKeychain yes
+    ForwardAgent no
+    StrictHostKeyChecking accept-new"
 
     # Create .ssh directory if it doesn't exist
     mkdir -p "$HOME/.ssh"
