@@ -141,22 +141,40 @@ configure_git_identity() {
         return 0
     fi
 
-    echo ""
-    log_info "Git identity not configured. Please provide your details:"
-    echo ""
+    # Check for environment variables first (allows non-interactive setup)
+    local git_name="${GIT_USER_NAME:-}"
+    local git_email="${GIT_USER_EMAIL:-}"
 
-    # Prompt for name
-    read -r -p "  Full Name: " git_name
-    if [[ -z "$git_name" ]]; then
-        log_error "Name cannot be empty"
-        return 1
-    fi
+    if [[ -n "$git_name" ]] && [[ -n "$git_email" ]]; then
+        log_info "Using Git identity from environment variables"
+    else
+        echo ""
+        log_info "Git identity not configured. Please provide your details:"
+        log_info "(Or set GIT_USER_NAME and GIT_USER_EMAIL environment variables)"
+        echo ""
 
-    # Prompt for email
-    read -r -p "  Email: " git_email
-    if [[ -z "$git_email" ]]; then
-        log_error "Email cannot be empty"
-        return 1
+        # Read from /dev/tty to work even when script is piped
+        # Prompt for name
+        printf "  Full Name: "
+        read -r git_name < /dev/tty || {
+            log_error "Cannot read input. Set GIT_USER_NAME and GIT_USER_EMAIL env vars instead."
+            return 1
+        }
+        if [[ -z "$git_name" ]]; then
+            log_error "Name cannot be empty"
+            return 1
+        fi
+
+        # Prompt for email
+        printf "  Email: "
+        read -r git_email < /dev/tty || {
+            log_error "Cannot read input. Set GIT_USER_NAME and GIT_USER_EMAIL env vars instead."
+            return 1
+        }
+        if [[ -z "$git_email" ]]; then
+            log_error "Email cannot be empty"
+            return 1
+        fi
     fi
 
     # Configure git
@@ -186,22 +204,20 @@ authenticate_github_cli() {
 
     echo ""
     log_info "GitHub CLI authentication required"
-    log_info "This will open a browser for OAuth authentication"
-    echo ""
-    log_warn "If running headless, you'll get a URL to open on another device"
+    log_info "You'll get a one-time code to enter at: https://github.com/login/device"
     echo ""
 
-    # Authenticate with web flow
+    # Authenticate with device code flow (works on headless servers)
     # --hostname github.com: Target GitHub (not enterprise)
     # --git-protocol https: Use HTTPS for git (simpler for servers)
-    # --web: Browser-based OAuth flow
-    if ! gh auth login --hostname github.com --git-protocol https --web; then
+    # No --web flag: Uses device code flow (headless-friendly)
+    if ! gh auth login --hostname github.com --git-protocol https; then
         log_error "GitHub CLI authentication failed"
         log_error ""
         log_error "Troubleshooting:"
         log_error "  1. Check internet connection"
         log_error "  2. Try manual auth: gh auth login"
-        log_error "  3. For headless: gh auth login --with-token"
+        log_error "  3. Or use token: gh auth login --with-token < token.txt"
         return 1
     fi
 

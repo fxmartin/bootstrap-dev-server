@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ABOUTME: Hetzner Cloud provisioning script for CX11 dev server
+# ABOUTME: Hetzner Cloud provisioning script for CPX11 dev server
 # ABOUTME: Creates VM, configures SSH, and runs bootstrap automatically
 #===============================================================================
-# Hetzner Cloud CX11 Provisioner
+# Hetzner Cloud CPX11 Provisioner
 #
 # Usage:
 #   ./hcloud-provision.sh                    # Interactive mode
@@ -43,8 +43,8 @@ log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
 #===============================================================================
 # Configuration
 #===============================================================================
-SERVER_NAME="${SERVER_NAME:-cx11-dev}"
-SERVER_TYPE="${SERVER_TYPE:-cx11}"
+SERVER_NAME="${SERVER_NAME:-cpx11-dev}"
+SERVER_TYPE="${SERVER_TYPE:-cpx11}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
@@ -57,17 +57,19 @@ BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/boots
 #===============================================================================
 show_help() {
     cat << 'EOF'
-Hetzner Cloud CX11 Provisioner
+Hetzner Cloud Provisioner
 
 USAGE:
     ./hcloud-provision.sh [OPTIONS]
 
 OPTIONS:
-    --name NAME         Server name (default: cx11-dev)
-    --type TYPE         Server type (default: cx11)
+    --name NAME         Server name (default: cpx11-dev)
+    --type TYPE         Server type (default: cpx11)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_ed25519)
+    --yes, -y           Auto-confirm bootstrap (no prompt)
+    --no-bootstrap      Skip bootstrap, only create server
     --delete NAME       Delete server with given name
     --list              List all servers
     --help              Show this help
@@ -79,24 +81,38 @@ LOCATIONS:
     ash     Ashburn, Virginia (US East)
     hil     Hillsboro, Oregon (US West)
 
-SERVER TYPES:
-    cx11    1 vCPU,  2GB RAM,  20GB SSD (~€4.51/mo)
-    cx21    2 vCPU,  4GB RAM,  40GB SSD (~€5.83/mo)
-    cx31    2 vCPU,  8GB RAM,  80GB SSD (~€10.59/mo)
-    cx41    4 vCPU, 16GB RAM, 160GB SSD (~€18.59/mo)
+SERVER TYPES (x86 shared):
+    cpx11   2 vCPU,  2GB RAM,  40GB SSD
+    cpx21   3 vCPU,  4GB RAM,  80GB SSD
+    cpx31   4 vCPU,  8GB RAM, 160GB SSD
+    cx22    2 vCPU,  4GB RAM,  40GB SSD
+    cx32    4 vCPU,  8GB RAM,  80GB SSD
+
+SERVER TYPES (ARM - cheaper):
+    cax11   2 vCPU,  4GB RAM,  40GB SSD
+    cax21   4 vCPU,  8GB RAM,  80GB SSD
 
 EXAMPLES:
-    # Create default CX11 server
+    # Create server and run bootstrap (with confirmation prompt)
     ./hcloud-provision.sh
 
+    # Create server and run bootstrap automatically (no prompts)
+    ./hcloud-provision.sh --yes
+
+    # Create server only, skip bootstrap
+    ./hcloud-provision.sh --no-bootstrap
+
     # Create with custom name in US
-    ./hcloud-provision.sh --name my-dev --location ash
+    ./hcloud-provision.sh --name my-dev --location ash --yes
 
     # Create larger server
-    ./hcloud-provision.sh --name powerful --type cx31
+    ./hcloud-provision.sh --name powerful --type cpx31
+
+    # Create ARM server (cheaper)
+    ./hcloud-provision.sh --name arm-dev --type cax11
 
     # Delete a server
-    ./hcloud-provision.sh --delete cx11-dev
+    ./hcloud-provision.sh --delete cpx11-dev
 
     # List all servers
     ./hcloud-provision.sh --list
@@ -115,6 +131,8 @@ EOF
 #===============================================================================
 DELETE_SERVER=""
 LIST_SERVERS=false
+AUTO_BOOTSTRAP=false
+SKIP_BOOTSTRAP=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -144,6 +162,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list)
             LIST_SERVERS=true
+            shift
+            ;;
+        --yes|-y)
+            AUTO_BOOTSTRAP=true
+            shift
+            ;;
+        --no-bootstrap)
+            SKIP_BOOTSTRAP=true
             shift
             ;;
         --help|-h)
@@ -264,7 +290,8 @@ upload_ssh_key() {
     existing_keys=$(hcloud ssh-key list -o json)
 
     local key_fingerprint
-    key_fingerprint=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" | awk '{print $2}')
+    # Hetzner uses MD5 fingerprint format, strip the "MD5:" prefix
+    key_fingerprint=$(ssh-keygen -E md5 -lf "${SSH_KEY_PATH}.pub" | awk '{print $2}' | sed 's/^MD5://')
 
     if echo "$existing_keys" | jq -e ".[] | select(.fingerprint == \"$key_fingerprint\")" &>/dev/null; then
         SSH_KEY_NAME=$(echo "$existing_keys" | jq -r ".[] | select(.fingerprint == \"$key_fingerprint\") | .name")
@@ -410,6 +437,14 @@ REMOTE_SCRIPT
 # Run Bootstrap Script
 #===============================================================================
 run_bootstrap() {
+    # Skip bootstrap if requested
+    if [[ "$SKIP_BOOTSTRAP" == true ]]; then
+        log_info "Skipping bootstrap (--no-bootstrap). Run manually with:"
+        echo "  ssh $SERVER_NAME"
+        echo "  curl -fsSL $BOOTSTRAP_URL | bash"
+        return 0
+    fi
+
     log_step "Running bootstrap script on server..."
 
     echo ""
@@ -421,12 +456,15 @@ run_bootstrap() {
     echo "  5. Create dev environment with Claude Code"
     echo ""
 
-    read -r -p "Continue with bootstrap? (Y/n): " response
-    if [[ "$response" =~ ^[Nn]$ ]]; then
-        log_info "Skipping bootstrap. Run manually with:"
-        echo "  ssh $SSH_USER@$SERVER_IP"
-        echo "  curl -fsSL $BOOTSTRAP_URL | bash"
-        return 0
+    # Auto-confirm if --yes flag was passed
+    if [[ "$AUTO_BOOTSTRAP" != true ]]; then
+        read -r -p "Continue with bootstrap? (Y/n): " response
+        if [[ "$response" =~ ^[Nn]$ ]]; then
+            log_info "Skipping bootstrap. Run manually with:"
+            echo "  ssh $SERVER_NAME"
+            echo "  curl -fsSL $BOOTSTRAP_URL | bash"
+            return 0
+        fi
     fi
 
     # Run bootstrap as the user (not root)
@@ -440,12 +478,51 @@ run_bootstrap() {
 }
 
 #===============================================================================
+# Update SSH Config
+#===============================================================================
+update_ssh_config() {
+    log_step "Updating SSH config..."
+
+    local ssh_config="$HOME/.ssh/config"
+    local entry="Host $SERVER_NAME
+    HostName $SERVER_IP
+    User $SSH_USER
+    IdentityFile $SSH_KEY_PATH"
+
+    # Create .ssh directory if it doesn't exist
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
+
+    # Check if entry already exists
+    if [[ -f "$ssh_config" ]] && grep -q "^Host $SERVER_NAME\$" "$ssh_config"; then
+        log_info "SSH config entry for '$SERVER_NAME' already exists, updating..."
+        # Remove old entry (from "Host $SERVER_NAME" to next "Host " or end of file)
+        sed -i.bak "/^Host $SERVER_NAME\$/,/^Host /{/^Host $SERVER_NAME\$/d;/^Host /!d;}" "$ssh_config"
+        # If the sed left the file empty or just whitespace, remove it
+        if [[ ! -s "$ssh_config" ]] || ! grep -q '[^[:space:]]' "$ssh_config"; then
+            rm -f "$ssh_config"
+        fi
+    fi
+
+    # Append new entry
+    if [[ -f "$ssh_config" ]]; then
+        # Add newline before entry if file doesn't end with one
+        [[ -s "$ssh_config" && $(tail -c1 "$ssh_config" | wc -l) -eq 0 ]] && echo "" >> "$ssh_config"
+        echo "" >> "$ssh_config"
+    fi
+    echo "$entry" >> "$ssh_config"
+    chmod 600 "$ssh_config"
+
+    log_ok "SSH config updated: ssh $SERVER_NAME"
+}
+
+#===============================================================================
 # Print Summary
 #===============================================================================
 print_summary() {
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  ✅ Hetzner CX11 Server Provisioned Successfully!${NC}"
+    echo -e "${GREEN}  ✅ Hetzner Cloud Server Provisioned Successfully!${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${BLUE}Server Details:${NC}"
@@ -455,23 +532,17 @@ print_summary() {
     echo -e "    Location: ${YELLOW}$SERVER_LOCATION${NC}"
     echo ""
     echo -e "  ${BLUE}Connect:${NC}"
-    echo -e "    SSH:  ${YELLOW}ssh $SSH_USER@$SERVER_IP${NC}"
-    echo -e "    Mosh: ${YELLOW}mosh $SSH_USER@$SERVER_IP${NC}"
+    echo -e "    SSH:  ${YELLOW}ssh $SERVER_NAME${NC}  (or ssh $SSH_USER@$SERVER_IP)"
+    echo -e "    Mosh: ${YELLOW}mosh $SERVER_NAME${NC}"
     echo ""
     echo -e "  ${BLUE}Quick Start:${NC}"
-    echo -e "    ${YELLOW}ssh $SSH_USER@$SERVER_IP${NC}"
+    echo -e "    ${YELLOW}ssh $SERVER_NAME${NC}"
     echo -e "    ${YELLOW}dev${NC}       # Enter dev environment"
     echo -e "    ${YELLOW}claude${NC}    # Start Claude Code"
     echo ""
-    echo -e "  ${BLUE}SSH Config (add to ~/.ssh/config):${NC}"
-    cat << EOF
-    Host $SERVER_NAME
-        HostName $SERVER_IP
-        User $SSH_USER
-        IdentityFile $SSH_KEY_PATH
-EOF
+    echo -e "  ${BLUE}SSH Config:${NC} ~/.ssh/config updated automatically"
     echo ""
-    echo -e "  ${BLUE}Monthly Cost:${NC} ~€4.51 (CX11)"
+    echo -e "  ${BLUE}Monthly Cost:${NC} Check https://www.hetzner.com/cloud for current pricing"
     echo ""
     echo -e "  ${BLUE}Management:${NC}"
     echo -e "    Delete:   ${YELLOW}hcloud server delete $SERVER_NAME${NC}"
@@ -504,6 +575,18 @@ delete_server() {
 
     hcloud server delete "$name"
     log_ok "Server '$name' deleted"
+
+    # Remove SSH config entry
+    local ssh_config="$HOME/.ssh/config"
+    if [[ -f "$ssh_config" ]] && grep -q "^Host $name\$" "$ssh_config"; then
+        log_info "Removing SSH config entry for '$name'..."
+        # Create backup and remove the entry block
+        sed -i.bak "/^Host $name\$/,/^Host /{/^Host $name\$/d;/^Host /!d;}" "$ssh_config"
+        # Clean up empty lines at end of file
+        sed -i.bak -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$ssh_config" 2>/dev/null || true
+        rm -f "${ssh_config}.bak"
+        log_ok "SSH config entry removed"
+    fi
 }
 
 #===============================================================================
@@ -521,7 +604,7 @@ list_servers() {
 main() {
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║       Hetzner Cloud CX11 Provisioner                              ║${NC}"
+    echo -e "${BLUE}║       Hetzner Cloud Provisioner                                   ║${NC}"
     echo -e "${BLUE}║       Automated Ubuntu 24.04 + Nix + Claude Code Setup            ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -548,6 +631,7 @@ main() {
     create_server
     wait_for_server
     setup_user_account
+    update_ssh_config
     run_bootstrap
     print_summary
 }
