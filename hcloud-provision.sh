@@ -43,7 +43,7 @@ log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
 #===============================================================================
 # Configuration
 #===============================================================================
-SERVER_NAME="${SERVER_NAME:-cx23-dev}"
+SERVER_NAME="${SERVER_NAME:-dev-server}"
 SERVER_TYPE="${SERVER_TYPE:-cx23}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
@@ -63,7 +63,7 @@ USAGE:
     ./hcloud-provision.sh [OPTIONS]
 
 OPTIONS:
-    --name NAME         Server name (default: cx23-dev)
+    --name NAME         Server name (default: dev-server)
     --type TYPE         Server type (default: cx23)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
@@ -126,10 +126,10 @@ EXAMPLES:
     ./hcloud-provision.sh --name arm-dev --type cax11
 
     # Delete a server
-    ./hcloud-provision.sh --delete cx23-dev
+    ./hcloud-provision.sh --delete dev-server
 
     # Rescale a server to a new type (keeps data)
-    ./hcloud-provision.sh --rescale cx23-dev --type cx33
+    ./hcloud-provision.sh --rescale dev-server --type cx33
 
     # List all servers
     ./hcloud-provision.sh --list

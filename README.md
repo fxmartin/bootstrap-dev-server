@@ -101,7 +101,7 @@ That's it. You're coding in the cloud.
 ./hcloud-provision.sh --list
 
 # Rescale existing server to larger type (keeps data)
-./hcloud-provision.sh --rescale cx23-dev --type cx33
+./hcloud-provision.sh --rescale dev-server --type cx33
 
 # Delete a server
 ./hcloud-provision.sh --delete my-dev-server
@@ -550,7 +550,7 @@ cat ~/.ssh/id_devserver.pub | pbcopy  # Copy to clipboard
 3. **Image**: Ubuntu 24.04
 4. **Type**: CX23 (or larger)
 5. **SSH Key**: Select yours
-6. **Name**: `cx23-dev`
+6. **Name**: `dev-server`
 7. **Create & Buy now**
 
 ### Step 4: Connect and Bootstrap
@@ -582,7 +582,7 @@ ssh -i ~/.ssh/id_devserver fx@YOUR_SERVER_IP
 # Or add to SSH config for convenience
 cat >> ~/.ssh/config << EOF
 
-Host cx23-dev
+Host dev-server
     HostName YOUR_SERVER_IP
     User fx
     IdentityFile ~/.ssh/id_devserver
@@ -590,7 +590,7 @@ Host cx23-dev
     ForwardAgent no
 EOF
 
-ssh cx23-dev
+ssh dev-server
 ```
 
 ### Hetzner Tips
