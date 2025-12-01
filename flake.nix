@@ -136,6 +136,36 @@
               echo ""
             fi
 
+            # Set up Claude Code agents and commands
+            # Symlink from repo to ~/.claude for version control
+            CLAUDE_USER_DIR="$HOME/.claude"
+            REPO_CLAUDE_DIR="$HOME/.local/share/nix-install/bootstrap-dev-server/config/claude"
+
+            if [ -d "$REPO_CLAUDE_DIR" ]; then
+              mkdir -p "$CLAUDE_USER_DIR"
+
+              # Symlink agents directory
+              if [ -d "$REPO_CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_USER_DIR/agents" ]; then
+                [ -d "$CLAUDE_USER_DIR/agents" ] && mv "$CLAUDE_USER_DIR/agents" "$CLAUDE_USER_DIR/agents.backup"
+                ln -sfn "$REPO_CLAUDE_DIR/agents" "$CLAUDE_USER_DIR/agents"
+                echo "✓ Linked ~/.claude/agents → repo"
+              fi
+
+              # Symlink commands directory
+              if [ -d "$REPO_CLAUDE_DIR/commands" ] && [ ! -L "$CLAUDE_USER_DIR/commands" ]; then
+                [ -d "$CLAUDE_USER_DIR/commands" ] && mv "$CLAUDE_USER_DIR/commands" "$CLAUDE_USER_DIR/commands.backup"
+                ln -sfn "$REPO_CLAUDE_DIR/commands" "$CLAUDE_USER_DIR/commands"
+                echo "✓ Linked ~/.claude/commands → repo"
+              fi
+
+              # Symlink CLAUDE.md
+              if [ -f "$REPO_CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_USER_DIR/CLAUDE.md" ]; then
+                [ -f "$CLAUDE_USER_DIR/CLAUDE.md" ] && mv "$CLAUDE_USER_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md.backup"
+                ln -sf "$REPO_CLAUDE_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md"
+                echo "✓ Linked ~/.claude/CLAUDE.md → repo"
+              fi
+            fi
+
             # Create zsh config directory if needed
             mkdir -p "$HOME/.config/zsh"
 
