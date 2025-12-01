@@ -407,6 +407,31 @@ F2BEOF
 }
 
 #===============================================================================
+# Install Tailscale VPN
+#===============================================================================
+install_tailscale() {
+    log_info "Installing Tailscale..."
+
+    if command -v tailscale &>/dev/null; then
+        log_ok "Tailscale already installed: $(tailscale version | head -1)"
+        return 0
+    fi
+
+    # Install Tailscale
+    curl -fsSL https://tailscale.com/install.sh | sh
+
+    # Enable and start the service
+    sudo systemctl enable tailscaled
+    sudo systemctl start tailscaled
+
+    log_ok "Tailscale installed"
+    log_warn "╔════════════════════════════════════════════════════════════════════╗"
+    log_warn "║  Run 'sudo tailscale up' after bootstrap to authenticate.          ║"
+    log_warn "║  This will provide a URL to link this server to your account.      ║"
+    log_warn "╚════════════════════════════════════════════════════════════════════╝"
+}
+
+#===============================================================================
 # Install Nix (Determinate Systems Installer)
 #===============================================================================
 install_nix() {
@@ -659,6 +684,7 @@ main() {
     regenerate_host_keys
     configure_firewall
     configure_fail2ban
+    install_tailscale
 
     # Phase 4: Nix installation and configuration
     install_nix

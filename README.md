@@ -152,6 +152,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **UFW firewall**: SSH and Mosh only
 - **Fail2Ban**: 24-hour bans after 3 failed attempts
 - **Unattended upgrades**: Automatic security patches
+- **Tailscale**: VPN mesh network for secure access from anywhere
 
 ### Development Environment
 - **Claude Code** with auto-updates
