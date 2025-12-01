@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ABOUTME: Hetzner Cloud provisioning script for CPX11 dev server
+# ABOUTME: Hetzner Cloud provisioning script for CX23 dev server
 # ABOUTME: Creates VM, configures SSH, and runs bootstrap automatically
 #===============================================================================
-# Hetzner Cloud CPX11 Provisioner
+# Hetzner Cloud CX23 Provisioner
 #
 # Usage:
 #   ./hcloud-provision.sh                    # Interactive mode
@@ -17,7 +17,7 @@
 # What this script does:
 #   1. Authenticates with Hetzner Cloud API
 #   2. Uploads your SSH key (if not already present)
-#   3. Creates a CX11 server with Ubuntu 24.04
+#   3. Creates a CX23 server with Ubuntu 24.04
 #   4. Waits for server to be ready
 #   5. Creates your user account with sudo access
 #   6. Runs the bootstrap script on the server
@@ -43,8 +43,8 @@ log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
 #===============================================================================
 # Configuration
 #===============================================================================
-SERVER_NAME="${SERVER_NAME:-cpx11-dev}"
-SERVER_TYPE="${SERVER_TYPE:-cx22}"
+SERVER_NAME="${SERVER_NAME:-cx23-dev}"
+SERVER_TYPE="${SERVER_TYPE:-cx23}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
@@ -63,8 +63,8 @@ USAGE:
     ./hcloud-provision.sh [OPTIONS]
 
 OPTIONS:
-    --name NAME         Server name (default: cpx11-dev)
-    --type TYPE         Server type (default: cx22)
+    --name NAME         Server name (default: cx23-dev)
+    --type TYPE         Server type (default: cx23)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
@@ -81,21 +81,27 @@ LOCATIONS:
     hel1    Helsinki, Finland (EU)
     ash     Ashburn, Virginia (US East)
     hil     Hillsboro, Oregon (US West)
+    sin     Singapore (Asia)
 
-SERVER TYPES (x86 Intel - cost optimized):
-    cx22    2 vCPU,  4GB RAM,  40GB SSD  (~€4.35/mo) [DEFAULT]
-    cx32    4 vCPU,  8GB RAM,  80GB SSD  (~€8.39/mo)
-    cx42    8 vCPU, 16GB RAM, 160GB SSD  (~€16.39/mo)
+SERVER TYPES (x86 Intel Gen3 - cost optimized, RECOMMENDED):
+    cx23    2 vCPU,  4GB RAM,  40GB SSD  (~€3.50/mo) [DEFAULT]
+    cx33    4 vCPU,  8GB RAM,  80GB SSD  (~€6.90/mo)
+    cx43    8 vCPU, 16GB RAM, 160GB SSD  (~€13.50/mo)
+    cx53   16 vCPU, 32GB RAM, 320GB SSD  (~€26.90/mo)
 
-SERVER TYPES (x86 AMD - better performance):
-    cpx11   2 vCPU,  2GB RAM,  40GB SSD  (~€4.35/mo)
-    cpx21   3 vCPU,  4GB RAM,  80GB SSD  (~€8.39/mo)
-    cpx31   4 vCPU,  8GB RAM, 160GB SSD  (~€15.59/mo)
+SERVER TYPES (x86 AMD Gen2 - more disk space):
+    cpx22   2 vCPU,  4GB RAM,  80GB SSD  (~€7.00/mo)
+    cpx32   4 vCPU,  8GB RAM, 160GB SSD  (~€13.50/mo)
+    cpx42   8 vCPU, 16GB RAM, 320GB SSD  (~€26.90/mo)
 
-SERVER TYPES (ARM Ampere - best value):
+SERVER TYPES (ARM Ampere - best value, requires ARM-compatible software):
     cax11   2 vCPU,  4GB RAM,  40GB SSD  (~€3.85/mo)
     cax21   4 vCPU,  8GB RAM,  80GB SSD  (~€7.25/mo)
     cax31   8 vCPU, 16GB RAM, 160GB SSD  (~€13.95/mo)
+
+DEPRECATED (unavailable after 2025-12-31):
+    cx11, cx22, cx32, cx42, cx52  (Intel Gen1/Gen2)
+    cpx11, cpx21, cpx31, cpx41, cpx51  (AMD Gen1)
 
 EXAMPLES:
     # Create server and run bootstrap (with confirmation prompt)
@@ -110,17 +116,20 @@ EXAMPLES:
     # Create with custom name in US
     ./hcloud-provision.sh --name my-dev --location ash --yes
 
-    # Create larger server
-    ./hcloud-provision.sh --name powerful --type cpx31
+    # Create larger server (more RAM/disk)
+    ./hcloud-provision.sh --name powerful --type cx43
 
-    # Create ARM server (cheaper)
+    # Create AMD server (more disk space)
+    ./hcloud-provision.sh --name amd-dev --type cpx22
+
+    # Create ARM server (cheapest, but ARM-only software)
     ./hcloud-provision.sh --name arm-dev --type cax11
 
     # Delete a server
-    ./hcloud-provision.sh --delete cpx11-dev
+    ./hcloud-provision.sh --delete cx23-dev
 
-    # Rescale a server to a new type
-    ./hcloud-provision.sh --rescale cpx11-dev --type cx22
+    # Rescale a server to a new type (keeps data)
+    ./hcloud-provision.sh --rescale cx23-dev --type cx33
 
     # List all servers
     ./hcloud-provision.sh --list

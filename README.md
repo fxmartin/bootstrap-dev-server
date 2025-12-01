@@ -26,7 +26,7 @@ The server maintains the **single source of truth** for all my projects. No more
 | **Device Agnostic** | SSH from Mac, iPad, Linux, Windows—anything |
 | **Persistent Sessions** | Mosh + tmux = sessions that survive disconnects |
 | **Consistent Environment** | Same tools, same config, every time |
-| **Cost Effective** | ~€4.51/month for a CX11 (less than a coffee) |
+| **Cost Effective** | ~€3.50/month for a CX23 (less than a coffee) |
 
 ---
 
@@ -57,7 +57,7 @@ The script will:
 1. Generate a dedicated SSH key (`~/.ssh/id_devserver`) if needed
 2. Authenticate with Hetzner Cloud API (prompts for token)
 3. Upload your SSH key
-4. Create a CPX11 server with Ubuntu 24.04
+4. Create a CX23 server with Ubuntu 24.04
 5. Create your user account with sudo access
 6. Run the full bootstrap script
 7. Print connection instructions
@@ -86,7 +86,10 @@ That's it. You're coding in the cloud.
 ./hcloud-provision.sh --location ash
 
 # Larger server for heavier workloads
-./hcloud-provision.sh --type cpx21
+./hcloud-provision.sh --type cx43
+
+# AMD server with more disk space
+./hcloud-provision.sh --type cpx22
 
 # Auto-confirm (no prompts)
 ./hcloud-provision.sh --yes
@@ -96,6 +99,9 @@ That's it. You're coding in the cloud.
 
 # List all your servers
 ./hcloud-provision.sh --list
+
+# Rescale existing server to larger type (keeps data)
+./hcloud-provision.sh --rescale cx23-dev --type cx33
 
 # Delete a server
 ./hcloud-provision.sh --delete my-dev-server
@@ -110,31 +116,37 @@ That's it. You're coding in the cloud.
 | `hel1` | Helsinki | Finland (EU) | Northern Europe |
 | `ash` | Ashburn | Virginia (US) | US East Coast |
 | `hil` | Hillsboro | Oregon (US) | US West Coast |
+| `sin` | Singapore | Asia | Asia-Pacific |
 
 ### Server Types
 
-**x86 Intel (cost optimized):**
+**x86 Intel Gen3 (cost optimized, RECOMMENDED):**
 | Type | vCPU | RAM | SSD | Monthly Cost |
 |------|------|-----|-----|--------------|
-| `cx22` | 2 | 4 GB | 40 GB | ~€4.35 ⭐ DEFAULT |
-| `cx32` | 4 | 8 GB | 80 GB | ~€8.39 |
-| `cx42` | 8 | 16 GB | 160 GB | ~€16.39 |
+| `cx23` | 2 | 4 GB | 40 GB | ~€3.50 ⭐ DEFAULT |
+| `cx33` | 4 | 8 GB | 80 GB | ~€6.90 |
+| `cx43` | 8 | 16 GB | 160 GB | ~€13.50 |
+| `cx53` | 16 | 32 GB | 320 GB | ~€26.90 |
 
-**x86 AMD (better performance):**
+**x86 AMD Gen2 (more disk space):**
 | Type | vCPU | RAM | SSD | Monthly Cost |
 |------|------|-----|-----|--------------|
-| `cpx11` | 2 | 2 GB | 40 GB | ~€4.35 |
-| `cpx21` | 3 | 4 GB | 80 GB | ~€8.39 |
-| `cpx31` | 4 | 8 GB | 160 GB | ~€15.59 |
+| `cpx22` | 2 | 4 GB | 80 GB | ~€7.00 |
+| `cpx32` | 4 | 8 GB | 160 GB | ~€13.50 |
+| `cpx42` | 8 | 16 GB | 320 GB | ~€26.90 |
 
-**ARM Ampere (best value):**
+**ARM Ampere (best value, ARM-compatible software only):**
 | Type | vCPU | RAM | SSD | Monthly Cost |
 |------|------|-----|-----|--------------|
 | `cax11` | 2 | 4 GB | 40 GB | ~€3.85 |
 | `cax21` | 4 | 8 GB | 80 GB | ~€7.25 |
 | `cax31` | 8 | 16 GB | 160 GB | ~€13.95 |
 
-> **Recommendation**: Start with `cx22` (default). It replaced the deprecated CX11 with double the specs at the same price. Use ARM (`cax11`) for best value if your workloads are ARM-compatible.
+**⚠️ Deprecated (unavailable after 2025-12-31):**
+- Intel Gen1/Gen2: `cx11`, `cx22`, `cx32`, `cx42`, `cx52`
+- AMD Gen1: `cpx11`, `cpx21`, `cpx31`, `cpx41`, `cpx51`
+
+> **Recommendation**: Start with `cx23` (default). It's the newest Intel Gen3 type with the best price-to-performance ratio at €3.50/month. Use AMD (`cpx22`) if you need more disk space, or ARM (`cax11`) for best value if your software supports ARM.
 
 ### Environment Variables
 
@@ -536,9 +548,9 @@ cat ~/.ssh/id_devserver.pub | pbcopy  # Copy to clipboard
 1. **Servers** → **Add Server**
 2. **Location**: Choose nearest (fsn1 for EU, ash for US East)
 3. **Image**: Ubuntu 24.04
-4. **Type**: CPX11 (or larger)
+4. **Type**: CX23 (or larger)
 5. **SSH Key**: Select yours
-6. **Name**: `cx11-dev`
+6. **Name**: `cx23-dev`
 7. **Create & Buy now**
 
 ### Step 4: Connect and Bootstrap
@@ -570,7 +582,7 @@ ssh -i ~/.ssh/id_devserver fx@YOUR_SERVER_IP
 # Or add to SSH config for convenience
 cat >> ~/.ssh/config << EOF
 
-Host cx11
+Host cx23-dev
     HostName YOUR_SERVER_IP
     User fx
     IdentityFile ~/.ssh/id_devserver
@@ -578,7 +590,7 @@ Host cx11
     ForwardAgent no
 EOF
 
-ssh cx11
+ssh cx23-dev
 ```
 
 ### Hetzner Tips
