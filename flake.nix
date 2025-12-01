@@ -105,6 +105,9 @@
             pkgs.httpie
             pkgs.websocat
 
+            # Email (msmtp for sending via SMTP relay)
+            pkgs.msmtp
+
             # Development utilities
             pkgs.gh  # GitHub CLI
             pkgs.lazygit
@@ -293,9 +296,46 @@ eval "$(direnv hook zsh)"
 
 # Initialize fzf
 eval "$(fzf --zsh)"
+
+# msmtp sendmail alias
+alias sendmail='msmtp'
+alias mail='msmtp'
 # <<< nix-dev-env zsh config <<<
 ZSHEOF
               echo "✓ Created ~/.zshrc with dev environment config"
+            fi
+
+            # Create msmtp config template if not exists
+            MSMTP_CONFIG="$HOME/.msmtprc"
+            if [ ! -f "$MSMTP_CONFIG" ]; then
+              cat > "$MSMTP_CONFIG" << 'MSMTPEOF'
+# msmtp configuration for Gandi SMTP
+# Edit this file with your actual credentials
+
+# Default settings
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        ~/.msmtp.log
+
+# Gandi account
+account        gandi
+host           mail.gandi.net
+port           587
+from           YOUR_EMAIL@YOUR_DOMAIN.COM
+user           YOUR_EMAIL@YOUR_DOMAIN.COM
+password       YOUR_PASSWORD_OR_APP_PASSWORD
+
+# Set default account
+account default : gandi
+MSMTPEOF
+              chmod 600 "$MSMTP_CONFIG"
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "📧 CONFIGURE EMAIL: Edit ~/.msmtprc with your Gandi credentials"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo ""
             fi
 
             # Launch zsh only for interactive shells, not when running commands
