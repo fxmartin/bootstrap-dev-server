@@ -44,7 +44,7 @@ log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
 # Configuration
 #===============================================================================
 SERVER_NAME="${SERVER_NAME:-cpx11-dev}"
-SERVER_TYPE="${SERVER_TYPE:-cpx11}"
+SERVER_TYPE="${SERVER_TYPE:-cx22}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"  # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
@@ -64,7 +64,7 @@ USAGE:
 
 OPTIONS:
     --name NAME         Server name (default: cpx11-dev)
-    --type TYPE         Server type (default: cpx11)
+    --type TYPE         Server type (default: cx22)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
@@ -81,16 +81,20 @@ LOCATIONS:
     ash     Ashburn, Virginia (US East)
     hil     Hillsboro, Oregon (US West)
 
-SERVER TYPES (x86 shared):
-    cpx11   2 vCPU,  2GB RAM,  40GB SSD
-    cpx21   3 vCPU,  4GB RAM,  80GB SSD
-    cpx31   4 vCPU,  8GB RAM, 160GB SSD
-    cx22    2 vCPU,  4GB RAM,  40GB SSD
-    cx32    4 vCPU,  8GB RAM,  80GB SSD
+SERVER TYPES (x86 Intel - cost optimized):
+    cx22    2 vCPU,  4GB RAM,  40GB SSD  (~€4.35/mo) [DEFAULT]
+    cx32    4 vCPU,  8GB RAM,  80GB SSD  (~€8.39/mo)
+    cx42    8 vCPU, 16GB RAM, 160GB SSD  (~€16.39/mo)
 
-SERVER TYPES (ARM - cheaper):
-    cax11   2 vCPU,  4GB RAM,  40GB SSD
-    cax21   4 vCPU,  8GB RAM,  80GB SSD
+SERVER TYPES (x86 AMD - better performance):
+    cpx11   2 vCPU,  2GB RAM,  40GB SSD  (~€4.35/mo)
+    cpx21   3 vCPU,  4GB RAM,  80GB SSD  (~€8.39/mo)
+    cpx31   4 vCPU,  8GB RAM, 160GB SSD  (~€15.59/mo)
+
+SERVER TYPES (ARM Ampere - best value):
+    cax11   2 vCPU,  4GB RAM,  40GB SSD  (~€3.85/mo)
+    cax21   4 vCPU,  8GB RAM,  80GB SSD  (~€7.25/mo)
+    cax31   8 vCPU, 16GB RAM, 160GB SSD  (~€13.95/mo)
 
 EXAMPLES:
     # Create server and run bootstrap (with confirmation prompt)

@@ -113,15 +113,28 @@ That's it. You're coding in the cloud.
 
 ### Server Types
 
+**x86 Intel (cost optimized):**
 | Type | vCPU | RAM | SSD | Monthly Cost |
 |------|------|-----|-----|--------------|
-| `cpx11` | 2 | 2 GB | 40 GB | ~€4.51 |
-| `cpx21` | 3 | 4 GB | 80 GB | ~€8.21 |
-| `cpx31` | 4 | 8 GB | 160 GB | ~€15.09 |
-| `cax11` | 2 | 4 GB | 40 GB | ~€3.85 (ARM) |
-| `cax21` | 4 | 8 GB | 80 GB | ~€7.25 (ARM) |
+| `cx22` | 2 | 4 GB | 40 GB | ~€4.35 ⭐ DEFAULT |
+| `cx32` | 4 | 8 GB | 80 GB | ~€8.39 |
+| `cx42` | 8 | 16 GB | 160 GB | ~€16.39 |
 
-> **Recommendation**: Start with `cpx11`. It handles Claude Code and typical development workloads well. Scale up if you need more RAM for larger language models or complex builds.
+**x86 AMD (better performance):**
+| Type | vCPU | RAM | SSD | Monthly Cost |
+|------|------|-----|-----|--------------|
+| `cpx11` | 2 | 2 GB | 40 GB | ~€4.35 |
+| `cpx21` | 3 | 4 GB | 80 GB | ~€8.39 |
+| `cpx31` | 4 | 8 GB | 160 GB | ~€15.59 |
+
+**ARM Ampere (best value):**
+| Type | vCPU | RAM | SSD | Monthly Cost |
+|------|------|-----|-----|--------------|
+| `cax11` | 2 | 4 GB | 40 GB | ~€3.85 |
+| `cax21` | 4 | 8 GB | 80 GB | ~€7.25 |
+| `cax31` | 8 | 16 GB | 160 GB | ~€13.95 |
+
+> **Recommendation**: Start with `cx22` (default). It replaced the deprecated CX11 with double the specs at the same price. Use ARM (`cax11`) for best value if your workloads are ARM-compatible.
 
 ### Environment Variables
 
