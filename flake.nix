@@ -15,7 +15,7 @@
 
     # MCP servers for Claude Code (Context7, GitHub, Sequential Thinking)
     mcp-servers-nix = {
-      url = "github:nix-community/mcp-servers-nix";
+      url = "github:natsukium/mcp-servers-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
