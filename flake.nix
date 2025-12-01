@@ -78,11 +78,21 @@
             pkgs.starship
             pkgs.direnv
 
+            # Version Control
+            pkgs.git-lfs  # Git Large File Storage
+
             # Python
             pkgs.python312
             pkgs.python312Packages.pip
             pkgs.python312Packages.virtualenv
             pkgs.uv  # Fast Python package installer
+
+            # Python Development Tools
+            pkgs.ruff    # Fast Python linter and formatter
+            pkgs.black   # Python code formatter
+            pkgs.python312Packages.isort   # Import statement organizer
+            pkgs.python312Packages.mypy    # Static type checker
+            pkgs.python312Packages.pylint  # Comprehensive linter
 
             # Node.js
             pkgs.nodejs_22
@@ -228,7 +238,39 @@ alias ....='cd ../../..'
 alias dev='nix develop ~/.config/nix-dev-env'
 alias dm='nix develop ~/.config/nix-dev-env#minimal'
 alias dp='nix develop ~/.config/nix-dev-env#python'
-alias dev-update='cd ~/.config/nix-dev-env && nix flake update && cd -'
+
+# Update dev environment
+# - Pulls latest from nix-install repo
+# - Syncs flake.nix to ~/.config/nix-dev-env
+# - Updates flake.lock with latest packages
+# - Rebuilds the environment
+dev-update() {
+  echo "🔄 Updating dev environment..."
+  local REPO_DIR="$HOME/.local/share/nix-install"
+  local FLAKE_DIR="$HOME/.config/nix-dev-env"
+
+  # Pull latest from repo
+  if [[ -d "$REPO_DIR/.git" ]]; then
+    echo "📥 Pulling latest from nix-install repo..."
+    (cd "$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
+  fi
+
+  # Sync flake.nix from repo to config
+  local SOURCE_FLAKE="$REPO_DIR/bootstrap-dev-server/flake.nix"
+  if [[ -f "$SOURCE_FLAKE" ]]; then
+    echo "📋 Syncing flake.nix..."
+    cp "$SOURCE_FLAKE" "$FLAKE_DIR/flake.nix"
+    (cd "$FLAKE_DIR" && git add -A)
+  fi
+
+  # Update flake.lock
+  echo "⬆️  Updating Nix packages..."
+  (cd "$FLAKE_DIR" && nix flake update)
+
+  echo ""
+  echo "✅ Dev environment updated!"
+  echo "   Exit and run 'dev' to use new packages"
+}
 
 # Source zsh plugins from Nix store (if available)
 for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
@@ -308,8 +350,15 @@ ZSHEOF
             pkgs.python312Packages.pip
             pkgs.python312Packages.virtualenv
             pkgs.uv
+            # Python Development Tools
             pkgs.ruff
+            pkgs.black
+            pkgs.python312Packages.isort
+            pkgs.python312Packages.mypy
+            pkgs.python312Packages.pylint
+            # Core tools
             pkgs.git
+            pkgs.git-lfs
             pkgs.neovim
             pkgs.gotop
             pkgs.shellcheck

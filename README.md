@@ -178,6 +178,9 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Fail2Ban**: 24-hour bans after 3 failed attempts
 - **Unattended upgrades**: Automatic security patches
 - **Tailscale**: VPN mesh network for secure access from anywhere
+- **auditd**: System auditing with rules for identity, sudo, SSH, cron, and PAM changes
+- **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
+- **PAM hardening**: Empty passwords disallowed (nullok removed)
 
 ### Development Environment
 - **Claude Code** with auto-updates
