@@ -252,27 +252,29 @@ check_prerequisites() {
     fi
     log_ok "hcloud CLI found: $(hcloud version)"
 
-    # Check SSH key - generate dedicated key if not exists
-    if [[ ! -f "$SSH_KEY_PATH" ]]; then
-        log_info "SSH key not found: $SSH_KEY_PATH"
-        echo ""
-        read -r -p "Generate a new dedicated dev server SSH key? (Y/n): " response
-        if [[ "$response" =~ ^[Nn]$ ]]; then
-            log_error "SSH key required. Generate manually or specify with --ssh-key"
-            exit 1
+    # Check SSH key - only needed for provisioning (not delete/list)
+    if [[ -z "$DELETE_SERVER" && "$LIST_SERVERS" != true ]]; then
+        if [[ ! -f "$SSH_KEY_PATH" ]]; then
+            log_info "SSH key not found: $SSH_KEY_PATH"
+            echo ""
+            read -r -p "Generate a new dedicated dev server SSH key? (Y/n): " response
+            if [[ "$response" =~ ^[Nn]$ ]]; then
+                log_error "SSH key required. Generate manually or specify with --ssh-key"
+                exit 1
+            fi
+
+            if ! generate_dedicated_key "$SSH_KEY_PATH"; then
+                log_error "Failed to generate SSH key"
+                exit 1
+            fi
         fi
 
-        if ! generate_dedicated_key "$SSH_KEY_PATH"; then
-            log_error "Failed to generate SSH key"
+        if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
+            log_error "SSH public key not found: ${SSH_KEY_PATH}.pub"
             exit 1
         fi
+        log_ok "SSH key found: $SSH_KEY_PATH"
     fi
-
-    if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
-        log_error "SSH public key not found: ${SSH_KEY_PATH}.pub"
-        exit 1
-    fi
-    log_ok "SSH key found: $SSH_KEY_PATH"
 
     # Check jq for JSON parsing
     if ! command -v jq &>/dev/null; then
