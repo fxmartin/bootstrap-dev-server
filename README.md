@@ -181,6 +181,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **auditd**: System auditing with rules for identity, sudo, SSH, cron, and PAM changes
 - **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
 - **PAM hardening**: Empty passwords disallowed (nullok removed)
+- **Daily security report**: Email summary of Fail2Ban, SSH, UFW, and audit events (7am daily)
 
 ### Development Environment
 - **Claude Code** with auto-updates
@@ -456,6 +457,38 @@ UFW allows only:
 
 - **3 failed attempts** → 24-hour ban
 - Monitors `/var/log/auth.log`
+
+### Daily Security Report
+
+During bootstrap, you'll be prompted to configure SMTP settings for daily security emails. The report includes:
+
+| Section | Metrics |
+|---------|---------|
+| **Fail2Ban** | Banned IPs (24h), currently banned, IP list |
+| **SSH** | Failed attempts, invalid users, accepted logins |
+| **UFW** | Blocked connections count |
+| **Audit** | PAM failures, sudo usage, config changes |
+| **System** | Uptime, load average, disk usage |
+
+**Test commands:**
+```bash
+# Preview report without sending
+sudo /usr/local/bin/security-report.sh --stdout
+
+# Send test email
+sudo /usr/local/bin/security-report.sh --test
+
+# Send full report now
+sudo /usr/local/bin/security-report.sh
+
+# Check msmtp log
+sudo cat /var/log/msmtp.log
+
+# Verify cron job
+sudo crontab -l | grep security
+```
+
+The report is sent daily at **7am Europe/Paris** via msmtp (installed from Nix flake).
 
 ---
 
