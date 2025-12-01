@@ -71,6 +71,7 @@ OPTIONS:
     --yes, -y           Auto-confirm bootstrap (no prompt)
     --no-bootstrap      Skip bootstrap, only create server
     --delete NAME       Delete server with given name
+    --rescale NAME      Rescale server to new type (use with --type)
     --list              List all servers
     --help              Show this help
 
@@ -117,6 +118,9 @@ EXAMPLES:
 
     # Delete a server
     ./hcloud-provision.sh --delete cpx11-dev
+
+    # Rescale a server to a new type
+    ./hcloud-provision.sh --rescale cpx11-dev --type cx22
 
     # List all servers
     ./hcloud-provision.sh --list
@@ -184,6 +188,7 @@ generate_dedicated_key() {
 # Parse Arguments
 #===============================================================================
 DELETE_SERVER=""
+RESCALE_SERVER=""
 LIST_SERVERS=false
 AUTO_BOOTSTRAP=false
 SKIP_BOOTSTRAP=false
@@ -212,6 +217,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --delete)
             DELETE_SERVER="$2"
+            shift 2
+            ;;
+        --rescale)
+            RESCALE_SERVER="$2"
             shift 2
             ;;
         --list)
@@ -256,8 +265,8 @@ check_prerequisites() {
     fi
     log_ok "hcloud CLI found: $(hcloud version)"
 
-    # Check SSH key - only needed for provisioning (not delete/list)
-    if [[ -z "$DELETE_SERVER" && "$LIST_SERVERS" != true ]]; then
+    # Check SSH key - only needed for provisioning (not delete/list/rescale)
+    if [[ -z "$DELETE_SERVER" && -z "$RESCALE_SERVER" && "$LIST_SERVERS" != true ]]; then
         if [[ ! -f "$SSH_KEY_PATH" ]]; then
             log_info "SSH key not found: $SSH_KEY_PATH"
             echo ""
@@ -684,6 +693,134 @@ list_servers() {
 }
 
 #===============================================================================
+# Rescale Server
+#===============================================================================
+rescale_server() {
+    local name="$1"
+    local new_type="$2"
+
+    log_step "Rescaling server: $name → $new_type"
+
+    # Check server exists
+    if ! hcloud server describe "$name" &>/dev/null; then
+        log_error "Server '$name' not found"
+        exit 1
+    fi
+
+    # Get current server info
+    local current_type
+    current_type=$(hcloud server describe "$name" -o format='{{.ServerType.Name}}')
+    local current_status
+    current_status=$(hcloud server describe "$name" -o format='{{.Status}}')
+
+    echo ""
+    log_info "Current type: $current_type"
+    log_info "New type: $new_type"
+    log_info "Current status: $current_status"
+    echo ""
+
+    if [[ "$current_type" == "$new_type" ]]; then
+        log_warn "Server is already type '$new_type'"
+        exit 0
+    fi
+
+    # Check architecture compatibility (can't switch x86 <-> ARM)
+    local current_arch new_arch
+    if [[ "$current_type" == cax* ]]; then
+        current_arch="arm"
+    else
+        current_arch="x86"
+    fi
+    if [[ "$new_type" == cax* ]]; then
+        new_arch="arm"
+    else
+        new_arch="x86"
+    fi
+
+    if [[ "$current_arch" != "$new_arch" ]]; then
+        log_error "Cannot rescale between architectures ($current_arch → $new_arch)"
+        log_error "x86 (cx*, cpx*) and ARM (cax*) are not compatible"
+        exit 1
+    fi
+
+    log_warn "╔════════════════════════════════════════════════════════════════════╗"
+    log_warn "║  WARNING: Rescaling requires server shutdown!                      ║"
+    log_warn "║  The server will be unavailable for 1-2 minutes.                   ║"
+    log_warn "║  Data, IP address, and configuration will be preserved.            ║"
+    log_warn "╚════════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    read -r -p "Continue with rescale? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log_info "Rescale cancelled"
+        exit 0
+    fi
+
+    # Power off if running
+    if [[ "$current_status" == "running" ]]; then
+        log_info "Powering off server..."
+        hcloud server poweroff "$name"
+
+        # Wait for poweroff
+        local attempts=0
+        while [[ $attempts -lt 30 ]]; do
+            current_status=$(hcloud server describe "$name" -o format='{{.Status}}')
+            if [[ "$current_status" == "off" ]]; then
+                break
+            fi
+            echo -n "."
+            sleep 2
+            ((attempts++))
+        done
+        echo ""
+
+        if [[ "$current_status" != "off" ]]; then
+            log_error "Failed to power off server"
+            exit 1
+        fi
+        log_ok "Server powered off"
+    fi
+
+    # Perform rescale
+    log_info "Changing server type to $new_type..."
+    if ! hcloud server change-type "$name" "$new_type"; then
+        log_error "Failed to rescale server"
+        log_warn "Attempting to power server back on..."
+        hcloud server poweron "$name"
+        exit 1
+    fi
+    log_ok "Server type changed to $new_type"
+
+    # Power back on
+    log_info "Powering on server..."
+    hcloud server poweron "$name"
+
+    # Wait for server to be running
+    local attempts=0
+    while [[ $attempts -lt 30 ]]; do
+        current_status=$(hcloud server describe "$name" -o format='{{.Status}}')
+        if [[ "$current_status" == "running" ]]; then
+            break
+        fi
+        echo -n "."
+        sleep 2
+        ((attempts++))
+    done
+    echo ""
+
+    if [[ "$current_status" != "running" ]]; then
+        log_error "Server failed to start"
+        exit 1
+    fi
+
+    log_ok "Server '$name' successfully rescaled to $new_type"
+
+    # Show new server info
+    echo ""
+    hcloud server describe "$name"
+}
+
+#===============================================================================
 # Main
 #===============================================================================
 main() {
@@ -706,6 +843,13 @@ main() {
         check_prerequisites
         authenticate_hcloud
         delete_server "$DELETE_SERVER"
+        exit 0
+    fi
+
+    if [[ -n "$RESCALE_SERVER" ]]; then
+        check_prerequisites
+        authenticate_hcloud
+        rescale_server "$RESCALE_SERVER" "$SERVER_TYPE"
         exit 0
     fi
 
