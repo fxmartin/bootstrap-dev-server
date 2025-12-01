@@ -235,8 +235,10 @@ ZSHEOF
               echo "✓ Created ~/.zshrc with dev environment config"
             fi
 
-            # Launch zsh
-            exec zsh
+            # Launch zsh only for interactive shells (not when running commands via --command)
+            if [[ $- == *i* ]] && [[ -z "$NIX_DEVELOP_COMMAND" ]]; then
+              exec zsh
+            fi
           '';
         };
 
