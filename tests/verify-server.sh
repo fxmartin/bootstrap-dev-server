@@ -16,20 +16,23 @@ PASSED=0
 FAILED=0
 WARNINGS=0
 
+# Get expected username (default: fx, can override with EXPECTED_USER env var)
+EXPECTED_USER="${EXPECTED_USER:-fx}"
+
 # Test result functions
 pass() {
     echo -e "${GREEN}✓ PASS${NC}: $1"
-    ((PASSED++))
+    ((PASSED++)) || true
 }
 
 fail() {
     echo -e "${RED}✗ FAIL${NC}: $1"
-    ((FAILED++))
+    ((FAILED++)) || true
 }
 
 warn() {
     echo -e "${YELLOW}⚠ WARN${NC}: $1"
-    ((WARNINGS++))
+    ((WARNINGS++)) || true
 }
 
 info() {
@@ -49,18 +52,18 @@ header() {
 
 header "1. User & Environment Tests"
 
-# Test 1.1: Current user is fx
-if [[ "$(whoami)" == "fx" ]]; then
-    pass "Running as user 'fx'"
+# Test 1.1: Current user matches expected
+if [[ "$(whoami)" == "$EXPECTED_USER" ]]; then
+    pass "Running as user '$EXPECTED_USER'"
 else
-    fail "Not running as user 'fx' (current: $(whoami))"
+    fail "Not running as user '$EXPECTED_USER' (current: $(whoami))"
 fi
 
 # Test 1.2: Home directory exists
-if [[ -d "$HOME" && "$HOME" == "/home/fx" ]]; then
-    pass "Home directory is /home/fx"
+if [[ -d "$HOME" && "$HOME" == "/home/$EXPECTED_USER" ]]; then
+    pass "Home directory is /home/$EXPECTED_USER"
 else
-    fail "Home directory incorrect: $HOME"
+    fail "Home directory incorrect: $HOME (expected: /home/$EXPECTED_USER)"
 fi
 
 # Test 1.3: User is in correct groups
@@ -70,37 +73,48 @@ else
     warn "User not in 'users' group"
 fi
 
-# Test 1.4: Shell is bash
-if [[ "$SHELL" == "/bin/bash" || "$SHELL" == "/usr/bin/bash" ]]; then
-    pass "Shell is bash"
+# Test 1.4: Shell is bash or zsh (or nix-provided version)
+if [[ "$SHELL" == *"bash"* || "$SHELL" == *"zsh"* ]]; then
+    pass "Shell is valid: $SHELL"
 else
-    warn "Shell is not bash: $SHELL"
+    warn "Shell may not be bash or zsh: $SHELL"
 fi
 
 header "2. SSH Hardening Tests"
 
+# SSH hardening config location (created by bootstrap script)
+SSH_HARDENING_FILE="/etc/ssh/sshd_config.d/99-hardening.conf"
+
 # Test 2.1: SSH config exists
 if [[ -f /etc/ssh/sshd_config ]]; then
     pass "SSH config exists"
+else
+    fail "SSH config not found"
+fi
 
-    # Test 2.2: Root login disabled
-    if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config 2>/dev/null; then
+# Test 2.2: SSH hardening file exists
+if [[ -f "$SSH_HARDENING_FILE" ]]; then
+    pass "SSH hardening config exists: $SSH_HARDENING_FILE"
+
+    # Test 2.3: Root login disabled
+    if grep -q "^PermitRootLogin no" "$SSH_HARDENING_FILE" 2>/dev/null; then
         pass "Root login disabled"
     else
-        warn "Root login may not be disabled (check sshd_config)"
+        warn "Root login may not be disabled (check $SSH_HARDENING_FILE)"
     fi
 
-    # Test 2.3: Password auth disabled
-    if grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config 2>/dev/null; then
+    # Test 2.4: Password auth disabled
+    if grep -q "^PasswordAuthentication no" "$SSH_HARDENING_FILE" 2>/dev/null; then
         pass "Password authentication disabled"
     else
         warn "Password authentication may be enabled"
     fi
 else
-    fail "SSH config not found"
+    warn "SSH hardening config not found: $SSH_HARDENING_FILE"
+    info "Bootstrap may not have run SSH hardening phase"
 fi
 
-# Test 2.4: SSH service running
+# Test 2.5: SSH service running
 if systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; then
     pass "SSH service is running"
 else
@@ -249,7 +263,8 @@ else
 fi
 
 # Test 7.3: Check for other tools in dev shell
-for tool in git gh jq fzf ripgrep; do
+# Note: ripgrep binary is 'rg', fd-find binary is 'fd'
+for tool in git gh jq fzf rg fd bat; do
     if nix develop "$DEV_FLAKE_PATH" --command which "$tool" &>/dev/null; then
         pass "$tool available in dev shell"
     else

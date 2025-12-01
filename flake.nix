@@ -70,6 +70,9 @@
             pkgs.helix
 
             # Shell enhancements
+            pkgs.zsh
+            pkgs.zsh-autosuggestions
+            pkgs.zsh-syntax-highlighting
             pkgs.tmux
             pkgs.zoxide
             pkgs.starship
@@ -96,20 +99,14 @@
             pkgs.gh  # GitHub CLI
             pkgs.lazygit
             pkgs.delta  # Git diff viewer
+
+            # Linting & testing
+            pkgs.shellcheck  # Shell script linter
           ];
 
           shellHook = ''
             export EDITOR=nvim
             export VISUAL=nvim
-
-            # Starship prompt
-            eval "$(starship init bash)"
-
-            # Zoxide (smart cd)
-            eval "$(zoxide init bash)"
-
-            # Direnv
-            eval "$(direnv hook bash)"
 
             # Set up Claude Code MCP configuration if not exists
             CLAUDE_CONFIG_DIR="$HOME/.config/claude"
@@ -146,6 +143,100 @@
             echo "   Node:   $(node --version)"
             echo "   MCP:    Context7, GitHub, Sequential Thinking"
             echo ""
+            echo "Launching zsh..."
+
+            # Create zsh config directory if needed
+            mkdir -p "$HOME/.config/zsh"
+
+            # Generate .zshrc if it doesn't exist or is minimal
+            ZSHRC="$HOME/.zshrc"
+            if [ ! -f "$ZSHRC" ] || ! grep -q "nix-dev-env" "$ZSHRC" 2>/dev/null; then
+              cat > "$ZSHRC" << 'ZSHEOF'
+# >>> nix-dev-env zsh config >>>
+# History
+HISTFILE=~/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+
+# Key bindings (emacs style)
+bindkey -e
+
+# Auto-completion
+autoload -Uz compinit && compinit
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+
+# Zsh options
+setopt AUTO_CD
+setopt AUTO_PUSHD
+setopt PUSHD_IGNORE_DUPS
+setopt CORRECT
+
+# Aliases
+alias ls='eza --color=auto --icons'
+alias ll='eza -la --color=auto --icons'
+alias la='eza -a --color=auto --icons'
+alias lt='eza --tree --level=2 --icons'
+alias cat='bat --style=plain'
+alias grep='rg'
+alias find='fd'
+alias vim='nvim'
+alias vi='nvim'
+alias lg='lazygit'
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git pull'
+alias gd='git diff'
+alias gco='git checkout'
+alias gb='git branch'
+alias glog='git log --oneline --graph --decorate'
+
+# Directory shortcuts
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+# Dev environment
+alias dev='nix develop ~/.config/nix-dev-env'
+alias dm='nix develop ~/.config/nix-dev-env#minimal'
+alias dp='nix develop ~/.config/nix-dev-env#python'
+alias dev-update='cd ~/.config/nix-dev-env && nix flake update && cd -'
+
+# Source zsh plugins from Nix store (if available)
+for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+  for dir in /nix/store/*-$plugin-*/share/*; do
+    if [ -f "$dir/$plugin.zsh" ]; then
+      source "$dir/$plugin.zsh"
+      break
+    fi
+  done
+done
+
+# Initialize starship prompt
+eval "$(starship init zsh)"
+
+# Initialize zoxide (smart cd)
+eval "$(zoxide init zsh)"
+
+# Initialize direnv
+eval "$(direnv hook zsh)"
+
+# Initialize fzf
+eval "$(fzf --zsh)"
+# <<< nix-dev-env zsh config <<<
+ZSHEOF
+              echo "✓ Created ~/.zshrc with dev environment config"
+            fi
+
+            # Launch zsh
+            exec zsh
           '';
         };
 
@@ -160,6 +251,7 @@
             pkgs.ripgrep
             pkgs.neovim
             pkgs.gotop
+            pkgs.shellcheck
           ];
 
           shellHook = ''
@@ -188,6 +280,7 @@
             pkgs.git
             pkgs.neovim
             pkgs.gotop
+            pkgs.shellcheck
           ];
 
           shellHook = ''
