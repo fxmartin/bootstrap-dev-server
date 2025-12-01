@@ -136,15 +136,6 @@
               echo ""
             fi
 
-            echo ""
-            echo "🚀 Dev Server Environment Loaded"
-            echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
-            echo "   Python: $(python3 --version)"
-            echo "   Node:   $(node --version)"
-            echo "   MCP:    Context7, GitHub, Sequential Thinking"
-            echo ""
-            echo "Launching zsh..."
-
             # Create zsh config directory if needed
             mkdir -p "$HOME/.config/zsh"
 
@@ -235,8 +226,17 @@ ZSHEOF
               echo "✓ Created ~/.zshrc with dev environment config"
             fi
 
-            # Launch zsh only for interactive shells (not when running commands via --command)
-            if [[ $- == *i* ]] && [[ -z "$NIX_DEVELOP_COMMAND" ]]; then
+            # Launch zsh only for interactive shells, not when running commands
+            # Check: terminal attached, no command string, not already launched
+            if [[ -t 0 && -t 1 && -z "''${BASH_EXECUTION_STRING:-}" && -z "''${__NIX_DEV_ZSH_LAUNCHED:-}" ]]; then
+              echo ""
+              echo "🚀 Dev Server Environment Loaded"
+              echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
+              echo "   Python: $(python3 --version)"
+              echo "   Node:   $(node --version)"
+              echo "   MCP:    Context7, GitHub, Sequential Thinking"
+              echo ""
+              export __NIX_DEV_ZSH_LAUNCHED=1
               exec zsh
             fi
           '';
