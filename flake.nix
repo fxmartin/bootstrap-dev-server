@@ -115,6 +115,9 @@
 
             # Linting & testing
             pkgs.shellcheck  # Shell script linter
+
+            # Documentation tools
+            pkgs.glow  # Terminal markdown renderer
           ];
 
           shellHook = ''
