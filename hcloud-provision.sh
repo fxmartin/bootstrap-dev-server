@@ -358,6 +358,16 @@ upload_ssh_key() {
         return 0
     fi
 
+    # Check if a key with the same name exists (but different fingerprint)
+    if echo "$existing_keys" | jq -e ".[] | select(.name == \"$SSH_KEY_NAME\")" &>/dev/null; then
+        log_warn "Key name '$SSH_KEY_NAME' already exists with different fingerprint"
+        # Make the name unique by adding short fingerprint suffix
+        local short_fp
+        short_fp=$(echo "$key_fingerprint" | tail -c 9)  # Last 8 chars of fingerprint
+        SSH_KEY_NAME="${SSH_KEY_NAME}-${short_fp}"
+        log_info "Using unique name: $SSH_KEY_NAME"
+    fi
+
     # Upload new key
     log_info "Uploading SSH key: $SSH_KEY_NAME"
     if ! hcloud ssh-key create --name "$SSH_KEY_NAME" --public-key "$pub_key"; then
