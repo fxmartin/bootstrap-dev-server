@@ -521,9 +521,17 @@ setup_user_account() {
     log_step "Setting up user account: ${SSH_USER}"
 
     # Commands to run on server as root
-    # shellcheck disable=SC2087  # Client-side expansion of SSH_USER is intentional
+    # shellcheck disable=SC2087  # Client-side expansion of SSH_USER/SERVER_NAME is intentional
     ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<REMOTE_SCRIPT
 set -e
+
+# Set hostname to match the Hetzner server name (used in security reports, etc.)
+echo "Setting hostname to: ${SERVER_NAME}"
+hostnamectl set-hostname "${SERVER_NAME}"
+# Update /etc/hosts to avoid sudo warnings about hostname
+if ! grep -q "${SERVER_NAME}" /etc/hosts; then
+    echo "127.0.1.1 ${SERVER_NAME}" >> /etc/hosts
+fi
 
 # Create user if not exists
 if ! id "${SSH_USER}" &>/dev/null; then
