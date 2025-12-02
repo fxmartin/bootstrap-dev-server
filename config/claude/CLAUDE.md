@@ -80,6 +80,91 @@ claude update-estimated-time-spent
 claude create-user-documentation
 ```
 
+## Dev Environment Tools
+
+The Nix dev shell provides the following tools. Use them appropriately for development tasks.
+
+### Python/FastAPI Development
+| Tool | Command | Purpose |
+|------|---------|---------|
+| Python 3.12 | `python3` | Python runtime |
+| uv | `uv` | Fast package installer/resolver |
+| ruff | `ruff check`, `ruff format` | Linting and formatting (replaces flake8/black) |
+| black | `black` | Code formatter |
+| isort | `isort` | Import sorting |
+| mypy | `mypy` | Static type checking |
+| pylint | `pylint` | Comprehensive linter |
+| pytest | `pytest` | Testing framework |
+| pytest-asyncio | `pytest` (with async) | Async test support for FastAPI |
+| pytest-cov | `pytest --cov` | Test coverage reporting |
+| httpx | (library) | Async HTTP client for testing APIs |
+| ipython | `ipython` | Enhanced REPL for debugging |
+| rich | (library) | Pretty terminal output |
+| pre-commit | `pre-commit` | Git hooks for code quality |
+
+### React/Frontend Development
+| Tool | Command | Purpose |
+|------|---------|---------|
+| Node.js 22 | `node` | JavaScript runtime |
+| bun | `bun` | Fast JS runtime/bundler/package manager |
+| pnpm | `pnpm` | Efficient package manager |
+| TypeScript | `tsc` | TypeScript compiler |
+| typescript-language-server | (LSP) | Editor integration |
+| ESLint | `eslint` | JS/TS linting |
+| Prettier | `prettier` | Code formatting |
+
+### Nix Development
+| Tool | Command | Purpose |
+|------|---------|---------|
+| nil | (LSP) | Nix language server for editors |
+| nixfmt | `nixfmt` | Nix code formatter (RFC-style) |
+| nix-tree | `nix-tree` | Visualize Nix store dependencies |
+| nix-diff | `nix-diff` | Compare Nix derivations |
+
+### Shell Development
+| Tool | Command | Purpose |
+|------|---------|---------|
+| shellcheck | `shellcheck` | Shell script linter |
+| shfmt | `shfmt` | Shell script formatter |
+| bats | `bats` | Bash Automated Testing System |
+
+### General Development
+| Tool | Command | Purpose |
+|------|---------|---------|
+| just | `just` | Task runner (modern make alternative) |
+| watchexec | `watchexec` | File watcher for auto-reload |
+| tokei | `tokei` | Code statistics by language |
+| difftastic | `difft` | Syntax-aware structural diff |
+| pre-commit | `pre-commit install` | Git hook management |
+
+### CLI Productivity
+| Tool | Command | Purpose |
+|------|---------|---------|
+| ripgrep | `rg` | Fast text search |
+| fd | `fd` | Fast file finder |
+| fzf | `fzf`, `Ctrl+R` | Fuzzy finder |
+| bat | `bat` | Cat with syntax highlighting |
+| eza | `ls`, `ll`, `lt` | Modern ls replacement |
+| zoxide | `z` | Smart directory jumping |
+| jq/yq | `jq`, `yq` | JSON/YAML processing |
+| httpie | `http` | HTTP client |
+| lazygit | `lg` | Terminal git UI |
+| delta | (git pager) | Beautiful git diffs |
+| glow | `glow` | Terminal markdown renderer |
+| tmux | `tmux` | Terminal multiplexer (auto-launches on SSH) |
+
+### Containers
+| Tool | Command | Purpose |
+|------|---------|---------|
+| Podman | `podman` | Docker-compatible container runtime |
+| podman-compose | `podman-compose` | Multi-container orchestration |
+
+### Editors
+| Tool | Command | Purpose |
+|------|---------|---------|
+| Neovim | `nvim`, `vim`, `vi` | Primary editor |
+| Helix | `hx` | Modal editor alternative |
+
 ## Code Quality Standards
 
 ### Python (uv + FastAPI)
@@ -87,12 +172,15 @@ claude create-user-documentation
 - Comprehensive type hints throughout
 - Self-documenting variable names and strategic docstrings
 - Follow SOLID principles with clean architecture
+- Run `ruff check --fix` before committing
+- Run `pytest --cov` for test coverage
 
 ### TypeScript (Bun Runtime)
 - Advanced TypeScript patterns for backend systems
 - Proper error handling and input validation
 - OWASP security guidelines
 - Microservices-ready architecture
+- Run `eslint` and `prettier` before committing
 
 ### Testing (NO EXCEPTIONS)
 - **Unit tests**: Cover all business logic
