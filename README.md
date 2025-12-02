@@ -186,11 +186,48 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 ### Development Environment
 - **Claude Code** with auto-updates
 - **MCP Servers**: Context7, GitHub, Sequential Thinking
-- **Python 3.12** + uv, pip, ruff
-- **Node.js 22** LTS
-- **Podman** for rootless containers
-- **Modern CLI tools**: ripgrep, fd, bat, eza, fzf, lazygit, delta, httpie
-- **Shell enhancements**: starship prompt, zoxide, direnv, tmux
+- **tmux** auto-launches on SSH connection
+
+#### Python/FastAPI Stack
+- Python 3.12, uv, pip, virtualenv
+- Linting: ruff, black, isort, mypy, pylint
+- Testing: pytest, pytest-asyncio, pytest-cov, httpx
+- Debugging: ipython, rich
+- Code quality: pre-commit
+
+#### React/Frontend Stack
+- Node.js 22 LTS
+- Package managers: bun, pnpm
+- TypeScript + typescript-language-server
+- Linting/formatting: eslint, prettier
+
+#### Nix Development
+- nil (Nix LSP)
+- nixfmt-rfc-style
+- nix-tree, nix-diff
+
+#### Shell Development
+- shellcheck, shfmt, bats
+
+#### Containers
+- Podman (rootless)
+- podman-compose
+
+#### General Development Tools
+- Task runner: just
+- File watcher: watchexec
+- Code stats: tokei
+- Syntax-aware diff: difftastic
+
+#### CLI Productivity
+- Search: ripgrep, fd, fzf
+- File viewing: bat, eza, tree
+- Git: lazygit, delta, git-lfs
+- Other: jq, yq, httpie, websocat, glow
+- Shell: zsh, starship, zoxide, direnv, tmux
+
+#### Editors
+- Neovim, Helix
 
 ### Available Commands
 
