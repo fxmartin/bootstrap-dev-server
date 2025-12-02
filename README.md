@@ -587,6 +587,30 @@ Environment variables for the bootstrap script:
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `REGEN_HOST_KEYS` | false | Regenerate SSH host keys |
 
+### Logging Configuration
+
+All scripts use a unified logging library with timestamps, log levels, and optional file output.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | INFO | Minimum level: DEBUG, INFO, WARN, ERROR |
+| `LOG_FILE` | (auto) | Path to log file |
+| `LOG_DIR` | `~/.local/log/bootstrap` | Directory for auto-created logs |
+| `LOG_TIMESTAMPS` | true | Include timestamps in output |
+| `NO_COLOR` | (unset) | Disable colored output |
+
+**View logs:**
+```bash
+# List recent logs
+ls -la ~/.local/log/bootstrap/
+
+# Follow latest bootstrap log
+tail -f ~/.local/log/bootstrap/bootstrap-dev-server-*.log
+
+# View provisioning log
+tail -f ~/.local/log/bootstrap/hcloud-provision-*.log
+```
+
 ---
 
 ## File Structure
@@ -599,10 +623,20 @@ After installation:
 │   ├── claude/
 │   │   └── config.json        # MCP server configuration
 │   └── nix-dev-env -> ~/.local/share/nix-install/bootstrap-dev-server  # Symlink!
-├── .local/share/nix-install/  # Sparse clone of this repo
-│   └── bootstrap-dev-server/
-│       ├── flake.nix          # Dev environment definition
-│       └── flake.lock         # Locked package versions
+├── .local/
+│   ├── log/bootstrap/         # Log files from bootstrap and provisioning
+│   │   ├── bootstrap-dev-server-YYYYMMDD-HHMMSS.log
+│   │   └── hcloud-provision-YYYYMMDD-HHMMSS.log
+│   └── share/nix-install/     # Sparse clone of this repo
+│       └── bootstrap-dev-server/
+│           ├── flake.nix      # Dev environment definition
+│           ├── flake.lock     # Locked package versions
+│           ├── lib/
+│           │   └── logging.sh # Shared logging library
+│           ├── scripts/
+│           │   └── secure-ssh-key.sh  # Add passphrase to SSH key
+│           └── tests/
+│               └── verify-server.sh   # Post-install verification
 ├── .bashrc                    # Shell integration
 ├── CLAUDE.md                  # Claude Code instructions
 └── projects/                  # Your projects

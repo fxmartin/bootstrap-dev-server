@@ -10,17 +10,46 @@
 
 set -euo pipefail
 
-# Colors for output
+#===============================================================================
+# Logging Setup
+#===============================================================================
+# Minimal inline logging for curl|bash bootstrap (before repo is cloned)
+# These get upgraded to full logging library after clone_bootstrap_repo()
+
+# Colors for output (may be overwritten by logging library)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_ok() { echo -e "${GREEN}[OK]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# Basic logging functions (may be overwritten by logging library)
+# shellcheck disable=SC2312
+log_info() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${BLUE}[INFO]${NC}  ${1}"; }
+# shellcheck disable=SC2312
+log_ok() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${GREEN}[OK]${NC}    ${1}"; }
+# shellcheck disable=SC2312
+log_warn() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${YELLOW}[WARN]${NC}  ${1}" >&2; }
+# shellcheck disable=SC2312
+log_error() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${RED}[ERROR]${NC} ${1}" >&2; }
+# shellcheck disable=SC2312
+log_step() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${CYAN}[STEP]${NC}  ═══ ${1} ═══"; }
+log_phase() { log_step "Phase: ${1}"; }
+# shellcheck disable=SC2312
+log_debug() { [[ "${LOG_LEVEL:-INFO}" == "DEBUG" ]] && echo -e "$(date '+%Y-%m-%d %H:%M:%S') [DEBUG] ${1}" || true; }
+
+# Upgrade to full logging library if available (called after repo clone)
+upgrade_logging() {
+    local lib_path="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/lib/logging.sh"
+    if [[ -f "${lib_path}" ]]; then
+        # shellcheck disable=SC1091  # Path is dynamically built from vars
+        # shellcheck source=lib/logging.sh
+        source "${lib_path}"
+        init_logging "bootstrap-dev-server"
+        log_debug "Upgraded to full logging library"
+    fi
+}
 
 #===============================================================================
 # Configuration - Edit these for your setup
@@ -43,12 +72,16 @@ preflight_checks() {
 
     # Check Ubuntu version
     if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
         . /etc/os-release
-        if [[ "$ID" != "ubuntu" ]]; then
-            log_error "This script is designed for Ubuntu. Detected: $ID"
+        # shellcheck disable=SC2154  # ID and PRETTY_NAME are set by os-release
+        if [[ "${ID}" != "ubuntu" ]]; then
+            # shellcheck disable=SC2154
+            log_error "This script is designed for Ubuntu. Detected: ${ID}"
             exit 1
         fi
-        log_ok "Detected $PRETTY_NAME"
+        # shellcheck disable=SC2154
+        log_ok "Detected ${PRETTY_NAME}"
     fi
 
     # Check sudo access
@@ -96,6 +129,7 @@ install_github_cli() {
     log_info "Installing GitHub CLI..."
 
     if command -v gh &>/dev/null; then
+        # shellcheck disable=SC2312  # gh --version is safe
         log_ok "GitHub CLI already installed: $(gh --version | head -1)"
         return 0
     fi
@@ -115,13 +149,16 @@ install_github_cli() {
     sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
 
     # Add repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-        | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+    local arch
+    arch=$(dpkg --print-architecture)
+    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" |
+        sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
 
     # Install gh
     sudo apt-get update -qq
     sudo apt-get install -y -qq gh
 
+    # shellcheck disable=SC2312  # gh --version is safe
     log_ok "GitHub CLI installed: $(gh --version | head -1)"
 }
 
@@ -136,8 +173,8 @@ configure_git_identity() {
     current_name=$(git config --global user.name 2>/dev/null || echo "")
     current_email=$(git config --global user.email 2>/dev/null || echo "")
 
-    if [[ -n "$current_name" ]] && [[ -n "$current_email" ]]; then
-        log_ok "Git already configured: $current_name <$current_email>"
+    if [[ -n "${current_name}" ]] && [[ -n "${current_email}" ]]; then
+        log_ok "Git already configured: ${current_name} <${current_email}>"
         return 0
     fi
 
@@ -145,7 +182,7 @@ configure_git_identity() {
     local git_name="${GIT_USER_NAME:-}"
     local git_email="${GIT_USER_EMAIL:-}"
 
-    if [[ -n "$git_name" ]] && [[ -n "$git_email" ]]; then
+    if [[ -n "${git_name}" ]] && [[ -n "${git_email}" ]]; then
         log_info "Using Git identity from environment variables"
     else
         echo ""
@@ -160,7 +197,7 @@ configure_git_identity() {
             log_error "Cannot read input. Set GIT_USER_NAME and GIT_USER_EMAIL env vars instead."
             return 1
         }
-        if [[ -z "$git_name" ]]; then
+        if [[ -z "${git_name}" ]]; then
             log_error "Name cannot be empty"
             return 1
         fi
@@ -171,21 +208,21 @@ configure_git_identity() {
             log_error "Cannot read input. Set GIT_USER_NAME and GIT_USER_EMAIL env vars instead."
             return 1
         }
-        if [[ -z "$git_email" ]]; then
+        if [[ -z "${git_email}" ]]; then
             log_error "Email cannot be empty"
             return 1
         fi
     fi
 
     # Configure git
-    git config --global user.name "$git_name"
-    git config --global user.email "$git_email"
+    git config --global user.name "${git_name}"
+    git config --global user.email "${git_email}"
 
     # Set sensible defaults
     git config --global init.defaultBranch main
     git config --global pull.rebase false
 
-    log_ok "Git configured: $git_name <$git_email>"
+    log_ok "Git configured: ${git_name} <${git_email}>"
 }
 
 #===============================================================================
@@ -198,7 +235,7 @@ authenticate_github_cli() {
     if gh auth status >/dev/null 2>&1; then
         local gh_user
         gh_user=$(gh api user --jq '.login' 2>/dev/null || echo "unknown")
-        log_ok "GitHub CLI already authenticated as: $gh_user"
+        log_ok "GitHub CLI already authenticated as: ${gh_user}"
         return 0
     fi
 
@@ -224,7 +261,7 @@ authenticate_github_cli() {
     # Verify authentication
     local gh_user
     gh_user=$(gh api user --jq '.login' 2>/dev/null || echo "unknown")
-    log_ok "GitHub CLI authenticated as: $gh_user"
+    log_ok "GitHub CLI authenticated as: ${gh_user}"
 }
 
 #===============================================================================
@@ -277,8 +314,8 @@ harden_ssh() {
     local SSH_HARDENING_FILE="/etc/ssh/sshd_config.d/99-hardening.conf"
 
     # Only create if doesn't exist or force update
-    if [[ ! -f "$SSH_HARDENING_FILE" ]] || [[ "${FORCE_SSH_UPDATE:-}" == "true" ]]; then
-        sudo tee "$SSH_HARDENING_FILE" >/dev/null <<'SSHEOF'
+    if [[ ! -f "${SSH_HARDENING_FILE}" ]] || [[ "${FORCE_SSH_UPDATE:-}" == "true" ]]; then
+        sudo tee "${SSH_HARDENING_FILE}" >/dev/null <<'SSHEOF'
 # SSH Hardening Configuration
 # Generated by bootstrap-dev-server.sh
 
@@ -326,7 +363,7 @@ SSHEOF
             log_ok "SSH hardening applied"
         else
             log_error "SSH config validation failed! Reverting..."
-            sudo rm -f "$SSH_HARDENING_FILE"
+            sudo rm -f "${SSH_HARDENING_FILE}"
             exit 1
         fi
     else
@@ -367,7 +404,7 @@ configure_firewall() {
     sudo ufw default allow outgoing
 
     # SSH
-    sudo ufw allow "$SSH_PORT"/tcp comment 'SSH'
+    sudo ufw allow "${SSH_PORT}"/tcp comment 'SSH'
 
     # Mosh UDP ports
     sudo ufw allow "${MOSH_PORT_START}:${MOSH_PORT_END}"/udp comment 'Mosh'
@@ -375,7 +412,7 @@ configure_firewall() {
     # Enable firewall
     sudo ufw --force enable
 
-    log_ok "Firewall configured (SSH: $SSH_PORT, Mosh: $MOSH_PORT_START-$MOSH_PORT_END)"
+    log_ok "Firewall configured (SSH: ${SSH_PORT}, Mosh: ${MOSH_PORT_START}-${MOSH_PORT_END})"
 }
 
 #===============================================================================
@@ -413,6 +450,7 @@ install_tailscale() {
     log_info "Installing Tailscale..."
 
     if command -v tailscale &>/dev/null; then
+        # shellcheck disable=SC2312
         log_ok "Tailscale already installed: $(tailscale version | head -1)"
         return 0
     fi
@@ -451,8 +489,8 @@ install_auditd() {
 
     # Create audit rules for security monitoring
     local AUDIT_RULES="/etc/audit/rules.d/security.rules"
-    if [[ ! -f "$AUDIT_RULES" ]]; then
-        sudo tee "$AUDIT_RULES" >/dev/null <<'AUDITEOF'
+    if [[ ! -f "${AUDIT_RULES}" ]]; then
+        sudo tee "${AUDIT_RULES}" >/dev/null <<'AUDITEOF'
 # Security audit rules - Generated by bootstrap-dev-server.sh
 
 # Monitor identity files
@@ -494,12 +532,12 @@ harden_sysctl() {
 
     local SYSCTL_FILE="/etc/sysctl.d/99-security-hardening.conf"
 
-    if [[ -f "$SYSCTL_FILE" ]]; then
+    if [[ -f "${SYSCTL_FILE}" ]]; then
         log_ok "Sysctl hardening already configured"
         return 0
     fi
 
-    sudo tee "$SYSCTL_FILE" >/dev/null <<'SYSCTLEOF'
+    sudo tee "${SYSCTL_FILE}" >/dev/null <<'SYSCTLEOF'
 # Security hardening - Generated by bootstrap-dev-server.sh
 
 # Disable ICMP redirects (MITM protection)
@@ -552,7 +590,7 @@ kernel.yama.ptrace_scope = 1
 SYSCTLEOF
 
     # Apply sysctl settings
-    sudo sysctl -p "$SYSCTL_FILE" >/dev/null 2>&1
+    sudo sysctl -p "${SYSCTL_FILE}" >/dev/null 2>&1
 
     log_ok "Kernel parameters hardened"
 }
@@ -566,8 +604,8 @@ harden_pam() {
     local PAM_AUTH="/etc/pam.d/common-auth"
 
     # Remove nullok option (allows empty passwords)
-    if grep -q "pam_unix.so nullok" "$PAM_AUTH" 2>/dev/null; then
-        sudo sed -i 's/pam_unix.so nullok/pam_unix.so/' "$PAM_AUTH"
+    if grep -q "pam_unix.so nullok" "${PAM_AUTH}" 2>/dev/null; then
+        sudo sed -i 's/pam_unix.so nullok/pam_unix.so/' "${PAM_AUTH}"
         log_ok "Removed nullok from PAM (empty passwords disallowed)"
     else
         log_ok "PAM nullok already removed"
@@ -587,11 +625,11 @@ setup_security_report() {
     local report_email="mail@fxmartin.me"
 
     # Check if SMTP already configured
-    if [[ -f "$MSMTP_CONFIG" ]] && [[ -f "$REPORT_CONFIG" ]]; then
+    if [[ -f "${MSMTP_CONFIG}" ]] && [[ -f "${REPORT_CONFIG}" ]]; then
         log_ok "SMTP configuration already exists"
         smtp_configured=true
         # Read existing report email
-        report_email=$(grep "^REPORT_EMAIL=" "$REPORT_CONFIG" 2>/dev/null | cut -d'"' -f2 || echo "mail@fxmartin.me")
+        report_email=$(grep "^REPORT_EMAIL=" "${REPORT_CONFIG}" 2>/dev/null | cut -d'"' -f2 || echo "mail@fxmartin.me")
     else
         # Prompt for email configuration
         echo ""
@@ -619,7 +657,7 @@ setup_security_report() {
         read -rs smtp_pass </dev/tty || smtp_pass=""
         echo ""
 
-        if [[ -z "$smtp_pass" ]]; then
+        if [[ -z "${smtp_pass}" ]]; then
             log_warn "No password provided - email sending will not work"
             log_warn "Configure later: sudo nano /root/.msmtprc"
         else
@@ -634,7 +672,7 @@ setup_security_report() {
 
             # Create root msmtp config
             log_info "Creating SMTP configuration..."
-            sudo tee "$MSMTP_CONFIG" >/dev/null <<MSMTPEOF
+            sudo tee "${MSMTP_CONFIG}" >/dev/null <<MSMTPEOF
 # msmtp configuration for security reports
 # Generated by bootstrap-dev-server.sh
 
@@ -651,14 +689,14 @@ from           ${smtp_user}
 user           ${smtp_user}
 password       ${smtp_pass}
 MSMTPEOF
-            sudo chmod 600 "$MSMTP_CONFIG"
+            sudo chmod 600 "${MSMTP_CONFIG}"
 
             # Save report config
-            sudo tee "$REPORT_CONFIG" >/dev/null <<CONFEOF
+            sudo tee "${REPORT_CONFIG}" >/dev/null <<CONFEOF
 # Security report configuration
 REPORT_EMAIL="${report_email}"
 CONFEOF
-            sudo chmod 600 "$REPORT_CONFIG"
+            sudo chmod 600 "${REPORT_CONFIG}"
 
             smtp_configured=true
             log_ok "SMTP configuration created"
@@ -667,7 +705,7 @@ CONFEOF
 
     # Create the security report script
     log_info "Creating security report script..."
-    sudo tee "$REPORT_SCRIPT" >/dev/null <<'REPORTEOF'
+    sudo tee "${REPORT_SCRIPT}" >/dev/null <<'REPORTEOF'
 #!/usr/bin/env bash
 # ABOUTME: Daily security report script - sends email summary of security events
 # Generated by bootstrap-dev-server.sh
@@ -684,7 +722,7 @@ fi
 
 # Get msmtp path from Nix store (installed via flake.nix)
 MSMTP_BIN=$(find /nix/store -maxdepth 2 -name "msmtp" -path "*/bin/msmtp" 2>/dev/null | head -1)
-if [[ -z "$MSMTP_BIN" ]]; then
+if [[ -z "${MSMTP_BIN}" ]]; then
     echo "ERROR: msmtp not found in Nix store. Run 'dev' to install via Nix flake." >&2
     exit 1
 fi
@@ -693,7 +731,7 @@ fi
 TEST_MODE=false
 STDOUT_MODE=false
 for arg in "$@"; do
-    case "$arg" in
+    case "${arg}" in
         --test) TEST_MODE=true ;;
         --stdout) STDOUT_MODE=true ;;
     esac
@@ -724,7 +762,7 @@ REPORT="SECURITY REPORT - ${HOSTNAME} - ${DATE}
 # Fail2Ban stats
 if command -v fail2ban-client &>/dev/null; then
     BANNED_24H=$(grep -c "Ban " /var/log/fail2ban.log 2>/dev/null | tail -1 || echo "0")
-    CURRENT_BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print $NF}' || echo "0")
+    CURRENT_BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print ${NF}}' || echo "0")
     BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP list" | cut -d: -f2 | xargs || echo "none")
 
     REPORT+="FAIL2BAN
@@ -786,7 +824,7 @@ REPORT+="SYSTEM
 "
 
 # Handle test mode - just send a simple test email
-if [[ "$TEST_MODE" == "true" ]]; then
+if [[ "${TEST_MODE}" == "true" ]]; then
     REPORT="TEST EMAIL from ${HOSTNAME}
 
 This is a test message from security-report.sh
@@ -798,8 +836,8 @@ Time: $(date '+%H:%M:%S')
 fi
 
 # Handle stdout mode - print instead of email
-if [[ "$STDOUT_MODE" == "true" ]]; then
-    echo "$REPORT"
+if [[ "${STDOUT_MODE}" == "true" ]]; then
+    echo "${REPORT}"
     exit 0
 fi
 
@@ -814,7 +852,7 @@ fi
 FROM_ADDR=$(grep "^from" /root/.msmtprc 2>/dev/null | awk '{print $2}' || echo "security@localhost")
 
 SUBJECT="[${HOSTNAME}] Security Report - ${DATE}"
-[[ "$TEST_MODE" == "true" ]] && SUBJECT="[${HOSTNAME}] TEST - Security Report"
+[[ "${TEST_MODE}" == "true" ]] && SUBJECT="[${HOSTNAME}] TEST - Security Report"
 
 {
     echo "From: Security Report <${FROM_ADDR}>"
@@ -823,12 +861,12 @@ SUBJECT="[${HOSTNAME}] Security Report - ${DATE}"
     echo "Content-Type: text/plain; charset=UTF-8"
     echo ""
     echo "${REPORT}"
-} | "$MSMTP_BIN" "${REPORT_EMAIL}"
+} | "${MSMTP_BIN}" "${REPORT_EMAIL}"
 
 echo "Security report sent to ${REPORT_EMAIL}"
 REPORTEOF
 
-    sudo chmod 755 "$REPORT_SCRIPT"
+    sudo chmod 755 "${REPORT_SCRIPT}"
     log_ok "Security report script created"
 
     # Setup cron job (7am Europe/Paris) - ALWAYS create this regardless of SMTP config
@@ -839,18 +877,18 @@ REPORTEOF
     if ! sudo crontab -l 2>/dev/null | grep -q "security-report.sh"; then
         if (
             sudo crontab -l 2>/dev/null || true
-            echo "$CRON_JOB"
+            echo "${CRON_JOB}"
         ) | sudo crontab -; then
             # Verify it was actually added
             if sudo crontab -l 2>/dev/null | grep -q "security-report.sh"; then
                 log_ok "Cron job added successfully"
             else
                 log_error "Cron job creation appeared to succeed but job not found"
-                log_warn "Manually add: $CRON_JOB"
+                log_warn "Manually add: ${CRON_JOB}"
             fi
         else
             log_error "Failed to add cron job"
-            log_warn "Manually run: (sudo crontab -l; echo '$CRON_JOB') | sudo crontab -"
+            log_warn "Manually run: (sudo crontab -l; echo '${CRON_JOB}') | sudo crontab -"
         fi
     else
         log_ok "Cron job already exists"
@@ -860,7 +898,7 @@ REPORTEOF
     log_ok "Security report configured"
     log_info "  Script: ${REPORT_SCRIPT}"
     log_info "  Schedule: 7am Europe/Paris daily"
-    if [[ "$smtp_configured" == true ]]; then
+    if [[ "${smtp_configured}" == true ]]; then
         log_info "  Recipient: ${report_email}"
         log_info "  Email: Configured ✓"
     else
@@ -870,7 +908,7 @@ REPORTEOF
     echo ""
     log_info "  Test commands:"
     log_info "    sudo ${REPORT_SCRIPT} --stdout   # Preview report"
-    if [[ "$smtp_configured" == true ]]; then
+    if [[ "${smtp_configured}" == true ]]; then
         log_info "    sudo ${REPORT_SCRIPT} --test     # Send test email"
         log_info "    sudo ${REPORT_SCRIPT}            # Send full report"
     fi
@@ -886,7 +924,7 @@ clean_old_kernels() {
     local kernel_count
     kernel_count=$(dpkg -l 'linux-image-*' 2>/dev/null | grep -c '^ii' || echo "0")
 
-    if [[ "$kernel_count" -gt 1 ]]; then
+    if [[ "${kernel_count}" -gt 1 ]]; then
         sudo apt-get autoremove --purge -y -qq
         log_ok "Old kernels removed"
     else
@@ -901,19 +939,22 @@ install_nix() {
     log_info "Installing Nix..."
 
     if command -v nix &>/dev/null; then
+        # shellcheck disable=SC2312
         log_ok "Nix already installed: $(nix --version)"
         return 0
     fi
 
     # Determinate Systems installer - enables flakes by default
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
-        | sh -s -- install --no-confirm
+    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
+        sh -s -- install --no-confirm
 
     # Source Nix in current shell
     if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+        # shellcheck source=/dev/null
         . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
     fi
 
+    # shellcheck disable=SC2312
     log_ok "Nix installed: $(nix --version)"
 }
 
@@ -923,38 +964,40 @@ install_nix() {
 create_dev_flake() {
     log_info "Creating dev environment flake symlink..."
 
-    local FLAKE_DIR="$HOME/.config/nix-dev-env"
+    local FLAKE_DIR="${HOME}/.config/nix-dev-env"
     local SOURCE_DIR="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}"
 
     # Verify source directory exists
-    if [[ ! -d "$SOURCE_DIR" ]]; then
-        log_error "Source directory not found: $SOURCE_DIR"
+    if [[ ! -d "${SOURCE_DIR}" ]]; then
+        log_error "Source directory not found: ${SOURCE_DIR}"
         log_error "Ensure clone_bootstrap_repo() was called first"
         return 1
     fi
 
     # Verify flake.nix exists in source
-    if [[ ! -f "$SOURCE_DIR/flake.nix" ]]; then
-        log_error "flake.nix not found in: $SOURCE_DIR"
+    if [[ ! -f "${SOURCE_DIR}/flake.nix" ]]; then
+        log_error "flake.nix not found in: ${SOURCE_DIR}"
         return 1
     fi
 
     # Remove existing directory/symlink if present
-    if [[ -L "$FLAKE_DIR" ]]; then
+    if [[ -L "${FLAKE_DIR}" ]]; then
         log_info "Removing existing symlink..."
-        rm "$FLAKE_DIR"
-    elif [[ -d "$FLAKE_DIR" ]]; then
+        rm "${FLAKE_DIR}"
+    elif [[ -d "${FLAKE_DIR}" ]]; then
         log_info "Backing up existing directory to ${FLAKE_DIR}.backup..."
-        mv "$FLAKE_DIR" "${FLAKE_DIR}.backup.$(date +%Y%m%d%H%M%S)"
+        local backup_suffix
+        backup_suffix=$(date +%Y%m%d%H%M%S)
+        mv "${FLAKE_DIR}" "${FLAKE_DIR}.backup.${backup_suffix}"
     fi
 
     # Create symlink
-    if ! ln -s "$SOURCE_DIR" "$FLAKE_DIR"; then
-        log_error "Failed to create symlink: $FLAKE_DIR -> $SOURCE_DIR"
+    if ! ln -s "${SOURCE_DIR}" "${FLAKE_DIR}"; then
+        log_error "Failed to create symlink: ${FLAKE_DIR} -> ${SOURCE_DIR}"
         return 1
     fi
 
-    log_ok "Dev flake symlinked: $FLAKE_DIR -> $SOURCE_DIR"
+    log_ok "Dev flake symlinked: ${FLAKE_DIR} -> ${SOURCE_DIR}"
     log_info "Updates to repo will be reflected immediately (after re-entering dev shell)"
 }
 
@@ -964,19 +1007,19 @@ create_dev_flake() {
 setup_shell_integration() {
     log_info "Setting up shell integration..."
 
-    local FLAKE_DIR="$HOME/.config/nix-dev-env"
-    local BASHRC="$HOME/.bashrc"
+    local FLAKE_DIR="${HOME}/.config/nix-dev-env"
+    local BASHRC="${HOME}/.bashrc"
     local MARKER="# >>> nix-dev-env >>>"
 
     # Check if already configured
-    if grep -q "$MARKER" "$BASHRC" 2>/dev/null; then
+    if grep -q "${MARKER}" "${BASHRC}" 2>/dev/null; then
         log_ok "Shell integration already configured"
         return 0
     fi
 
-    cat >>"$BASHRC" <<SHELLEOF
+    cat >>"${BASHRC}" <<SHELLEOF
 
-$MARKER
+${MARKER}
 # Nix daemon
 if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
     . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
@@ -984,7 +1027,7 @@ fi
 
 # Auto-enter dev environment
 dev() {
-    nix develop "$FLAKE_DIR#\${1:-default}" -c \$SHELL
+    nix develop "${FLAKE_DIR}#\${1:-default}" -c \${SHELL}
 }
 
 # Shortcut aliases
@@ -997,18 +1040,18 @@ alias dp='dev python'
 # - Updates flake.lock with latest packages
 dev-update() {
     echo "🔄 Updating dev environment..."
-    local REPO_DIR="\$HOME/.local/share/nix-install"
-    local FLAKE_DIR="\$HOME/.config/nix-dev-env"
+    local REPO_DIR="\${HOME}/.local/share/nix-install"
+    local FLAKE_DIR="\${HOME}/.config/nix-dev-env"
 
     # Pull latest from repo
-    if [[ -d "\$REPO_DIR/.git" ]]; then
+    if [[ -d "\${REPO_DIR}/.git" ]]; then
         echo "📥 Pulling latest from nix-install repo..."
-        (cd "\$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
+        (cd "\${REPO_DIR}" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
     fi
 
     # Update flake.lock (flake.nix is symlinked, no copy needed)
     echo "⬆️  Updating Nix packages..."
-    (cd "\$FLAKE_DIR" && nix flake update)
+    (cd "\${FLAKE_DIR}" && nix flake update)
 
     echo ""
     echo "✅ Dev environment updated!"
@@ -1020,7 +1063,7 @@ claude-quick() {
     if command -v claude &>/dev/null; then
         claude "\$@"
     else
-        nix run "$FLAKE_DIR#minimal" -- claude "\$@"
+        nix run "${FLAKE_DIR}#minimal" -- claude "\$@"
     fi
 }
 # <<< nix-dev-env <<<
@@ -1036,26 +1079,26 @@ SHELLEOF
 configure_tmux() {
     log_info "Configuring tmux..."
 
-    local TMUX_CONF="$HOME/.tmux.conf"
+    local TMUX_CONF="${HOME}/.tmux.conf"
     local MARKER="# >>> nix-dev-env tmux >>>"
 
     # Create symlink for zsh so tmux can find it
     # Nix zsh is only available in dev shell, so we symlink to /usr/local/bin
     local NIX_ZSH
     NIX_ZSH=$(find /nix/store -maxdepth 2 -name "zsh" -path "*/bin/zsh" 2>/dev/null | head -1)
-    if [[ -n "$NIX_ZSH" ]] && [[ ! -e /usr/local/bin/zsh ]]; then
+    if [[ -n "${NIX_ZSH}" ]] && [[ ! -e /usr/local/bin/zsh ]]; then
         log_info "Creating zsh symlink at /usr/local/bin/zsh..."
-        sudo ln -sf "$NIX_ZSH" /usr/local/bin/zsh
+        sudo ln -sf "${NIX_ZSH}" /usr/local/bin/zsh
         log_ok "Symlinked zsh to /usr/local/bin/zsh"
     fi
 
     # Check if already configured
-    if grep -q "$MARKER" "$TMUX_CONF" 2>/dev/null; then
+    if grep -q "${MARKER}" "${TMUX_CONF}" 2>/dev/null; then
         log_ok "tmux already configured"
         return 0
     fi
 
-    cat >>"$TMUX_CONF" <<'TMUXEOF'
+    cat >>"${TMUX_CONF}" <<'TMUXEOF'
 
 # >>> nix-dev-env tmux >>>
 # Use zsh as default shell (avoids bash completion errors)
@@ -1107,14 +1150,14 @@ TMUXEOF
 create_claude_md() {
     log_info "Creating CLAUDE.md template..."
 
-    local CLAUDE_MD="$HOME/CLAUDE.md"
+    local CLAUDE_MD="${HOME}/CLAUDE.md"
 
-    if [[ -f "$CLAUDE_MD" ]]; then
+    if [[ -f "${CLAUDE_MD}" ]]; then
         log_ok "CLAUDE.md already exists"
         return 0
     fi
 
-    cat >"$CLAUDE_MD" <<'CLAUDEEOF'
+    cat >"${CLAUDE_MD}" <<'CLAUDEEOF'
 # CLAUDE.md - Project Instructions
 
 ## Environment
@@ -1149,7 +1192,7 @@ create_claude_md() {
 - `claude` - Start Claude Code session
 CLAUDEEOF
 
-    log_ok "CLAUDE.md template created at $CLAUDE_MD"
+    log_ok "CLAUDE.md template created at ${CLAUDE_MD}"
 }
 
 #===============================================================================
@@ -1158,18 +1201,21 @@ CLAUDEEOF
 warm_nix_cache() {
     log_info "Building Nix environment (this may take a few minutes on first run)..."
 
-    local FLAKE_DIR="$HOME/.config/nix-dev-env"
+    local FLAKE_DIR="${HOME}/.config/nix-dev-env"
 
     # Source Nix if not already available
     if ! command -v nix &>/dev/null; then
         if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+            # shellcheck source=/dev/null
             . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
         fi
     fi
 
     # Build the default shell (downloads and caches all dependencies)
-    cd "$FLAKE_DIR"
-    nix build .#devShells.$(nix eval --impure --raw --expr 'builtins.currentSystem').default --no-link
+    cd "${FLAKE_DIR}"
+    local current_system
+    current_system=$(nix eval --impure --raw --expr 'builtins.currentSystem')
+    nix build ".#devShells.${current_system}.default" --no-link
 
     log_ok "Nix environment built and cached"
 }
@@ -1187,8 +1233,8 @@ print_summary() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${BLUE}Connection:${NC}"
-    echo -e "    SSH:  ${YELLOW}ssh $DEV_USER@$IP_ADDR${NC}"
-    echo -e "    Mosh: ${YELLOW}mosh $DEV_USER@$IP_ADDR${NC}"
+    echo -e "    SSH:  ${YELLOW}ssh ${DEV_USER}@${IP_ADDR}${NC}"
+    echo -e "    Mosh: ${YELLOW}mosh ${DEV_USER}@${IP_ADDR}${NC}"
     echo ""
     echo -e "  ${BLUE}Quick Start:${NC}"
     echo -e "    1. Reconnect or run: ${YELLOW}source ~/.bashrc${NC}"
@@ -1220,17 +1266,21 @@ main() {
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    # Phase 1: Preflight and base packages
+    log_phase "1: Preflight and Base Packages"
     preflight_checks
     install_base_packages
 
-    # Phase 2: Git and GitHub setup
+    log_phase "2: Git and GitHub Setup"
     install_github_cli
     configure_git_identity
     authenticate_github_cli
     clone_bootstrap_repo
 
-    # Phase 3: Security hardening
+    # Upgrade to full logging library now that repo is cloned
+    upgrade_logging
+
+    log_phase "3: Security Hardening"
+    log_timer_start "security_hardening" 2>/dev/null || true
     harden_ssh
     regenerate_host_keys
     configure_firewall
@@ -1241,16 +1291,21 @@ main() {
     harden_pam
     setup_security_report
     clean_old_kernels
+    log_timer_end "security_hardening" 2>/dev/null || true
 
-    # Phase 4: Nix installation and configuration
+    log_phase "4: Nix Installation and Configuration"
+    log_timer_start "nix_setup" 2>/dev/null || true
     install_nix
     create_dev_flake
     setup_shell_integration
     configure_tmux
     create_claude_md
+    log_timer_start "nix_cache_warmup" 2>/dev/null || true
     warm_nix_cache
+    log_timer_end "nix_cache_warmup" 2>/dev/null || true
+    log_timer_end "nix_setup" 2>/dev/null || true
 
-    # Done
+    log_phase "Complete"
     print_summary
 }
 
