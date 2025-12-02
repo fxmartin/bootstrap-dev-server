@@ -326,6 +326,14 @@ eval "$(fzf --zsh)"
 # msmtp sendmail alias
 alias sendmail='msmtp'
 alias mail='msmtp'
+
+# Auto-launch tmux on SSH connection
+# - Attaches to existing 'main' session or creates new one
+# - Only runs on SSH connections (not local terminals)
+# - Skips if already inside tmux
+if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
+  tmux attach-session -t main 2>/dev/null || tmux new-session -s main
+fi
 # <<< nix-dev-env zsh config <<<
 ZSHEOF
               echo "✓ Created ~/.zshrc with dev environment config"
