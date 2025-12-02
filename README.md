@@ -199,7 +199,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 | `dev` | Enter full dev environment |
 | `dev minimal` | Minimal environment (Claude + basics) |
 | `dev python` | Python-focused environment |
-| `dev-update` | Update all Nix packages |
+| `dev-update` | Pull latest from repo + update Nix packages |
 | `claude` | Start Claude Code |
 
 ---
@@ -526,6 +526,16 @@ cd ~/.config/nix-dev-env
 nix build .#devShells.x86_64-linux.default --no-link
 ```
 
+### New packages not available after updating flake.nix
+
+The dev shell is loaded once when you enter it. After updating `flake.nix`:
+```bash
+exit    # Exit current dev shell
+dev     # Re-enter to load new packages
+```
+
+Since `~/.config/nix-dev-env` is a symlink to the repo, changes to `flake.nix` are picked up immediately - you just need a fresh shell session.
+
 ---
 
 ## Configuration Options
@@ -551,14 +561,17 @@ After installation:
 ├── .config/
 │   ├── claude/
 │   │   └── config.json        # MCP server configuration
-│   └── nix-dev-env/
+│   └── nix-dev-env -> ~/.local/share/nix-install/bootstrap-dev-server  # Symlink!
+├── .local/share/nix-install/  # Sparse clone of this repo
+│   └── bootstrap-dev-server/
 │       ├── flake.nix          # Dev environment definition
 │       └── flake.lock         # Locked package versions
-├── .local/share/nix-install/  # Sparse clone of this repo
 ├── .bashrc                    # Shell integration
 ├── CLAUDE.md                  # Claude Code instructions
 └── projects/                  # Your projects
 ```
+
+**Note**: `~/.config/nix-dev-env` is a symlink to the repo. Changes to `flake.nix` are reflected immediately (after re-entering the dev shell with `dev`).
 
 ---
 
