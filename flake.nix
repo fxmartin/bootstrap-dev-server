@@ -94,8 +94,41 @@
             pkgs.python312Packages.mypy    # Static type checker
             pkgs.python312Packages.pylint  # Comprehensive linter
 
+            # Python Testing & Debugging
+            pkgs.python312Packages.pytest        # Testing framework
+            pkgs.python312Packages.pytest-asyncio # Async test support for FastAPI
+            pkgs.python312Packages.pytest-cov    # Test coverage reporting
+            pkgs.python312Packages.httpx         # Async HTTP client for testing
+            pkgs.python312Packages.ipython       # Enhanced REPL for debugging
+            pkgs.python312Packages.rich          # Pretty terminal output
+            pkgs.pre-commit                      # Git hooks for code quality
+
             # Node.js
             pkgs.nodejs_22
+
+            # React/Frontend Development
+            pkgs.bun                                    # Fast JS runtime/bundler
+            pkgs.pnpm                                   # Efficient package manager
+            pkgs.nodePackages.typescript                # TypeScript compiler
+            pkgs.nodePackages.typescript-language-server # LSP for editors
+            pkgs.nodePackages.eslint                    # JS/TS linting
+            pkgs.nodePackages.prettier                  # Code formatting
+
+            # Nix Development
+            pkgs.nil              # Nix LSP for editor integration
+            pkgs.nixfmt-rfc-style # Nix code formatter (RFC compliant)
+            pkgs.nix-tree         # Visualize Nix store dependencies
+            pkgs.nix-diff         # Compare Nix derivations
+
+            # Shell Development
+            pkgs.shfmt  # Shell script formatter
+            pkgs.bats   # Bash Automated Testing System
+
+            # General Development Tools
+            pkgs.just       # Modern task runner (make alternative)
+            pkgs.watchexec  # File watcher for auto-reload
+            pkgs.tokei      # Code statistics by language
+            pkgs.difftastic # Structural diff (syntax-aware)
 
             # Container tools
             pkgs.podman
