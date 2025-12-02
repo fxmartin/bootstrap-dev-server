@@ -115,6 +115,9 @@
 
             # Linting & testing
             pkgs.shellcheck  # Shell script linter
+
+            # Documentation tools
+            pkgs.glow  # Terminal markdown renderer
           ];
 
           shellHook = ''
@@ -243,10 +246,8 @@ alias dm='nix develop ~/.config/nix-dev-env#minimal'
 alias dp='nix develop ~/.config/nix-dev-env#python'
 
 # Update dev environment
-# - Pulls latest from nix-install repo
-# - Syncs flake.nix to ~/.config/nix-dev-env
+# - Pulls latest from nix-install repo (flake.nix is symlinked, so changes apply automatically)
 # - Updates flake.lock with latest packages
-# - Rebuilds the environment
 dev-update() {
   echo "🔄 Updating dev environment..."
   local REPO_DIR="$HOME/.local/share/nix-install"
@@ -258,15 +259,7 @@ dev-update() {
     (cd "$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
   fi
 
-  # Sync flake.nix from repo to config
-  local SOURCE_FLAKE="$REPO_DIR/bootstrap-dev-server/flake.nix"
-  if [[ -f "$SOURCE_FLAKE" ]]; then
-    echo "📋 Syncing flake.nix..."
-    cp "$SOURCE_FLAKE" "$FLAKE_DIR/flake.nix"
-    (cd "$FLAKE_DIR" && git add -A)
-  fi
-
-  # Update flake.lock
+  # Update flake.lock (flake.nix is symlinked, no copy needed)
   echo "⬆️  Updating Nix packages..."
   (cd "$FLAKE_DIR" && nix flake update)
 

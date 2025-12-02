@@ -889,45 +889,44 @@ install_nix() {
 }
 
 #===============================================================================
-# Create Dev Environment Flake
+# Create Dev Environment Flake (symlink to repo)
 #===============================================================================
 create_dev_flake() {
-    log_info "Creating dev environment flake..."
+    log_info "Creating dev environment flake symlink..."
 
     local FLAKE_DIR="$HOME/.config/nix-dev-env"
-    local SOURCE_FLAKE="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/flake.nix"
+    local SOURCE_DIR="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}"
 
-    mkdir -p "$FLAKE_DIR"
-
-    # Copy flake.nix from cloned repository
-    log_info "Copying flake.nix from local repository..."
-
-    if [[ ! -f "$SOURCE_FLAKE" ]]; then
-        log_error "Source flake not found: $SOURCE_FLAKE"
+    # Verify source directory exists
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        log_error "Source directory not found: $SOURCE_DIR"
         log_error "Ensure clone_bootstrap_repo() was called first"
         return 1
     fi
 
-    if ! cp "$SOURCE_FLAKE" "$FLAKE_DIR/flake.nix"; then
-        log_error "Failed to copy flake.nix"
+    # Verify flake.nix exists in source
+    if [[ ! -f "$SOURCE_DIR/flake.nix" ]]; then
+        log_error "flake.nix not found in: $SOURCE_DIR"
         return 1
     fi
 
-    # Verify copy
-    if [[ ! -s "$FLAKE_DIR/flake.nix" ]]; then
-        log_error "Copied flake.nix is empty"
+    # Remove existing directory/symlink if present
+    if [[ -L "$FLAKE_DIR" ]]; then
+        log_info "Removing existing symlink..."
+        rm "$FLAKE_DIR"
+    elif [[ -d "$FLAKE_DIR" ]]; then
+        log_info "Backing up existing directory to ${FLAKE_DIR}.backup..."
+        mv "$FLAKE_DIR" "${FLAKE_DIR}.backup.$(date +%Y%m%d%H%M%S)"
+    fi
+
+    # Create symlink
+    if ! ln -s "$SOURCE_DIR" "$FLAKE_DIR"; then
+        log_error "Failed to create symlink: $FLAKE_DIR -> $SOURCE_DIR"
         return 1
     fi
 
-    # Initialize git repo for flake (required by Nix)
-    cd "$FLAKE_DIR"
-    if [[ ! -d .git ]]; then
-        git init -q
-    fi
-    git add -A
-
-    log_ok "Dev flake created at $FLAKE_DIR"
-    log_info "Source: $SOURCE_FLAKE"
+    log_ok "Dev flake symlinked: $FLAKE_DIR -> $SOURCE_DIR"
+    log_info "Updates to repo will be reflected immediately (after re-entering dev shell)"
 }
 
 #===============================================================================
@@ -965,12 +964,12 @@ alias dm='dev minimal'
 alias dp='dev python'
 
 # Update dev environment
-# - Pulls latest from nix-install repo
-# - Syncs flake.nix to ~/.config/nix-dev-env
+# - Pulls latest from nix-install repo (flake.nix is symlinked, so changes apply automatically)
 # - Updates flake.lock with latest packages
 dev-update() {
     echo "🔄 Updating dev environment..."
     local REPO_DIR="\$HOME/.local/share/nix-install"
+    local FLAKE_DIR="\$HOME/.config/nix-dev-env"
 
     # Pull latest from repo
     if [[ -d "\$REPO_DIR/.git" ]]; then
@@ -978,17 +977,9 @@ dev-update() {
         (cd "\$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
     fi
 
-    # Sync flake.nix from repo to config
-    local SOURCE_FLAKE="\$REPO_DIR/bootstrap-dev-server/flake.nix"
-    if [[ -f "\$SOURCE_FLAKE" ]]; then
-        echo "📋 Syncing flake.nix..."
-        cp "\$SOURCE_FLAKE" "$FLAKE_DIR/flake.nix"
-        (cd "$FLAKE_DIR" && git add -A)
-    fi
-
-    # Update flake.lock
+    # Update flake.lock (flake.nix is symlinked, no copy needed)
     echo "⬆️  Updating Nix packages..."
-    (cd "$FLAKE_DIR" && nix flake update)
+    (cd "\$FLAKE_DIR" && nix flake update)
 
     echo ""
     echo "✅ Dev environment updated!"
