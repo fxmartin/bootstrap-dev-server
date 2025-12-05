@@ -254,6 +254,53 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 ---
 
+## Real-World Timing
+
+Actual bootstrap timing from a CX33 server in Falkenstein (fsn1), December 2025:
+
+| Phase | Description | Duration |
+|-------|-------------|----------|
+| 1 | Preflight & Base Packages | ~36s |
+| 2 | Git & GitHub Setup | ~70s |
+| 3 | Security Hardening | ~53s |
+| 4 | Nix Installation | ~217s (3m 37s) |
+| 5 | Final SSH Configuration | instant |
+| **Total** | **Full bootstrap** | **~6-7 minutes** |
+
+> **Note**: Phase 4 (Nix) takes the longest as it downloads and caches all development packages (~140 packages). Subsequent runs are much faster due to caching.
+
+### SSH Disconnection During Bootstrap
+
+The SSH connection may drop during Phase 3 (Security Hardening) due to firewall configuration or GeoIP blocking. **This is expected behavior** and the script is designed to handle it:
+
+1. **Wait 30 seconds** for security services to stabilize
+2. **Reconnect** via SSH:
+   ```bash
+   ssh your-server-name
+   ```
+3. **Re-run the bootstrap** (it's idempotent):
+   ```bash
+   cd ~/.local/share/nix-install/bootstrap-dev-server
+   ./bootstrap-dev-server.sh
+   ```
+
+The script detects what's already configured and skips completed steps. You'll see messages like:
+- `GitHub CLI already installed`
+- `SSH hardening already configured`
+- `Firewall configured`
+
+### Post-Bootstrap: Tailscale Authentication
+
+Tailscale is installed but requires authentication. After bootstrap completes:
+
+```bash
+sudo tailscale up
+```
+
+This displays a URL to authenticate with your Tailscale account. Once connected, you can access your server via Tailscale IP (100.x.x.x) which bypasses GeoIP restrictions.
+
+---
+
 ## Accessing from iPad with Blink Shell
 
 [Blink Shell](https://blink.sh/) is a professional SSH client for iOS/iPadOS with Mosh support.
@@ -547,6 +594,10 @@ The report is sent daily at **7am Europe/Paris** via msmtp (installed from Nix f
 ---
 
 ## Troubleshooting
+
+### Bootstrap disconnected mid-way
+
+This is normal during Phase 3 (Security Hardening). See [SSH Disconnection During Bootstrap](#ssh-disconnection-during-bootstrap) for recovery steps. The script is idempotent - just reconnect and re-run it.
 
 ### Can't SSH after running script
 

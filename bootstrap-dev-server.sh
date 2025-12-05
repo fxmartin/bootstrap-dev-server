@@ -1425,6 +1425,19 @@ main() {
     upgrade_logging
 
     log_phase "3: Security Hardening"
+    # Warn about potential SSH disconnection during security hardening
+    echo ""
+    log_warn "╔════════════════════════════════════════════════════════════════════╗"
+    log_warn "║  SSH connection may drop during security hardening.                 ║"
+    log_warn "║  If disconnected, wait 30 seconds then reconnect and re-run:        ║"
+    log_warn "║                                                                     ║"
+    log_warn "║    ssh ${DEV_USER}@\$(hostname -I | awk '{print \$1}')                          ║"
+    log_warn "║    cd ~/.local/share/nix-install/bootstrap-dev-server               ║"
+    log_warn "║    ./bootstrap-dev-server.sh                                        ║"
+    log_warn "║                                                                     ║"
+    log_warn "║  The script is idempotent - it will resume where it left off.       ║"
+    log_warn "╚════════════════════════════════════════════════════════════════════╝"
+    echo ""
     log_timer_start "security_hardening" 2>/dev/null || true
     harden_ssh
     regenerate_host_keys
