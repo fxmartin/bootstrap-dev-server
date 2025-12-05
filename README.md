@@ -91,6 +91,15 @@ That's it. You're coding in the cloud.
 # AMD server with more disk space
 ./hcloud-provision.sh --type cpx22
 
+# Custom SSH port (default: 22)
+./hcloud-provision.sh --ssh-port 22222
+
+# GeoIP country whitelist (default: disabled)
+./hcloud-provision.sh --geoip-countries "LU,FR,GR"
+
+# Disable GeoIP blocking explicitly
+./hcloud-provision.sh --no-geoip
+
 # Auto-confirm (no prompts)
 ./hcloud-provision.sh --yes
 
@@ -173,11 +182,12 @@ If you prefer manual control, see [Manual Hetzner Setup](#appendix-a-manual-hetz
 The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev environment:
 
 ### Security Hardening
-- **SSH hardened**: Key-only auth, no root login, strong ciphers
-- **UFW firewall**: SSH and Mosh only
+- **SSH hardened**: Key-only auth, no root login, strong ciphers, configurable port
+- **UFW firewall**: SSH and Mosh only, with rate limiting (blocks after 6 connections/30s)
+- **GeoIP blocking**: Country-based whitelist via geoip-shell (nftables backend)
 - **Fail2Ban**: 24-hour bans after 3 failed attempts
 - **Unattended upgrades**: Automatic security patches
-- **Tailscale**: VPN mesh network for secure access from anywhere
+- **Tailscale**: VPN mesh network for secure access from anywhere (bypass for GeoIP)
 - **auditd**: System auditing with rules for identity, sudo, SSH, cron, and PAM changes
 - **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
 - **PAM hardening**: Empty passwords disallowed (nullok removed)
@@ -486,9 +496,13 @@ After bootstrap, SSH is hardened:
 
 ### Firewall Rules
 
-UFW allows only:
-- SSH (port 22)
+**UFW** allows only:
+- SSH (configurable port, default 22) with rate limiting
 - Mosh (UDP 60000-60010)
+
+**Rate limiting**: Blocks IP addresses after 6 connection attempts within 30 seconds. This protects against brute-force attacks while allowing legitimate reconnections.
+
+**GeoIP blocking** (optional): When enabled, only allows connections from whitelisted countries. Uses nftables backend with daily IP database updates. Tailscale provides bypass access if you get locked out.
 
 ### Fail2Ban
 
@@ -573,6 +587,51 @@ dev     # Re-enter to load new packages
 
 Since `~/.config/nix-dev-env` is a symlink to the repo, changes to `flake.nix` are picked up immediately - you just need a fresh shell session.
 
+### Locked out by GeoIP blocking
+
+If you're traveling and can't connect from a whitelisted country:
+
+1. **Use Tailscale** (recommended): Connect via Tailscale IP which bypasses GeoIP
+   ```bash
+   ssh fx@100.x.x.x  # Your server's Tailscale IP
+   ```
+
+2. **Hetzner Console**: Use VNC access via the Hetzner Cloud web console
+
+3. **Temporarily disable GeoIP** (from console or Tailscale):
+   ```bash
+   sudo geoip-shell off
+   ```
+
+4. **Add a country temporarily**:
+   ```bash
+   sudo geoip-shell configure -z -m whitelist -c "LU FR GR US" -i all -l none
+   ```
+
+5. **Check GeoIP status**:
+   ```bash
+   sudo geoip-shell status
+   ```
+
+### SSH connection refused on custom port
+
+If using a non-standard SSH port and can't connect:
+
+1. Verify the port is open in UFW:
+   ```bash
+   sudo ufw status | grep <port>
+   ```
+
+2. Check SSH is listening on the correct port:
+   ```bash
+   sudo ss -tlnp | grep sshd
+   ```
+
+3. Verify ssh.socket is disabled (Ubuntu 24.04):
+   ```bash
+   sudo systemctl status ssh.socket  # Should be inactive
+   ```
+
 ---
 
 ## Configuration Options
@@ -582,10 +641,28 @@ Environment variables for the bootstrap script:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEV_USER` | Current user | Username for setup |
-| `SSH_PORT` | 22 | SSH port |
+| `SSH_PORT` | 22 | SSH port (use non-standard like 22222 for security) |
 | `MOSH_PORT_START` | 60000 | Mosh UDP range start |
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `REGEN_HOST_KEYS` | false | Regenerate SSH host keys |
+| `UFW_RATE_LIMIT` | true | Enable UFW rate limiting for SSH |
+| `GEOIP_ENABLED` | true | Enable GeoIP country-based blocking |
+| `GEOIP_COUNTRIES` | LU,FR,GR | Comma-separated whitelist of country codes |
+
+### GeoIP Country Codes
+
+Common country codes for the whitelist:
+- **EU**: DE (Germany), FR (France), NL (Netherlands), BE (Belgium), LU (Luxembourg), AT (Austria), CH (Switzerland)
+- **Nordic**: FI (Finland), SE (Sweden), NO (Norway), DK (Denmark)
+- **Southern EU**: ES (Spain), IT (Italy), PT (Portugal), GR (Greece)
+- **UK/Ireland**: GB (United Kingdom), IE (Ireland)
+- **Americas**: US (United States), CA (Canada)
+- **Asia-Pacific**: JP (Japan), AU (Australia), SG (Singapore)
+
+Example for European access only:
+```bash
+GEOIP_COUNTRIES="DE,FR,NL,BE,LU,AT,CH,GB,IE" ./bootstrap-dev-server.sh
+```
 
 ### Logging Configuration
 
@@ -802,3 +879,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client
+- [geoip-shell](https://github.com/friendly-bits/geoip-shell) for country-based firewall blocking
