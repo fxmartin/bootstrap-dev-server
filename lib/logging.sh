@@ -57,14 +57,8 @@ fi
 # =============================================================================
 # Log Levels (numeric for comparison)
 # =============================================================================
-declare -A _LOG_LEVELS=(
-    [DEBUG]=0
-    [INFO]=1
-    [OK]=1
-    [STEP]=1
-    [WARN]=2
-    [ERROR]=3
-)
+# Note: Log level comparison is done via case statement in _log_should_log()
+# to maintain bash 3.2 compatibility (no associative arrays)
 
 # =============================================================================
 # State Variables
@@ -72,7 +66,8 @@ declare -A _LOG_LEVELS=(
 # shellcheck disable=SC2034  # LOG_PHASE is set for external use by scripts
 LOG_PHASE=""
 LOG_FUNCTION=""
-declare -A _LOG_TIMERS=()
+# Timer storage uses dynamic variable names for bash 3.2 compatibility
+# e.g., _LOG_TIMER_build=1234567890
 
 # =============================================================================
 # Internal Functions
@@ -212,27 +207,34 @@ log_exit() {
 # Public API - Performance Timing
 # =============================================================================
 
+# Sanitize timer name to valid bash variable name
+_log_timer_varname() {
+    local name="${1:-unknown}"
+    # Replace non-alphanumeric chars with underscore
+    echo "_LOG_TIMER_${name//[^a-zA-Z0-9_]/_}"
+}
+
 log_timer_start() {
     local name="${1:-unknown}"
-    local timer_key="$name"
-    # Use seconds since epoch with nanoseconds if available
-    if date +%s.%N &>/dev/null; then
-        _LOG_TIMERS[$timer_key]=$(date +%s.%N)
-    else
-        _LOG_TIMERS[$timer_key]=$(date +%s)
-    fi
+    local varname
+    varname=$(_log_timer_varname "$name")
+    local timestamp
+    # Use seconds since epoch (macOS date doesn't support %N)
+    timestamp=$(date +%s)
+    # shellcheck disable=SC2086  # Variable name is sanitized
+    eval "${varname}=${timestamp}"
     log_debug "Timer '${name}' started"
 }
 
 log_timer_end() {
-    local name="${1}"
-    local timer_key="${name:-unknown}"
+    local name="${1:-unknown}"
+    local varname
+    varname=$(_log_timer_varname "$name")
     local start=""
 
-    # Safe array access with set -u
-    if [[ -n "${_LOG_TIMERS[$timer_key]+x}" ]]; then
-        start="${_LOG_TIMERS[$timer_key]}"
-    fi
+    # Safe variable access - check if set
+    # shellcheck disable=SC2086  # Variable name is sanitized
+    eval "start=\${${varname}:-}"
 
     if [[ -z "${start}" ]]; then
         log_warn "Timer '${name}' was never started"
@@ -240,17 +242,12 @@ log_timer_end() {
     fi
 
     local end duration
-    if date +%s.%N &>/dev/null; then
-        end=$(date +%s.%N)
-        # Use awk for floating point math (bc might not be available)
-        duration=$(awk "BEGIN {printf \"%.2f\", ${end} - ${start}}")
-    else
-        end=$(date +%s)
-        duration=$((end - start))
-    fi
+    end=$(date +%s)
+    duration=$((end - start))
 
     log_info "${name} completed in ${duration}s"
-    unset "_LOG_TIMERS[$timer_key]"
+    # shellcheck disable=SC2086  # Variable name is sanitized
+    unset "${varname}"
 }
 
 # =============================================================================

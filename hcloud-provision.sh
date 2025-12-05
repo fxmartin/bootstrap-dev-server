@@ -75,6 +75,10 @@ BOOTSTRAP_SSH_PORT="${BOOTSTRAP_SSH_PORT:-22}"           # SSH port (22 = standa
 BOOTSTRAP_GEOIP_ENABLED="${BOOTSTRAP_GEOIP_ENABLED:-false}"  # Enable GeoIP country blocking
 BOOTSTRAP_GEOIP_COUNTRIES="${BOOTSTRAP_GEOIP_COUNTRIES:-}"   # Whitelist countries (e.g., "LU,FR,GR")
 
+# Git identity (required for non-interactive bootstrap with --yes)
+GIT_USER_NAME="${GIT_USER_NAME:-}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-}"
+
 #===============================================================================
 # Help
 #===============================================================================
@@ -96,6 +100,8 @@ OPTIONS:
     --ssh-port PORT     SSH port for bootstrap (default: 22, recommended: 22222)
     --geoip-countries   Enable GeoIP whitelist (e.g., "LU,FR,GR")
     --no-geoip          Disable GeoIP blocking
+    --git-name NAME     Git user name (required with --yes)
+    --git-email EMAIL   Git user email (required with --yes)
     --delete NAME       Delete server with given name
     --rescale NAME      Rescale server to new type (use with --type)
     --list              List all servers
@@ -282,6 +288,14 @@ while [[ $# -gt 0 ]]; do
     --no-geoip)
         BOOTSTRAP_GEOIP_ENABLED=false
         shift
+        ;;
+    --git-name)
+        GIT_USER_NAME="$2"
+        shift 2
+        ;;
+    --git-email)
+        GIT_USER_EMAIL="$2"
+        shift 2
         ;;
     --help | -h)
         show_help
@@ -612,19 +626,37 @@ run_bootstrap() {
     log_info "Connecting to server and running bootstrap..."
     echo ""
 
+    # Validate git identity for non-interactive mode
+    if [[ "${AUTO_BOOTSTRAP}" == true ]]; then
+        if [[ -z "${GIT_USER_NAME}" || -z "${GIT_USER_EMAIL}" ]]; then
+            log_error "Git identity required for non-interactive mode (--yes)"
+            log_error "Use: --git-name 'Your Name' --git-email 'you@example.com'"
+            return 1
+        fi
+    fi
+
     # Build environment variables to pass to bootstrap
-    local bootstrap_env=""
+    # Using 'export' so they're available to the piped bash process
+    local bootstrap_exports=""
     if [[ "${BOOTSTRAP_SSH_PORT}" != "22" ]]; then
-        bootstrap_env+="SSH_PORT=${BOOTSTRAP_SSH_PORT} "
+        bootstrap_exports+="export SSH_PORT=${BOOTSTRAP_SSH_PORT}; "
         log_info "SSH port will be changed to: ${BOOTSTRAP_SSH_PORT}"
     fi
     if [[ "${BOOTSTRAP_GEOIP_ENABLED}" == "true" && -n "${BOOTSTRAP_GEOIP_COUNTRIES}" ]]; then
-        bootstrap_env+="GEOIP_ENABLED=true GEOIP_COUNTRIES='${BOOTSTRAP_GEOIP_COUNTRIES}' "
+        bootstrap_exports+="export GEOIP_ENABLED=true; export GEOIP_COUNTRIES='${BOOTSTRAP_GEOIP_COUNTRIES}'; "
         log_info "GeoIP whitelist countries: ${BOOTSTRAP_GEOIP_COUNTRIES}"
+    fi
+    if [[ -n "${GIT_USER_NAME}" ]]; then
+        bootstrap_exports+="export GIT_USER_NAME='${GIT_USER_NAME}'; "
+        log_info "Git user name: ${GIT_USER_NAME}"
+    fi
+    if [[ -n "${GIT_USER_EMAIL}" ]]; then
+        bootstrap_exports+="export GIT_USER_EMAIL='${GIT_USER_EMAIL}'; "
+        log_info "Git user email: ${GIT_USER_EMAIL}"
     fi
 
     ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
-        "${bootstrap_env}curl -fsSL '${BOOTSTRAP_URL}' | bash"
+        "${bootstrap_exports}curl -fsSL '${BOOTSTRAP_URL}' | bash"
 
     log_ok "Bootstrap complete!"
 }
