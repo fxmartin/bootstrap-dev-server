@@ -491,7 +491,8 @@ install_geoip_shell() {
     if command -v geoip-shell &>/dev/null; then
         log_ok "geoip-shell already installed"
         log_info "Updating GeoIP whitelist to: ${GEOIP_COUNTRIES}"
-        sudo geoip-shell configure -c "${GEOIP_COUNTRIES}" -m whitelist 2>/dev/null || true
+        # Update countries if already configured
+        sudo geoip-shell configure -z -m whitelist -c "${GEOIP_COUNTRIES//,/ }" -i all -l none 2>/dev/null || true
         return 0
     fi
 
@@ -537,7 +538,9 @@ install_geoip_shell() {
     local countries_spaced="${GEOIP_COUNTRIES//,/ }"
     log_info "Configuring whitelist for countries: ${countries_spaced}"
 
-    if ! sudo geoip-shell configure -m whitelist -c "${countries_spaced}"; then
+    # -i all: apply to all interfaces
+    # -l none: no LAN subnets (cloud server)
+    if ! sudo geoip-shell configure -z -m whitelist -c "${countries_spaced}" -i all -l none; then
         log_error "geoip-shell configuration failed"
         log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
         return 1
@@ -545,7 +548,7 @@ install_geoip_shell() {
 
     # Set up automatic weekly updates
     log_info "Configuring automatic GeoIP database updates..."
-    sudo geoip-shell configure -s "1 4 * * 0" 2>/dev/null || true
+    sudo geoip-shell configure -z -s "1 4 * * 0" 2>/dev/null || true
 
     sudo geoip-shell status 2>/dev/null || true
 
