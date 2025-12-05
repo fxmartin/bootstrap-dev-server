@@ -318,9 +318,16 @@ harden_ssh() {
 
     local SSH_HARDENING_FILE="/etc/ssh/sshd_config.d/99-hardening.conf"
 
-    # Check if port needs to change (requires force update)
-    if [[ "${SSH_PORT}" != "22" ]]; then
+    # Check if port actually needs to change
+    local current_port="22"
+    if [[ -f "${SSH_HARDENING_FILE}" ]]; then
+        current_port=$(grep -E "^Port " "${SSH_HARDENING_FILE}" 2>/dev/null | awk '{print $2}' || echo "22")
+    fi
+
+    # Force update if port is different from what's configured
+    if [[ "${SSH_PORT}" != "${current_port}" ]]; then
         FORCE_SSH_UPDATE=true
+        log_info "SSH port changing from ${current_port} to ${SSH_PORT}"
     fi
 
     # Only create if doesn't exist or force update
