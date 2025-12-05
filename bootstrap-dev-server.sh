@@ -596,8 +596,8 @@ install_tailscale() {
 
     log_ok "Tailscale installed"
     log_warn "╔════════════════════════════════════════════════════════════════════╗"
-    log_warn "║  Run 'sudo tailscale up' after bootstrap to authenticate.          ║"
-    log_warn "║  This will provide a URL to link this server to your account.      ║"
+    log_warn "║  Run 'sudo tailscale up --ssh' after bootstrap to authenticate.    ║"
+    log_warn "║  This enables Tailscale SSH for keyless access from your Tailnet.  ║"
     log_warn "╚════════════════════════════════════════════════════════════════════╝"
 }
 

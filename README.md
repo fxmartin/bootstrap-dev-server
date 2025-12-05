@@ -294,10 +294,20 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up
+sudo tailscale up --ssh
 ```
 
-This displays a URL to authenticate with your Tailscale account. Once connected, you can access your server via Tailscale IP (100.x.x.x) which bypasses GeoIP restrictions.
+This displays a URL to authenticate with your Tailscale account. The `--ssh` flag enables Tailscale SSH, allowing you to connect without SSH keys from any device on your Tailnet.
+
+Once connected, you can access your server via Tailscale IP which bypasses GeoIP restrictions:
+
+```bash
+# Get your server's Tailscale IP
+tailscale ip -4   # Shows 100.x.x.x
+
+# Connect from any device on your Tailnet
+ssh fx@100.x.x.x
+```
 
 ---
 
