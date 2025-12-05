@@ -511,15 +511,10 @@ install_geoip_shell() {
     fi
 
     # Run installer in non-interactive mode
-    log_info "Installing geoip-shell with whitelist mode..."
+    log_info "Installing geoip-shell..."
 
-    # Use full path with bash to avoid "command not found" issues
-    if ! sudo bash "${GEOIP_INSTALL_DIR}/geoip-shell-install.sh" -m whitelist \
-        -c "${GEOIP_COUNTRIES}" \
-        -p "tcp:dport:${SSH_PORT}" \
-        -i inbound \
-        -s ripe \
-        -a -n; then
+    # Install with -z for non-interactive mode
+    if ! sudo sh "${GEOIP_INSTALL_DIR}/geoip-shell-install.sh" -z; then
         log_error "geoip-shell installation failed"
         log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
         rm -rf "${GEOIP_INSTALL_DIR}"
@@ -529,21 +524,30 @@ install_geoip_shell() {
     rm -rf "${GEOIP_INSTALL_DIR}"
 
     # Verify installation
-    if command -v geoip-shell &>/dev/null; then
-        log_ok "geoip-shell installed successfully"
-        log_info "Whitelisted countries: ${GEOIP_COUNTRIES}"
-        log_info "Protected port: SSH (${SSH_PORT}/tcp)"
-
-        # Set up automatic updates
-        log_info "Configuring automatic GeoIP database updates..."
-        sudo geoip-shell configure -u weekly 2>/dev/null || true
-
-        sudo geoip-shell status 2>/dev/null || true
-    else
+    if ! command -v geoip-shell &>/dev/null; then
         log_error "geoip-shell installation verification failed"
         log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
         return 1
     fi
+
+    log_ok "geoip-shell installed successfully"
+
+    # Configure whitelist mode with specified countries
+    # Countries should be space-separated for geoip-shell
+    local countries_spaced="${GEOIP_COUNTRIES//,/ }"
+    log_info "Configuring whitelist for countries: ${countries_spaced}"
+
+    if ! sudo geoip-shell configure -m whitelist -c "${countries_spaced}"; then
+        log_error "geoip-shell configuration failed"
+        log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
+        return 1
+    fi
+
+    # Set up automatic weekly updates
+    log_info "Configuring automatic GeoIP database updates..."
+    sudo geoip-shell configure -s "1 4 * * 0" 2>/dev/null || true
+
+    sudo geoip-shell status 2>/dev/null || true
 
     log_ok "GeoIP blocking configured (whitelist: ${GEOIP_COUNTRIES})"
 }
