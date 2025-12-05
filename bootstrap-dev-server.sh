@@ -64,6 +64,9 @@ UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting fo
 GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
 
+# Internal state (set by functions)
+SSH_RESTART_NEEDED=false                           # Set by harden_ssh() if restart needed
+
 # Repository configuration
 GITHUB_REPO="fxmartin/nix-install"
 REPO_CLONE_DIR="${HOME}/.local/share/nix-install"
@@ -377,18 +380,11 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 SSHEOF
 
-        # Validate SSH config before restart
+        # Validate SSH config (restart deferred to end of bootstrap to avoid killing connection)
         if sudo sshd -t; then
-            # Ubuntu 24.04 uses socket activation which overrides port config
-            # Disable it when using non-standard port
-            if [[ "${SSH_PORT}" != "22" ]]; then
-                sudo systemctl disable --now ssh.socket 2>/dev/null || true
-                sudo systemctl restart ssh || sudo systemctl restart sshd
-                log_info "SSH socket activation disabled for port ${SSH_PORT}"
-            else
-                sudo systemctl reload ssh || sudo systemctl reload sshd
-            fi
-            log_ok "SSH hardening applied"
+            # Mark that SSH restart is needed at end of bootstrap
+            SSH_RESTART_NEEDED=true
+            log_ok "SSH hardening config applied (restart deferred to end)"
         else
             log_error "SSH config validation failed! Reverting..."
             sudo rm -f "${SSH_HARDENING_FILE}"
@@ -397,6 +393,30 @@ SSHEOF
     else
         log_ok "SSH hardening already configured"
     fi
+}
+
+#===============================================================================
+# Apply SSH Changes (called at end of bootstrap to avoid killing connection)
+#===============================================================================
+restart_ssh_final() {
+    if [[ "${SSH_RESTART_NEEDED}" != "true" ]]; then
+        log_debug "No SSH restart needed"
+        return 0
+    fi
+
+    log_info "Applying SSH configuration changes..."
+
+    # Ubuntu 24.04 uses socket activation which overrides port config
+    # Disable it when using non-standard port
+    if [[ "${SSH_PORT}" != "22" ]]; then
+        log_warn "Switching SSH to port ${SSH_PORT} - connection will be reset"
+        sudo systemctl disable --now ssh.socket 2>/dev/null || true
+        sudo systemctl restart ssh || sudo systemctl restart sshd
+    else
+        sudo systemctl reload ssh || sudo systemctl reload sshd
+    fi
+
+    log_ok "SSH configuration applied"
 }
 
 #===============================================================================
@@ -1339,14 +1359,22 @@ print_summary() {
     local IP_ADDR
     IP_ADDR=$(hostname -I | awk '{print $1}')
 
+    # Build connection strings based on SSH port
+    local ssh_cmd="ssh ${DEV_USER}@${IP_ADDR}"
+    local mosh_cmd="mosh ${DEV_USER}@${IP_ADDR}"
+    if [[ "${SSH_PORT}" != "22" ]]; then
+        ssh_cmd="ssh -p ${SSH_PORT} ${DEV_USER}@${IP_ADDR}"
+        mosh_cmd="mosh --ssh=\"ssh -p ${SSH_PORT}\" ${DEV_USER}@${IP_ADDR}"
+    fi
+
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  ✅ Dev Server Bootstrap Complete!${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${BLUE}Connection:${NC}"
-    echo -e "    SSH:  ${YELLOW}ssh ${DEV_USER}@${IP_ADDR}${NC}"
-    echo -e "    Mosh: ${YELLOW}mosh ${DEV_USER}@${IP_ADDR}${NC}"
+    echo -e "    SSH:  ${YELLOW}${ssh_cmd}${NC}"
+    echo -e "    Mosh: ${YELLOW}${mosh_cmd}${NC}"
     echo ""
     echo -e "  ${BLUE}Quick Start:${NC}"
     echo -e "    1. Reconnect or run: ${YELLOW}source ~/.bashrc${NC}"
@@ -1365,6 +1393,21 @@ print_summary() {
     echo -e "    ${YELLOW}${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}${NC}"
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+
+    # Prominent warning if SSH port changed
+    if [[ "${SSH_PORT}" != "22" ]]; then
+        echo ""
+        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}  ⚠️  SSH PORT CHANGED TO ${SSH_PORT}${NC}"
+        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+        echo -e "  Your connection will be reset. Reconnect with:"
+        echo -e "    ${YELLOW}${ssh_cmd}${NC}"
+        echo ""
+        echo -e "  Or add to your ~/.ssh/config:"
+        echo -e "    ${CYAN}Host dev-server${NC}"
+        echo -e "    ${CYAN}    Port ${SSH_PORT}${NC}"
+        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    fi
 }
 
 #===============================================================================
@@ -1417,6 +1460,9 @@ main() {
     warm_nix_cache
     log_timer_end "nix_cache_warmup" 2>/dev/null || true
     log_timer_end "nix_setup" 2>/dev/null || true
+
+    log_phase "5: Final SSH Configuration"
+    restart_ssh_final
 
     log_phase "Complete"
     print_summary
