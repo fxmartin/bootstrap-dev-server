@@ -59,6 +59,11 @@ SSH_PORT="${SSH_PORT:-22}"
 MOSH_PORT_START="${MOSH_PORT_START:-60000}"
 MOSH_PORT_END="${MOSH_PORT_END:-60010}"
 
+# Security hardening configuration
+UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting for SSH
+GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
+GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
+
 # Repository configuration
 GITHUB_REPO="fxmartin/nix-install"
 REPO_CLONE_DIR="${HOME}/.local/share/nix-install"
@@ -403,8 +408,13 @@ configure_firewall() {
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
 
-    # SSH
-    sudo ufw allow "${SSH_PORT}"/tcp comment 'SSH'
+    # SSH with optional rate limiting (blocks after 6 connections in 30 seconds from same IP)
+    if [[ "${UFW_RATE_LIMIT:-true}" == "true" ]]; then
+        sudo ufw limit "${SSH_PORT}"/tcp comment 'SSH with rate limiting'
+        log_info "SSH rate limiting enabled (6 connections/30s threshold)"
+    else
+        sudo ufw allow "${SSH_PORT}"/tcp comment 'SSH'
+    fi
 
     # Mosh UDP ports
     sudo ufw allow "${MOSH_PORT_START}:${MOSH_PORT_END}"/udp comment 'Mosh'
@@ -421,7 +431,7 @@ configure_firewall() {
 configure_fail2ban() {
     log_info "Configuring Fail2Ban..."
 
-    sudo tee /etc/fail2ban/jail.local >/dev/null <<'F2BEOF'
+    sudo tee /etc/fail2ban/jail.local >/dev/null <<F2BEOF
 [DEFAULT]
 bantime = 1h
 findtime = 10m
@@ -430,7 +440,7 @@ ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
 enabled = true
-port = ssh
+port = ${SSH_PORT}
 filter = sshd
 logpath = /var/log/auth.log
 maxretry = 3
@@ -440,7 +450,81 @@ F2BEOF
     sudo systemctl enable fail2ban
     sudo systemctl restart fail2ban
 
-    log_ok "Fail2Ban configured"
+    log_ok "Fail2Ban configured for port ${SSH_PORT}"
+}
+
+#===============================================================================
+# Install and Configure GeoIP Blocking (geoip-shell)
+#===============================================================================
+install_geoip_shell() {
+    if [[ "${GEOIP_ENABLED:-true}" != "true" ]]; then
+        log_info "GeoIP blocking disabled (GEOIP_ENABLED=false)"
+        return 0
+    fi
+
+    log_info "Installing geoip-shell for country-based SSH blocking..."
+
+    # Check if already installed
+    if command -v geoip-shell &>/dev/null; then
+        log_ok "geoip-shell already installed"
+        log_info "Updating GeoIP whitelist to: ${GEOIP_COUNTRIES}"
+        sudo geoip-shell configure -c "${GEOIP_COUNTRIES}" -m whitelist 2>/dev/null || true
+        return 0
+    fi
+
+    # Install dependencies
+    log_info "Installing geoip-shell dependencies..."
+    sudo apt-get install -y -qq curl wget gawk grep sed coreutils
+
+    # Clone geoip-shell
+    local GEOIP_INSTALL_DIR="/tmp/geoip-shell-install"
+    rm -rf "${GEOIP_INSTALL_DIR}"
+
+    log_info "Downloading geoip-shell..."
+    if ! git clone --depth 1 https://github.com/friendly-bits/geoip-shell.git "${GEOIP_INSTALL_DIR}"; then
+        log_error "Failed to clone geoip-shell repository"
+        log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
+        return 1
+    fi
+
+    # Run installer in non-interactive mode
+    log_info "Installing geoip-shell with whitelist mode..."
+    cd "${GEOIP_INSTALL_DIR}"
+
+    if ! sudo ./geoip-shell-install.sh -m whitelist \
+        -c "${GEOIP_COUNTRIES}" \
+        -p "tcp:dport:${SSH_PORT}" \
+        -i inbound \
+        -s ripe \
+        -a -n; then
+        log_error "geoip-shell installation failed"
+        log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
+        cd - >/dev/null
+        rm -rf "${GEOIP_INSTALL_DIR}"
+        return 1
+    fi
+
+    cd - >/dev/null
+    rm -rf "${GEOIP_INSTALL_DIR}"
+
+    # Verify installation
+    if command -v geoip-shell &>/dev/null; then
+        log_ok "geoip-shell installed successfully"
+        log_info "Whitelisted countries: ${GEOIP_COUNTRIES}"
+        log_info "Protected port: SSH (${SSH_PORT}/tcp)"
+
+        # Set up automatic updates
+        log_info "Configuring automatic GeoIP database updates..."
+        sudo geoip-shell configure -u weekly 2>/dev/null || true
+
+        sudo geoip-shell status 2>/dev/null || true
+    else
+        log_error "geoip-shell installation verification failed"
+        log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
+        return 1
+    fi
+
+    log_ok "GeoIP blocking configured (whitelist: ${GEOIP_COUNTRIES})"
 }
 
 #===============================================================================
@@ -1285,6 +1369,7 @@ main() {
     regenerate_host_keys
     configure_firewall
     configure_fail2ban
+    install_geoip_shell
     install_tailscale
     install_auditd
     harden_sysctl

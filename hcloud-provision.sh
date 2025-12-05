@@ -70,6 +70,11 @@ SSH_KEY_PATH="${SSH_KEY_PATH:-${HOME}/.ssh/id_devserver}"
 SSH_USER="${SSH_USER:-fx}"
 BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh"
 
+# Security hardening configuration (passed to bootstrap script)
+BOOTSTRAP_SSH_PORT="${BOOTSTRAP_SSH_PORT:-22}"           # SSH port (22 = standard, 22222 = recommended)
+BOOTSTRAP_GEOIP_ENABLED="${BOOTSTRAP_GEOIP_ENABLED:-false}"  # Enable GeoIP country blocking
+BOOTSTRAP_GEOIP_COUNTRIES="${BOOTSTRAP_GEOIP_COUNTRIES:-}"   # Whitelist countries (e.g., "LU,FR,GR")
+
 #===============================================================================
 # Help
 #===============================================================================
@@ -88,6 +93,9 @@ OPTIONS:
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
     --yes, -y           Auto-confirm bootstrap (no prompt)
     --no-bootstrap      Skip bootstrap, only create server
+    --ssh-port PORT     SSH port for bootstrap (default: 22, recommended: 22222)
+    --geoip-countries   Enable GeoIP whitelist (e.g., "LU,FR,GR")
+    --no-geoip          Disable GeoIP blocking
     --delete NAME       Delete server with given name
     --rescale NAME      Rescale server to new type (use with --type)
     --list              List all servers
@@ -260,6 +268,19 @@ while [[ $# -gt 0 ]]; do
         ;;
     --no-bootstrap)
         SKIP_BOOTSTRAP=true
+        shift
+        ;;
+    --ssh-port)
+        BOOTSTRAP_SSH_PORT="$2"
+        shift 2
+        ;;
+    --geoip-countries)
+        BOOTSTRAP_GEOIP_ENABLED=true
+        BOOTSTRAP_GEOIP_COUNTRIES="$2"
+        shift 2
+        ;;
+    --no-geoip)
+        BOOTSTRAP_GEOIP_ENABLED=false
         shift
         ;;
     --help | -h)
@@ -591,8 +612,19 @@ run_bootstrap() {
     log_info "Connecting to server and running bootstrap..."
     echo ""
 
+    # Build environment variables to pass to bootstrap
+    local bootstrap_env=""
+    if [[ "${BOOTSTRAP_SSH_PORT}" != "22" ]]; then
+        bootstrap_env+="SSH_PORT=${BOOTSTRAP_SSH_PORT} "
+        log_info "SSH port will be changed to: ${BOOTSTRAP_SSH_PORT}"
+    fi
+    if [[ "${BOOTSTRAP_GEOIP_ENABLED}" == "true" && -n "${BOOTSTRAP_GEOIP_COUNTRIES}" ]]; then
+        bootstrap_env+="GEOIP_ENABLED=true GEOIP_COUNTRIES='${BOOTSTRAP_GEOIP_COUNTRIES}' "
+        log_info "GeoIP whitelist countries: ${BOOTSTRAP_GEOIP_COUNTRIES}"
+    fi
+
     ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
-        "curl -fsSL '${BOOTSTRAP_URL}' | bash"
+        "${bootstrap_env}curl -fsSL '${BOOTSTRAP_URL}' | bash"
 
     log_ok "Bootstrap complete!"
 }
@@ -605,15 +637,21 @@ update_ssh_config() {
 
     local ssh_config="${HOME}/.ssh/config"
     # Security-hardened SSH config entry:
+    # - Port: Custom SSH port if configured (default: 22)
     # - IdentitiesOnly: Only use the specified key, don't try others
     # - AddKeysToAgent: Auto-add key to ssh-agent on first use
     # - UseKeychain: Store passphrase in macOS Keychain (ignored on Linux)
     # - ForwardAgent: Disabled for security (don't forward agent to server)
     # - StrictHostKeyChecking: accept-new accepts new hosts, warns on changes
+    local port_line=""
+    if [[ "${BOOTSTRAP_SSH_PORT}" != "22" ]]; then
+        port_line="    Port ${BOOTSTRAP_SSH_PORT}
+"
+    fi
     local entry="# Dev Server: ${SERVER_NAME} (provisioned $(date +%Y-%m-%d))
 Host ${SERVER_NAME}
     HostName ${SERVER_IP}
-    User ${SSH_USER}
+${port_line}    User ${SSH_USER}
     IdentityFile ${SSH_KEY_PATH}
     IdentitiesOnly yes
     AddKeysToAgent yes
