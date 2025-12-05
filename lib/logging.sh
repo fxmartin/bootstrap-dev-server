@@ -213,12 +213,13 @@ log_exit() {
 # =============================================================================
 
 log_timer_start() {
-    local name="${1}"
+    local name="${1:-unknown}"
+    local timer_key="$name"
     # Use seconds since epoch with nanoseconds if available
     if date +%s.%N &>/dev/null; then
-        _LOG_TIMERS[${name}]=$(date +%s.%N)
+        _LOG_TIMERS[$timer_key]=$(date +%s.%N)
     else
-        _LOG_TIMERS[${name}]=$(date +%s)
+        _LOG_TIMERS[$timer_key]=$(date +%s)
     fi
     log_debug "Timer '${name}' started"
 }
@@ -249,7 +250,7 @@ log_timer_end() {
     fi
 
     log_info "${name} completed in ${duration}s"
-    unset "_LOG_TIMERS[${name}]"
+    unset "_LOG_TIMERS[$timer_key]"
 }
 
 # =============================================================================
