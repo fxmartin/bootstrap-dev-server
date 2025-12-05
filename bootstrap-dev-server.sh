@@ -372,7 +372,15 @@ SSHEOF
 
         # Validate SSH config before restart
         if sudo sshd -t; then
-            sudo systemctl reload ssh || sudo systemctl reload sshd
+            # Ubuntu 24.04 uses socket activation which overrides port config
+            # Disable it when using non-standard port
+            if [[ "${SSH_PORT}" != "22" ]]; then
+                sudo systemctl disable --now ssh.socket 2>/dev/null || true
+                sudo systemctl restart ssh || sudo systemctl restart sshd
+                log_info "SSH socket activation disabled for port ${SSH_PORT}"
+            else
+                sudo systemctl reload ssh || sudo systemctl reload sshd
+            fi
             log_ok "SSH hardening applied"
         else
             log_error "SSH config validation failed! Reverting..."
@@ -497,9 +505,9 @@ install_geoip_shell() {
 
     # Run installer in non-interactive mode
     log_info "Installing geoip-shell with whitelist mode..."
-    cd "${GEOIP_INSTALL_DIR}"
 
-    if ! sudo ./geoip-shell-install.sh -m whitelist \
+    # Use full path with bash to avoid "command not found" issues
+    if ! sudo bash "${GEOIP_INSTALL_DIR}/geoip-shell-install.sh" -m whitelist \
         -c "${GEOIP_COUNTRIES}" \
         -p "tcp:dport:${SSH_PORT}" \
         -i inbound \
@@ -507,12 +515,10 @@ install_geoip_shell() {
         -a -n; then
         log_error "geoip-shell installation failed"
         log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
-        cd - >/dev/null
         rm -rf "${GEOIP_INSTALL_DIR}"
         return 1
     fi
 
-    cd - >/dev/null
     rm -rf "${GEOIP_INSTALL_DIR}"
 
     # Verify installation
