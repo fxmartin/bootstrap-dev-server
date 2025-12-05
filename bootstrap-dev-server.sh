@@ -125,6 +125,7 @@ install_base_packages() {
         ufw \
         fail2ban \
         mosh \
+        zsh \
         unattended-upgrades
 
     log_ok "Base packages installed"
@@ -1214,16 +1215,6 @@ configure_tmux() {
     local TMUX_CONF="${HOME}/.tmux.conf"
     local MARKER="# >>> nix-dev-env tmux >>>"
 
-    # Create symlink for zsh so tmux can find it
-    # Nix zsh is only available in dev shell, so we symlink to /usr/local/bin
-    local NIX_ZSH
-    NIX_ZSH=$(find /nix/store -maxdepth 2 -name "zsh" -path "*/bin/zsh" 2>/dev/null | head -1)
-    if [[ -n "${NIX_ZSH}" ]] && [[ ! -e /usr/local/bin/zsh ]]; then
-        log_info "Creating zsh symlink at /usr/local/bin/zsh..."
-        sudo ln -sf "${NIX_ZSH}" /usr/local/bin/zsh
-        log_ok "Symlinked zsh to /usr/local/bin/zsh"
-    fi
-
     # Check if already configured
     if grep -q "${MARKER}" "${TMUX_CONF}" 2>/dev/null; then
         log_ok "tmux already configured"
@@ -1233,8 +1224,8 @@ configure_tmux() {
     cat >>"${TMUX_CONF}" <<'TMUXEOF'
 
 # >>> nix-dev-env tmux >>>
-# Use zsh as default shell (avoids bash completion errors)
-set-option -g default-shell /usr/local/bin/zsh
+# Use zsh as default shell (installed via apt in base packages)
+set-option -g default-shell /usr/bin/zsh
 
 # Enable mouse support (scrolling, pane selection)
 set -g mouse on
