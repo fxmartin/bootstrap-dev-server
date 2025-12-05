@@ -26,7 +26,7 @@ The server maintains the **single source of truth** for all my projects. No more
 | **Device Agnostic** | SSH from Mac, iPad, Linux, Windows—anything |
 | **Persistent Sessions** | Mosh + tmux = sessions that survive disconnects |
 | **Consistent Environment** | Same tools, same config, every time |
-| **Cost Effective** | ~€3.50/month for a CX23 (less than a coffee) |
+| **Cost Effective** | ~€5.50/month for a CX33 (less than two coffees) |
 
 ---
 
@@ -57,7 +57,7 @@ The script will:
 1. Generate a dedicated SSH key (`~/.ssh/id_devserver`) if needed
 2. Authenticate with Hetzner Cloud API (prompts for token)
 3. Upload your SSH key
-4. Create a CX23 server with Ubuntu 24.04
+4. Create a server with Ubuntu 24.04 (CX33 by default)
 5. Create your user account with sudo access
 6. Run the full bootstrap script
 7. Print connection instructions
@@ -84,6 +84,9 @@ That's it. You're coding in the cloud.
 
 # Different datacenter (US East for North America)
 ./hcloud-provision.sh --location ash
+
+# Default server (recommended for multi-agent Claude Code)
+./hcloud-provision.sh --type cx33
 
 # Larger server for heavier workloads
 ./hcloud-provision.sh --type cx43
@@ -132,8 +135,8 @@ That's it. You're coding in the cloud.
 **x86 Intel Gen3 (cost optimized, RECOMMENDED):**
 | Type | vCPU | RAM | SSD | Monthly Cost |
 |------|------|-----|-----|--------------|
-| `cx23` | 2 | 4 GB | 40 GB | ~€3.50 ⭐ DEFAULT |
-| `cx33` | 4 | 8 GB | 80 GB | ~€6.90 |
+| `cx23` | 2 | 4 GB | 40 GB | ~€3.50 |
+| `cx33` | 4 | 8 GB | 80 GB | ~€5.50 ⭐ RECOMMENDED |
 | `cx43` | 8 | 16 GB | 160 GB | ~€13.50 |
 | `cx53` | 16 | 32 GB | 320 GB | ~€26.90 |
 
@@ -155,7 +158,7 @@ That's it. You're coding in the cloud.
 - Intel Gen1/Gen2: `cx11`, `cx22`, `cx32`, `cx42`, `cx52`
 - AMD Gen1: `cpx11`, `cpx21`, `cpx31`, `cpx41`, `cpx51`
 
-> **Recommendation**: Start with `cx23` (default). It's the newest Intel Gen3 type with the best price-to-performance ratio at €3.50/month. Use AMD (`cpx22`) if you need more disk space, or ARM (`cax11`) for best value if your software supports ARM.
+> **Recommendation**: Start with `cx33` for Claude Code multi-agent workflows. The 4 vCPU and 8GB RAM handles 5-8 parallel subagents smoothly (Explore, Plan, etc.), while CX23's 2 vCPU/4GB hits swap with 3+ concurrent agents. At only €2/month more (~€5.50 vs €3.50), it's the sweet spot for serious Claude Code usage. Use `cx23` only for single-agent work or budget constraints. Use AMD (`cpx22`) if you need more disk space, or ARM (`cax11`) for best value if your software supports ARM.
 
 ### Environment Variables
 
@@ -745,7 +748,7 @@ cat ~/.ssh/id_devserver.pub | pbcopy  # Copy to clipboard
 1. **Servers** → **Add Server**
 2. **Location**: Choose nearest (fsn1 for EU, ash for US East)
 3. **Image**: Ubuntu 24.04
-4. **Type**: CX23 (or larger)
+4. **Type**: CX33 (recommended) or CX23 for budget
 5. **SSH Key**: Select yours
 6. **Name**: `dev-server`
 7. **Create & Buy now**

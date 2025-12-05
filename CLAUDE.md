@@ -154,7 +154,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_NAME` | dev-server | Server name |
-| `SERVER_TYPE` | cx23 | Server type (cx23, cx33, cx43, cpx22) |
+| `SERVER_TYPE` | cx33 | Server type (cx33 recommended for multi-agent Claude Code) |
 | `SERVER_LOCATION` | fsn1 | Datacenter (fsn1, nbg1, hel1, ash, hil, sin) |
 | `SSH_KEY_PATH` | ~/.ssh/id_devserver | SSH private key path |
 | `SSH_USER` | fx | Username to create on server |

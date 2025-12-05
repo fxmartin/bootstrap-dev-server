@@ -62,7 +62,7 @@ fi
 # Configuration
 #===============================================================================
 SERVER_NAME="${SERVER_NAME:-dev-server}"
-SERVER_TYPE="${SERVER_TYPE:-cx23}"
+SERVER_TYPE="${SERVER_TYPE:-cx33}"  # cx33 recommended for multi-agent Claude Code (4 vCPU, 8GB RAM)
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-24.04}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}" # fsn1=Falkenstein, nbg1=Nuremberg, hel1=Helsinki, ash=Ashburn, hil=Hillsboro
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
@@ -87,7 +87,7 @@ USAGE:
 
 OPTIONS:
     --name NAME         Server name (default: dev-server)
-    --type TYPE         Server type (default: cx23)
+    --type TYPE         Server type (default: cx33)
     --location LOC      Datacenter location (default: fsn1)
     --user USER         Username to create (default: fx)
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
@@ -110,8 +110,8 @@ LOCATIONS:
     sin     Singapore (Asia)
 
 SERVER TYPES (x86 Intel Gen3 - cost optimized, RECOMMENDED):
-    cx23    2 vCPU,  4GB RAM,  40GB SSD  (~€3.50/mo) [DEFAULT]
-    cx33    4 vCPU,  8GB RAM,  80GB SSD  (~€6.90/mo)
+    cx23    2 vCPU,  4GB RAM,  40GB SSD  (~€3.50/mo) [budget option]
+    cx33    4 vCPU,  8GB RAM,  80GB SSD  (~€5.50/mo) [DEFAULT - best for multi-agent Claude Code]
     cx43    8 vCPU, 16GB RAM, 160GB SSD  (~€13.50/mo)
     cx53   16 vCPU, 32GB RAM, 320GB SSD  (~€26.90/mo)
 
