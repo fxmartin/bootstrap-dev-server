@@ -79,21 +79,28 @@ declare -A _LOG_TIMERS=()
 # =============================================================================
 
 # Check if level should be logged based on LOG_LEVEL setting
-# Uses intermediate variables to avoid set -u issues with array subscripts
+# Uses case statement to avoid associative array issues with set -u
 _log_should_log() {
-    local level="${1}"
-    local log_level_key="${LOG_LEVEL:-INFO}"
-    local level_key="${level:-INFO}"
-    local current_level=1
-    local msg_level=1
+    local level="${1:-INFO}"
+    local log_level="${LOG_LEVEL:-INFO}"
+    local current_level msg_level
 
-    # Check if array key exists before accessing
-    if [[ -n "${_LOG_LEVELS[$log_level_key]+x}" ]]; then
-        current_level="${_LOG_LEVELS[$log_level_key]}"
-    fi
-    if [[ -n "${_LOG_LEVELS[$level_key]+x}" ]]; then
-        msg_level="${_LOG_LEVELS[$level_key]}"
-    fi
+    # Convert log level to numeric value
+    case "$log_level" in
+        DEBUG) current_level=0 ;;
+        INFO|OK|STEP) current_level=1 ;;
+        WARN) current_level=2 ;;
+        ERROR) current_level=3 ;;
+        *) current_level=1 ;;
+    esac
+
+    case "$level" in
+        DEBUG) msg_level=0 ;;
+        INFO|OK|STEP) msg_level=1 ;;
+        WARN) msg_level=2 ;;
+        ERROR) msg_level=3 ;;
+        *) msg_level=1 ;;
+    esac
 
     [[ ${msg_level} -ge ${current_level} ]]
 }
