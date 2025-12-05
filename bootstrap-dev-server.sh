@@ -124,7 +124,6 @@ install_base_packages() {
         xz-utils \
         ufw \
         fail2ban \
-        mosh \
         zsh \
         unattended-upgrades
 

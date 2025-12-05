@@ -135,6 +135,7 @@
             pkgs.podman-compose
 
             # Network tools
+            pkgs.mosh
             pkgs.httpie
             pkgs.websocat
 
