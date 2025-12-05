@@ -79,10 +79,15 @@ declare -A _LOG_TIMERS=()
 # =============================================================================
 
 # Check if level should be logged based on LOG_LEVEL setting
+# Uses ${array[key]+${array[key]}} pattern for set -u compatibility
 _log_should_log() {
     local level="${1}"
-    local current_level="${_LOG_LEVELS[${LOG_LEVEL}]:-1}"
-    local msg_level="${_LOG_LEVELS[${level}]:-1}"
+    # Safe array access pattern that works with set -u
+    local current_level="${_LOG_LEVELS[${LOG_LEVEL}]+${_LOG_LEVELS[${LOG_LEVEL}]}}"
+    local msg_level="${_LOG_LEVELS[${level}]+${_LOG_LEVELS[${level}]}}"
+    # Apply defaults if keys were not found
+    current_level="${current_level:-1}"
+    msg_level="${msg_level:-1}"
     [[ ${msg_level} -ge ${current_level} ]]
 }
 
@@ -206,7 +211,8 @@ log_timer_start() {
 
 log_timer_end() {
     local name="${1}"
-    local start="${_LOG_TIMERS[${name}]:-}"
+    # Safe array access pattern that works with set -u
+    local start="${_LOG_TIMERS[${name}]+${_LOG_TIMERS[${name}]}}"
 
     if [[ -z "${start}" ]]; then
         log_warn "Timer '${name}' was never started"
