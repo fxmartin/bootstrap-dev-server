@@ -68,7 +68,7 @@ SERVER_LOCATION="${SERVER_LOCATION:-fsn1}" # fsn1=Falkenstein, nbg1=Nuremberg, h
 SSH_KEY_NAME="${SSH_KEY_NAME:-dev-server-key}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-${HOME}/.ssh/id_devserver}"
 SSH_USER="${SSH_USER:-fx}"
-BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh"
+BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh"
 
 # Security hardening configuration (passed to bootstrap script)
 BOOTSTRAP_SSH_PORT="${BOOTSTRAP_SSH_PORT:-22}"           # SSH port (22 = standard, 22222 = recommended)

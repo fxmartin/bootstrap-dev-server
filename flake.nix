@@ -189,7 +189,7 @@
             # Set up Claude Code agents and commands
             # Symlink from repo to ~/.claude for version control
             CLAUDE_USER_DIR="$HOME/.claude"
-            REPO_CLAUDE_DIR="$HOME/.local/share/nix-install/bootstrap-dev-server/config/claude"
+            REPO_CLAUDE_DIR="$HOME/.local/share/bootstrap-dev-server/config/claude"
 
             if [ -d "$REPO_CLAUDE_DIR" ]; then
               mkdir -p "$CLAUDE_USER_DIR"
@@ -280,16 +280,16 @@ alias dm='nix develop ~/.config/nix-dev-env#minimal'
 alias dp='nix develop ~/.config/nix-dev-env#python'
 
 # Update dev environment
-# - Pulls latest from nix-install repo (flake.nix is symlinked, so changes apply automatically)
+# - Pulls latest from bootstrap-dev-server repo (flake.nix is symlinked, so changes apply automatically)
 # - Updates flake.lock with latest packages
 dev-update() {
   echo "🔄 Updating dev environment..."
-  local REPO_DIR="$HOME/.local/share/nix-install"
+  local REPO_DIR="$HOME/.local/share/bootstrap-dev-server"
   local FLAKE_DIR="$HOME/.config/nix-dev-env"
 
   # Pull latest from repo
   if [[ -d "$REPO_DIR/.git" ]]; then
-    echo "📥 Pulling latest from nix-install repo..."
+    echo "📥 Pulling latest from bootstrap-dev-server repo..."
     (cd "$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
   fi
 

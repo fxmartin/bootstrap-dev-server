@@ -12,7 +12,7 @@
 #   7. Dev Shell & Claude  - dev() function, Claude Code available, tools
 #   8. GitHub CLI          - Installed, authenticated
 #   9. Git Configuration   - user.name, user.email set
-#  10. Repository Clone    - nix-install repo cloned
+#  10. Repository Clone    - bootstrap-dev-server repo cloned
 #  11. CLAUDE.md           - Template file created
 #  12. MCP Servers         - mcp-servers-nix in flake inputs
 #
@@ -353,17 +353,17 @@ fi
 
 header "10. Repository Clone Tests"
 
-REPO_PATH="${HOME}/.local/share/nix-install"
+REPO_PATH="${HOME}/.local/share/bootstrap-dev-server"
 
 # Test 10.1: Repository exists
 if [[ -d "${REPO_PATH}" ]]; then
     pass "Repository cloned at ${REPO_PATH}"
 
-    # Test 10.2: bootstrap-dev-server folder exists
-    if [[ -d "${REPO_PATH}/bootstrap-dev-server" ]]; then
-        pass "bootstrap-dev-server folder present"
+    # Test 10.2: flake.nix exists (core file)
+    if [[ -f "${REPO_PATH}/flake.nix" ]]; then
+        pass "flake.nix present"
     else
-        fail "bootstrap-dev-server folder missing"
+        fail "flake.nix missing"
     fi
 
     # Test 10.3: Is a git repo

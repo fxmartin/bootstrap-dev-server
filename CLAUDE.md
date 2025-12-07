@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 
 **Purpose**: Provide a persistent cloud dev environment accessible from any device (Mac, iPad via Blink Shell, any SSH client) as a single source of truth for all development work.
 
-**Parent Project**: This is a sub-project of `nix-install` - see `/home/fx/dev/nix-install/CLAUDE.md` for the broader context (macOS declarative configuration system).
+**Related Project**: Originally extracted from `nix-install` (macOS declarative configuration system). Now a standalone project.
 
 ## Architecture
 

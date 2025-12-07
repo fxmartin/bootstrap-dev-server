@@ -48,7 +48,7 @@ brew install hcloud jq    # macOS
 
 ```bash
 # Download and run the provisioning script
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/hcloud-provision.sh -o hcloud-provision.sh
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/hcloud-provision.sh -o hcloud-provision.sh
 chmod +x hcloud-provision.sh
 ./hcloud-provision.sh
 ```
@@ -280,7 +280,7 @@ The SSH connection may drop during Phase 3 (Security Hardening) due to firewall 
    ```
 3. **Re-run the bootstrap** (it's idempotent):
    ```bash
-   cd ~/.local/share/nix-install/bootstrap-dev-server
+   cd ~/.local/share/bootstrap-dev-server
    ./bootstrap-dev-server.sh
    ```
 
@@ -397,7 +397,7 @@ docker run -it --name claude-dev ubuntu:24.04 bash
 podman run -it --name claude-dev ubuntu:24.04 bash
 
 # Inside the container, run the bootstrap
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
 ```
 
 **Pros**: Quick, disposable, no VM overhead
@@ -429,7 +429,7 @@ For a more production-like local environment:
 
    # SSH in and bootstrap
    ssh fx@<VM_IP>
-   curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
    ```
 
 **Pros**: Full VM isolation, Mosh works, matches cloud setup exactly
@@ -763,21 +763,20 @@ After installation:
 ├── .config/
 │   ├── claude/
 │   │   └── config.json        # MCP server configuration
-│   └── nix-dev-env -> ~/.local/share/nix-install/bootstrap-dev-server  # Symlink!
+│   └── nix-dev-env -> ~/.local/share/bootstrap-dev-server  # Symlink!
 ├── .local/
 │   ├── log/bootstrap/         # Log files from bootstrap and provisioning
 │   │   ├── bootstrap-dev-server-YYYYMMDD-HHMMSS.log
 │   │   └── hcloud-provision-YYYYMMDD-HHMMSS.log
-│   └── share/nix-install/     # Sparse clone of this repo
-│       └── bootstrap-dev-server/
-│           ├── flake.nix      # Dev environment definition
-│           ├── flake.lock     # Locked package versions
-│           ├── lib/
-│           │   └── logging.sh # Shared logging library
-│           ├── scripts/
-│           │   └── secure-ssh-key.sh  # Add passphrase to SSH key
-│           └── tests/
-│               └── verify-server.sh   # Post-install verification
+│   └── share/bootstrap-dev-server/  # Clone of this repo
+│       ├── flake.nix          # Dev environment definition
+│       ├── flake.lock         # Locked package versions
+│       ├── lib/
+│       │   └── logging.sh     # Shared logging library
+│       ├── scripts/
+│       │   └── secure-ssh-key.sh  # Add passphrase to SSH key
+│       └── tests/
+│           └── verify-server.sh   # Post-install verification
 ├── .bashrc                    # Shell integration
 ├── CLAUDE.md                  # Claude Code instructions
 └── projects/                  # Your projects
@@ -831,7 +830,7 @@ chmod 600 /home/fx/.ssh/authorized_keys
 
 # Switch to user and bootstrap
 su - fx
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
 ```
 
 ### Step 5: Reconnect
@@ -917,7 +916,7 @@ ssh-copy-id -i ~/.ssh/id_devserver fx@10.211.55.X
 ssh -i ~/.ssh/id_devserver fx@10.211.55.X
 
 # Bootstrap
-curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
 ```
 
 ### Step 6: Verify

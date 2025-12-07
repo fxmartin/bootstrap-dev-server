@@ -2,7 +2,7 @@
 #===============================================================================
 # CX11 Dev Server Bootstrap Script
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/fxmartin/nix-install/main/bootstrap-dev-server/bootstrap-dev-server.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
 #
 # Idempotent: Safe to run multiple times
 # Requirements: Fresh Ubuntu 24.04 server with sudo access
@@ -68,9 +68,9 @@ GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, Fran
 SSH_RESTART_NEEDED=false                           # Set by harden_ssh() if restart needed
 
 # Repository configuration
-GITHUB_REPO="fxmartin/nix-install"
-REPO_CLONE_DIR="${HOME}/.local/share/nix-install"
-BOOTSTRAP_SUBDIR="bootstrap-dev-server"
+GITHUB_REPO="fxmartin/bootstrap-dev-server"
+REPO_CLONE_DIR="${HOME}/.local/share/bootstrap-dev-server"
+BOOTSTRAP_SUBDIR="."
 
 #===============================================================================
 # Preflight Checks
@@ -1168,16 +1168,16 @@ alias dm='dev minimal'
 alias dp='dev python'
 
 # Update dev environment
-# - Pulls latest from nix-install repo (flake.nix is symlinked, so changes apply automatically)
+# - Pulls latest from bootstrap-dev-server repo (flake.nix is symlinked, so changes apply automatically)
 # - Updates flake.lock with latest packages
 dev-update() {
     echo "🔄 Updating dev environment..."
-    local REPO_DIR="\${HOME}/.local/share/nix-install"
+    local REPO_DIR="\${HOME}/.local/share/bootstrap-dev-server"
     local FLAKE_DIR="\${HOME}/.config/nix-dev-env"
 
     # Pull latest from repo
     if [[ -d "\${REPO_DIR}/.git" ]]; then
-        echo "📥 Pulling latest from nix-install repo..."
+        echo "📥 Pulling latest from bootstrap-dev-server repo..."
         (cd "\${REPO_DIR}" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
     fi
 
@@ -1432,7 +1432,7 @@ main() {
     log_warn "║  If disconnected, wait 30 seconds then reconnect and re-run:        ║"
     log_warn "║                                                                     ║"
     log_warn "║    ssh ${DEV_USER}@\$(hostname -I | awk '{print \$1}')                          ║"
-    log_warn "║    cd ~/.local/share/nix-install/bootstrap-dev-server               ║"
+    log_warn "║    cd ~/.local/share/bootstrap-dev-server                           ║"
     log_warn "║    ./bootstrap-dev-server.sh                                        ║"
     log_warn "║                                                                     ║"
     log_warn "║  The script is idempotent - it will resume where it left off.       ║"
