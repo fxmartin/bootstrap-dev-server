@@ -152,6 +152,29 @@
 
             # Documentation tools
             pkgs.glow  # Terminal markdown renderer
+
+            # Database tools
+            pkgs.sqlite
+            pkgs.postgresql  # PostgreSQL client (psql)
+            pkgs.redis       # Redis CLI
+
+            # Build essentials
+            pkgs.gnumake
+            pkgs.pkg-config
+            pkgs.cmake
+
+            # Data processing
+            pkgs.miller   # CSV/JSON/tabular data swiss army knife
+            pkgs.csvkit   # CSV manipulation suite
+
+            # Security
+            pkgs.gnupg    # GPG for commit signing
+
+            # Productivity
+            pkgs.hyperfine  # CLI benchmarking
+            pkgs.ncdu       # Disk usage analyzer
+            pkgs.tldr       # Simplified man pages
+            pkgs.entr       # Run commands when files change
           ];
 
           shellHook = ''
