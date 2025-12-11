@@ -297,6 +297,9 @@ alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 
+# Health check
+alias health-check='bash ~/.local/share/bootstrap-dev-server/scripts/health-check.sh'
+
 # Dev environment
 alias dev='nix develop ~/.config/nix-dev-env'
 alias dm='nix develop ~/.config/nix-dev-env#minimal'
