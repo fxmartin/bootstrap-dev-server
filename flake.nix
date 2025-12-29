@@ -29,16 +29,18 @@
         };
 
         # Generate MCP server configuration
+        # Note: github-mcp-server moved to nixpkgs 25.11, configured separately below
         mcpConfig = mcp-servers-nix.lib.mkConfig pkgs {
           programs = {
             # Context7 MCP server - No authentication required
             context7.enable = true;
-            # GitHub MCP server - Requires GITHUB_PERSONAL_ACCESS_TOKEN
-            github.enable = true;
             # Sequential Thinking MCP server - No authentication required
             sequential-thinking.enable = true;
           };
         };
+
+        # GitHub MCP server now from nixpkgs (moved from mcp-servers-nix in 25.11)
+        githubMcpServer = pkgs.github-mcp-server;
       in
       {
         # Default dev shell
@@ -187,7 +189,21 @@
 
             if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
               mkdir -p "$CLAUDE_CONFIG_DIR"
-              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              # Start with mcp-servers-nix config (context7, sequential-thinking)
+              # Then add GitHub MCP server from nixpkgs
+              ${pkgs.jq}/bin/jq -s '
+                .[0] * {
+                  mcpServers: (.[0].mcpServers // {}) * {
+                    github: {
+                      command: "${githubMcpServer}/bin/github-mcp-server",
+                      args: ["stdio"],
+                      env: {
+                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
+                      }
+                    }
+                  }
+                }
+              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
               echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
               echo ""
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -201,7 +217,7 @@
               echo ""
               echo "2. Add token to config.json:"
               echo "   → Edit: $CLAUDE_CONFIG_JSON"
-              echo "   → Find 'github' section, add to 'env':"
+              echo "   → Find 'github' section, replace YOUR_TOKEN_HERE:"
               echo "     \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"ghp_...\""
               echo ""
               echo "3. Verify: claude mcp list"
@@ -436,7 +452,19 @@ MSMTPEOF
 
             if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
               mkdir -p "$CLAUDE_CONFIG_DIR"
-              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              ${pkgs.jq}/bin/jq -s '
+                .[0] * {
+                  mcpServers: (.[0].mcpServers // {}) * {
+                    github: {
+                      command: "${githubMcpServer}/bin/github-mcp-server",
+                      args: ["stdio"],
+                      env: {
+                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
+                      }
+                    }
+                  }
+                }
+              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
               echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
             fi
           '';
@@ -472,7 +500,19 @@ MSMTPEOF
 
             if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
               mkdir -p "$CLAUDE_CONFIG_DIR"
-              cp "${mcpConfig}" "$CLAUDE_CONFIG_JSON"
+              ${pkgs.jq}/bin/jq -s '
+                .[0] * {
+                  mcpServers: (.[0].mcpServers // {}) * {
+                    github: {
+                      command: "${githubMcpServer}/bin/github-mcp-server",
+                      args: ["stdio"],
+                      env: {
+                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
+                      }
+                    }
+                  }
+                }
+              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
               echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
             fi
           '';
