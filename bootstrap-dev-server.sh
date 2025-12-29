@@ -931,7 +931,7 @@ if [[ -f /var/log/auth.log ]]; then
     FAILED=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || echo "0")
     INVALID=$(grep -c "Invalid user" /var/log/auth.log 2>/dev/null || echo "0")
     ACCEPTED=$(grep -c "Accepted" /var/log/auth.log 2>/dev/null || echo "0")
-    ACCEPTED_DETAILS=$(grep "Accepted" /var/log/auth.log 2>/dev/null | tail -3 | awk '{print $9"@"$11}' | tr '\n' ' ' || echo "")
+    ACCEPTED_DETAILS=$(grep -E "sshd\[[0-9]+\]: Accepted (publickey|password) for" /var/log/auth.log 2>/dev/null | tail -3 | awk '{print $7"@"$9}' | tr '\n' ' ' || echo "")
 
     REPORT+="SSH ATTEMPTS
   Failed: ${FAILED}
