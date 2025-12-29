@@ -847,17 +847,38 @@ CONFEOF
 
 set -euo pipefail
 
-# Source Nix environment for msmtp
-if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
-    source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-fi
+# Find msmtp - try multiple methods
+find_msmtp() {
+    # Method 1: Check if msmtp is in PATH (works if nix profile is active)
+    if command -v msmtp &>/dev/null; then
+        command -v msmtp
+        return 0
+    fi
 
-# Get msmtp path from Nix store (installed via flake.nix)
-MSMTP_BIN=$(find /nix/store -maxdepth 2 -name "msmtp" -path "*/bin/msmtp" 2>/dev/null | head -1)
-if [[ -z "${MSMTP_BIN}" ]]; then
-    echo "ERROR: msmtp not found in Nix store. Run 'dev' to install via Nix flake." >&2
+    # Method 2: Source Nix daemon profile and check again
+    if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+        source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        if command -v msmtp &>/dev/null; then
+            command -v msmtp
+            return 0
+        fi
+    fi
+
+    # Method 3: Search Nix store (deeper search)
+    local found
+    found=$(find /nix/store -maxdepth 3 -name "msmtp" -path "*/bin/msmtp" -type f 2>/dev/null | head -1)
+    if [[ -n "${found}" ]]; then
+        echo "${found}"
+        return 0
+    fi
+
+    return 1
+}
+
+MSMTP_BIN=$(find_msmtp) || {
+    echo "ERROR: msmtp not found. Run 'dev' to install via Nix flake." >&2
     exit 1
-fi
+}
 
 # Parse arguments
 TEST_MODE=false
@@ -894,7 +915,7 @@ REPORT="SECURITY REPORT - ${HOSTNAME} - ${DATE}
 # Fail2Ban stats
 if command -v fail2ban-client &>/dev/null; then
     BANNED_24H=$(grep -c "Ban " /var/log/fail2ban.log 2>/dev/null | tail -1 || echo "0")
-    CURRENT_BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print ${NF}}' || echo "0")
+    CURRENT_BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print $NF}' || echo "0")
     BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP list" | cut -d: -f2 | xargs || echo "none")
 
     REPORT+="FAIL2BAN
