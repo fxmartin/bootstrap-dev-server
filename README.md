@@ -189,7 +189,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **UFW firewall**: SSH and Mosh only, with rate limiting (blocks after 6 connections/30s)
 - **GeoIP blocking**: Country-based whitelist via geoip-shell (nftables backend)
 - **Fail2Ban**: 24-hour bans after 3 failed attempts
-- **Unattended upgrades**: Automatic security patches
+- **Unattended upgrades**: Automatic Ubuntu security patches (daily check, auto-reboot at 4am if needed, email on error)
 - **Tailscale**: VPN mesh network for secure access from anywhere (bypass for GeoIP)
 - **auditd**: System auditing with rules for identity, sudo, SSH, cron, and PAM changes
 - **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
@@ -200,6 +200,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Claude Code** with auto-updates
 - **MCP Servers**: Context7, GitHub, Sequential Thinking
 - **tmux** auto-launches on SSH connection
+- **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
 
 #### Python/FastAPI Stack
 - Python 3.12, uv, pip, virtualenv

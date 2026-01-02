@@ -131,6 +131,62 @@ install_base_packages() {
 }
 
 #===============================================================================
+# Configure Unattended Upgrades for automatic security updates
+#===============================================================================
+configure_unattended_upgrades() {
+    log_info "Configuring automatic security updates..."
+
+    # Check if already configured
+    if [[ -f /etc/apt/apt.conf.d/20auto-upgrades ]]; then
+        if grep -q "APT::Periodic::Unattended-Upgrade" /etc/apt/apt.conf.d/20auto-upgrades; then
+            log_ok "Unattended upgrades already configured"
+            return 0
+        fi
+    fi
+
+    # Enable automatic updates (daily check, security updates only)
+    sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'AUTOUPGRADEEOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+AUTOUPGRADEEOF
+
+    # Configure what gets upgraded (security only, with auto-reboot if needed)
+    sudo tee /etc/apt/apt.conf.d/50unattended-upgrades >/dev/null <<'UNATTENDEDEOF'
+// Automatically upgrade packages from these origins
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+// Do NOT auto-upgrade non-security packages
+Unattended-Upgrade::Package-Blacklist {
+};
+
+// Auto-reboot at 4am if required (minimal disruption)
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+
+// Remove unused kernel packages after upgrade
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+// Remove unused dependencies after upgrade
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Log to syslog
+Unattended-Upgrade::SyslogEnable "true";
+UNATTENDEDEOF
+
+    # Verify the service is enabled
+    sudo systemctl enable --now unattended-upgrades.service 2>/dev/null || true
+
+    log_ok "Automatic security updates configured (daily, reboot at 4am if needed)"
+}
+
+#===============================================================================
 # Install GitHub CLI
 #===============================================================================
 install_github_cli() {
@@ -1086,6 +1142,148 @@ clean_old_kernels() {
 }
 
 #===============================================================================
+# Configure Update Notifications (runs after email setup)
+#===============================================================================
+configure_update_notifications() {
+    log_info "Configuring update email notifications..."
+
+    local REPORT_CONFIG="/etc/security-report.conf"
+    local NOTIFY_SCRIPT="/usr/local/bin/nix-update-notify.sh"
+
+    # Check if email is configured
+    if [[ ! -f "${REPORT_CONFIG}" ]]; then
+        log_warn "Email not configured - skipping update notifications"
+        log_info "Run bootstrap again after configuring email to enable notifications"
+        return 0
+    fi
+
+    # Read email from config
+    local report_email
+    report_email=$(grep "^REPORT_EMAIL=" "${REPORT_CONFIG}" 2>/dev/null | cut -d'"' -f2)
+    if [[ -z "${report_email}" ]]; then
+        log_warn "No email found in config - skipping update notifications"
+        return 0
+    fi
+
+    # Update unattended-upgrades to send email on error/changes
+    log_info "Adding email notification to unattended-upgrades..."
+    sudo tee /etc/apt/apt.conf.d/51unattended-upgrades-email >/dev/null <<EMAILEOF
+// Email notification for unattended-upgrades
+Unattended-Upgrade::Mail "${report_email}";
+Unattended-Upgrade::MailReport "only-on-error";
+Unattended-Upgrade::Sender "dev-server@$(hostname -f)";
+EMAILEOF
+
+    # Create Nix update notification script
+    log_info "Creating Nix update notification script..."
+    sudo tee "${NOTIFY_SCRIPT}" >/dev/null <<'NOTIFYEOF'
+#!/bin/bash
+# Nix flake update notification script
+# Sends email summary after weekly Nix updates
+
+set -euo pipefail
+
+REPORT_CONFIG="/etc/security-report.conf"
+MSMTP_CONFIG="/root/.msmtprc"
+HOSTNAME=$(hostname -f)
+DATE=$(date '+%Y-%m-%d %H:%M:%S')
+
+# Read email from config
+if [[ -f "${REPORT_CONFIG}" ]]; then
+    REPORT_EMAIL=$(grep "^REPORT_EMAIL=" "${REPORT_CONFIG}" 2>/dev/null | cut -d'"' -f2)
+fi
+
+if [[ -z "${REPORT_EMAIL:-}" ]] || [[ ! -f "${MSMTP_CONFIG}" ]]; then
+    echo "Email not configured, skipping notification"
+    exit 0
+fi
+
+# Get update status from arguments
+STATUS="${1:-unknown}"
+DETAILS="${2:-No details available}"
+
+# Determine subject based on status
+if [[ "${STATUS}" == "success" ]]; then
+    SUBJECT="[${HOSTNAME}] Nix Update: Success"
+    ICON="✅"
+else
+    SUBJECT="[${HOSTNAME}] Nix Update: Failed"
+    ICON="❌"
+fi
+
+# Send email
+/nix/var/nix/profiles/default/bin/msmtp -C "${MSMTP_CONFIG}" -t <<MAILEOF
+To: ${REPORT_EMAIL}
+From: dev-server@${HOSTNAME}
+Subject: ${SUBJECT}
+Content-Type: text/plain; charset=utf-8
+
+${ICON} Nix Flake Update Report
+═══════════════════════════════════════════
+
+Server:    ${HOSTNAME}
+Date:      ${DATE}
+Status:    ${STATUS}
+
+Details:
+${DETAILS}
+
+───────────────────────────────────────────
+Automated update via nix-flake-update.timer
+MAILEOF
+
+echo "Notification sent to ${REPORT_EMAIL}"
+NOTIFYEOF
+
+    sudo chmod +x "${NOTIFY_SCRIPT}"
+
+    # Update the nix-flake-update service to include notification
+    local SERVICE_FILE="/etc/systemd/system/nix-flake-update.service"
+    if [[ -f "${SERVICE_FILE}" ]]; then
+        log_info "Updating Nix update service with email notification..."
+
+        # Check if notification already configured
+        if grep -q "nix-update-notify" "${SERVICE_FILE}"; then
+            log_ok "Nix update notification already configured"
+        else
+            # Create updated service file with notification
+            local FLAKE_DIR="/home/${DEV_USER}/.config/nix-dev-env"
+            local REPO_DIR="/home/${DEV_USER}/.local/share/bootstrap-dev-server"
+
+            sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+[Unit]
+Description=Update Nix flake packages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${DEV_USER}
+Environment="HOME=/home/${DEV_USER}"
+Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
+
+# Pull latest repo changes
+ExecStartPre=/bin/bash -c 'cd ${REPO_DIR} && git pull --quiet || true'
+
+# Update flake.lock and capture output
+ExecStart=/bin/bash -c 'OUTPUT=\$(nix flake update --flake ${FLAKE_DIR} 2>&1) && echo "\$OUTPUT" > /tmp/nix-update-output.txt && echo "success" > /tmp/nix-update-status.txt || (echo "\$OUTPUT" > /tmp/nix-update-output.txt && echo "failed" > /tmp/nix-update-status.txt && exit 1)'
+
+# Pre-build to warm cache
+ExecStartPost=/bin/bash -c '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link 2>&1 | tee -a /tmp/nix-update-output.txt || true'
+
+# Send notification (runs as root to access msmtp config)
+ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
+SERVICEEOF
+
+            sudo systemctl daemon-reload
+            log_ok "Nix update service updated with email notification"
+        fi
+    fi
+
+    log_ok "Update notifications configured (email: ${report_email})"
+}
+
+#===============================================================================
 # Install Nix (Determinate Systems Installer)
 #===============================================================================
 install_nix() {
@@ -1224,6 +1422,71 @@ SHELLEOF
 
     log_ok "Shell integration configured"
     log_info "Run 'source ~/.bashrc' or reconnect to activate"
+}
+
+#===============================================================================
+# Setup systemd timer for weekly Nix flake updates
+#===============================================================================
+setup_nix_update_timer() {
+    log_info "Setting up weekly Nix update timer..."
+
+    local TIMER_NAME="nix-flake-update"
+    local SERVICE_FILE="/etc/systemd/system/${TIMER_NAME}.service"
+    local TIMER_FILE="/etc/systemd/system/${TIMER_NAME}.timer"
+    local FLAKE_DIR="${HOME}/.config/nix-dev-env"
+    local REPO_DIR="${HOME}/.local/share/bootstrap-dev-server"
+
+    # Check if already configured
+    if systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
+        log_ok "Nix update timer already configured"
+        return 0
+    fi
+
+    # Create the service unit (runs as the dev user, not root)
+    sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+[Unit]
+Description=Update Nix flake packages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${DEV_USER}
+Environment="HOME=/home/${DEV_USER}"
+Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
+
+# Pull latest repo changes
+ExecStartPre=/bin/bash -c 'cd ${REPO_DIR} && git pull --quiet || true'
+
+# Update flake.lock
+ExecStart=/nix/var/nix/profiles/default/bin/nix flake update --flake ${FLAKE_DIR}
+
+# Optional: pre-build to warm cache (comment out if too slow)
+ExecStartPost=/bin/bash -c '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || true'
+SERVICEEOF
+
+    # Create the timer unit (weekly on Sunday at 3am)
+    sudo tee "${TIMER_FILE}" >/dev/null <<TIMEREOF
+[Unit]
+Description=Weekly Nix flake update
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+    # Enable and start the timer
+    sudo systemctl daemon-reload
+    sudo systemctl enable "${TIMER_NAME}.timer"
+    sudo systemctl start "${TIMER_NAME}.timer"
+
+    log_ok "Weekly Nix update timer configured (Sundays at 3am)"
+    log_info "Check status: systemctl status ${TIMER_NAME}.timer"
+    log_info "View next run: systemctl list-timers ${TIMER_NAME}.timer"
 }
 
 #===============================================================================
@@ -1435,6 +1698,7 @@ main() {
     log_phase "1: Preflight and Base Packages"
     preflight_checks
     install_base_packages
+    configure_unattended_upgrades
 
     log_phase "2: Git and GitHub Setup"
     install_github_cli
@@ -1470,6 +1734,7 @@ main() {
     harden_sysctl
     harden_pam
     setup_security_report
+    configure_update_notifications
     clean_old_kernels
     log_timer_end "security_hardening" 2>/dev/null || true
 
@@ -1478,6 +1743,7 @@ main() {
     install_nix
     create_dev_flake
     setup_shell_integration
+    setup_nix_update_timer
     configure_tmux
     create_claude_md
     log_timer_start "nix_cache_warmup" 2>/dev/null || true
