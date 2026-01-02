@@ -94,7 +94,9 @@
             pkgs.black   # Python code formatter
             pkgs.python312Packages.isort   # Import statement organizer
             pkgs.python312Packages.mypy    # Static type checker
-            pkgs.python312Packages.pylint  # Comprehensive linter
+            pkgs.python312Packages.pylint        # Comprehensive linter
+            pkgs.python312Packages.flake8        # Style guide enforcement
+            pkgs.python312Packages.flake8-bugbear # Additional flake8 bug checks
 
             # Python Testing & Debugging
             pkgs.python312Packages.pytest        # Testing framework
