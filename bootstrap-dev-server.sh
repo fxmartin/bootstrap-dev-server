@@ -125,6 +125,7 @@ install_base_packages() {
         ufw \
         fail2ban \
         zsh \
+        uidmap \
         unattended-upgrades
 
     log_ok "Base packages installed"
@@ -1602,6 +1603,41 @@ CLAUDEEOF
 }
 
 #===============================================================================
+# Configure Podman for rootless containers (Nix-provided Podman needs config)
+#===============================================================================
+configure_podman() {
+    log_info "Configuring Podman for rootless containers..."
+
+    local CONTAINERS_DIR="${HOME}/.config/containers"
+
+    # Check if already configured
+    if [[ -f "${CONTAINERS_DIR}/policy.json" ]] && [[ -f "${CONTAINERS_DIR}/registries.conf" ]]; then
+        log_ok "Podman already configured"
+        return 0
+    fi
+
+    mkdir -p "${CONTAINERS_DIR}"
+
+    # Create image signature policy (required for pulling images)
+    cat > "${CONTAINERS_DIR}/policy.json" << 'EOF'
+{
+    "default": [
+        {
+            "type": "insecureAcceptAnything"
+        }
+    ]
+}
+EOF
+
+    # Create registry configuration (enables short names like "alpine")
+    cat > "${CONTAINERS_DIR}/registries.conf" << 'EOF'
+unqualified-search-registries = ["docker.io"]
+EOF
+
+    log_ok "Podman configured for rootless containers"
+}
+
+#===============================================================================
 # Build Initial Nix Environment (warm cache)
 #===============================================================================
 warm_nix_cache() {
@@ -1746,6 +1782,7 @@ main() {
     setup_nix_update_timer
     configure_tmux
     create_claude_md
+    configure_podman
     log_timer_start "nix_cache_warmup" 2>/dev/null || true
     warm_nix_cache
     log_timer_end "nix_cache_warmup" 2>/dev/null || true
