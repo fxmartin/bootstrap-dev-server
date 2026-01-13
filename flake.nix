@@ -35,7 +35,8 @@
             # Context7 MCP server - No authentication required
             context7.enable = true;
             # Sequential Thinking MCP server - No authentication required
-            sequential-thinking.enable = true;
+            # DISABLED: upstream build broken - missing @types/node in mcp-servers-nix
+            sequential-thinking.enable = false;
           };
         };
 
