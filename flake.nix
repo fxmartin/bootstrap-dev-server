@@ -35,7 +35,7 @@
             # Context7 MCP server - No authentication required
             context7.enable = true;
             # Sequential Thinking MCP server - No authentication required
-            sequential-thinking.enable = false;
+            sequential-thinking.enable = true;
           };
         };
 
