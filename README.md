@@ -458,8 +458,8 @@ Claude Code MCP servers are automatically configured:
 
 2. Add token to config:
    ```bash
-   nano ~/.config/claude/config.json
-   # Add to "github" section → "env":
+   nano ~/.claude.json
+   # Find "github" → "env", replace YOUR_TOKEN_HERE:
    "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token_here"
    ```
 
@@ -761,9 +761,11 @@ After installation:
 
 ```
 ~
+├── .claude.json               # Claude Code config (includes MCP servers)
+├── .claude/
+│   ├── agents/                # Custom agent definitions (symlinked)
+│   └── commands/              # Custom slash commands (symlinked)
 ├── .config/
-│   ├── claude/
-│   │   └── config.json        # MCP server configuration
 │   └── nix-dev-env -> ~/.local/share/bootstrap-dev-server  # Symlink!
 ├── .local/
 │   ├── log/bootstrap/         # Log files from bootstrap and provisioning

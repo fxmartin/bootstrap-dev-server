@@ -28,19 +28,10 @@
           config.allowUnfree = true;
         };
 
-        # Generate MCP server configuration
-        # Note: github-mcp-server moved to nixpkgs 25.11, configured separately below
-        mcpConfig = mcp-servers-nix.lib.mkConfig pkgs {
-          programs = {
-            # Context7 MCP server - No authentication required
-            context7.enable = true;
-            # Sequential Thinking MCP server - No authentication required
-            # DISABLED: upstream build broken - missing @types/node in mcp-servers-nix
-            sequential-thinking.enable = false;
-          };
-        };
-
-        # GitHub MCP server now from nixpkgs (moved from mcp-servers-nix in 25.11)
+        # MCP servers:
+        # - context7: from mcp-servers-nix (referenced directly in shellHook)
+        # - github: from nixpkgs 25.11
+        # - sequential-thinking: DISABLED - upstream build broken (issue #285)
         githubMcpServer = pkgs.github-mcp-server;
       in
       {
@@ -186,28 +177,40 @@
             export EDITOR=nvim
             export VISUAL=nvim
 
-            # Set up Claude Code MCP configuration if not exists
-            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
+            CLAUDE_JSON="$HOME/.claude.json"
 
-            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
-              mkdir -p "$CLAUDE_CONFIG_DIR"
-              # Start with mcp-servers-nix config (context7, sequential-thinking)
-              # Then add GitHub MCP server from nixpkgs
-              ${pkgs.jq}/bin/jq -s '
-                .[0] * {
-                  mcpServers: (.[0].mcpServers // {}) * {
-                    github: {
-                      command: "${githubMcpServer}/bin/github-mcp-server",
-                      args: ["stdio"],
-                      env: {
-                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                      }
+            # Check if context7 MCP server is already configured
+            if [ -f "$CLAUDE_JSON" ] && ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
+              : # MCP servers already configured
+            else
+              # Add MCP servers to ~/.claude.json
+              # Create file if it doesn't exist
+              if [ ! -f "$CLAUDE_JSON" ]; then
+                echo '{}' > "$CLAUDE_JSON"
+              fi
+
+              # Merge MCP servers into existing config
+              ${pkgs.jq}/bin/jq '. * {
+                mcpServers: (.mcpServers // {}) * {
+                  "context7": {
+                    "type": "stdio",
+                    "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
+                    "args": [],
+                    "env": {}
+                  },
+                  "github": {
+                    "type": "stdio",
+                    "command": "${githubMcpServer}/bin/github-mcp-server",
+                    "args": ["stdio"],
+                    "env": {
+                      "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
                   }
                 }
-              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
-              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+
+              echo "✓ Added MCP servers to ~/.claude.json"
               echo ""
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
               echo "📝 IMPORTANT: Configure GitHub MCP Server"
@@ -218,9 +221,9 @@
               echo "   → Click 'Generate new token (classic)'"
               echo "   → Scopes: ✓ repo, ✓ read:org, ✓ read:user"
               echo ""
-              echo "2. Add token to config.json:"
-              echo "   → Edit: $CLAUDE_CONFIG_JSON"
-              echo "   → Find 'github' section, replace YOUR_TOKEN_HERE:"
+              echo "2. Add token to ~/.claude.json:"
+              echo "   → Edit: $CLAUDE_JSON"
+              echo "   → Find 'github' → 'env', replace YOUR_TOKEN_HERE:"
               echo "     \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"ghp_...\""
               echo ""
               echo "3. Verify: claude mcp list"
@@ -229,33 +232,35 @@
             fi
 
             # Set up Claude Code agents and commands
-            # Symlink from repo to ~/.claude for version control
+            # Symlink from repo to ~/.claude for version control (self-healing)
             CLAUDE_USER_DIR="$HOME/.claude"
             REPO_CLAUDE_DIR="$HOME/.local/share/bootstrap-dev-server/external/nix-install/config/claude"
+
+            # Helper: ensure symlink points to correct target, fix if broken/wrong
+            ensure_symlink() {
+              local target="$1"
+              local link="$2"
+              local current_target
+              current_target="$(readlink "$link" 2>/dev/null || true)"
+              if [ "$current_target" != "$target" ]; then
+                # Backup existing file/dir if not a symlink
+                [ -e "$link" ] && [ ! -L "$link" ] && mv "$link" "$link.backup"
+                ln -sfn "$target" "$link"
+                echo "✓ Linked $link → $target"
+              fi
+            }
 
             if [ -d "$REPO_CLAUDE_DIR" ]; then
               mkdir -p "$CLAUDE_USER_DIR"
 
               # Symlink agents directory
-              if [ -d "$REPO_CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_USER_DIR/agents" ]; then
-                [ -d "$CLAUDE_USER_DIR/agents" ] && mv "$CLAUDE_USER_DIR/agents" "$CLAUDE_USER_DIR/agents.backup"
-                ln -sfn "$REPO_CLAUDE_DIR/agents" "$CLAUDE_USER_DIR/agents"
-                echo "✓ Linked ~/.claude/agents → repo"
-              fi
+              [ -d "$REPO_CLAUDE_DIR/agents" ] && ensure_symlink "$REPO_CLAUDE_DIR/agents" "$CLAUDE_USER_DIR/agents"
 
               # Symlink commands directory
-              if [ -d "$REPO_CLAUDE_DIR/commands" ] && [ ! -L "$CLAUDE_USER_DIR/commands" ]; then
-                [ -d "$CLAUDE_USER_DIR/commands" ] && mv "$CLAUDE_USER_DIR/commands" "$CLAUDE_USER_DIR/commands.backup"
-                ln -sfn "$REPO_CLAUDE_DIR/commands" "$CLAUDE_USER_DIR/commands"
-                echo "✓ Linked ~/.claude/commands → repo"
-              fi
+              [ -d "$REPO_CLAUDE_DIR/commands" ] && ensure_symlink "$REPO_CLAUDE_DIR/commands" "$CLAUDE_USER_DIR/commands"
 
               # Symlink CLAUDE.md
-              if [ -f "$REPO_CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_USER_DIR/CLAUDE.md" ]; then
-                [ -f "$CLAUDE_USER_DIR/CLAUDE.md" ] && mv "$CLAUDE_USER_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md.backup"
-                ln -sf "$REPO_CLAUDE_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md"
-                echo "✓ Linked ~/.claude/CLAUDE.md → repo"
-              fi
+              [ -f "$REPO_CLAUDE_DIR/CLAUDE.md" ] && ensure_symlink "$REPO_CLAUDE_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md"
             fi
 
             # Create zsh config directory if needed
@@ -453,26 +458,34 @@ MSMTPEOF
           ];
 
           shellHook = ''
-            # Set up Claude Code MCP configuration if not exists
-            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
+            CLAUDE_JSON="$HOME/.claude.json"
 
-            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
-              mkdir -p "$CLAUDE_CONFIG_DIR"
-              ${pkgs.jq}/bin/jq -s '
-                .[0] * {
-                  mcpServers: (.[0].mcpServers // {}) * {
-                    github: {
-                      command: "${githubMcpServer}/bin/github-mcp-server",
-                      args: ["stdio"],
-                      env: {
-                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                      }
+            if [ -f "$CLAUDE_JSON" ] && ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
+              : # MCP servers already configured
+            else
+              if [ ! -f "$CLAUDE_JSON" ]; then
+                echo '{}' > "$CLAUDE_JSON"
+              fi
+              ${pkgs.jq}/bin/jq '. * {
+                mcpServers: (.mcpServers // {}) * {
+                  "context7": {
+                    "type": "stdio",
+                    "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
+                    "args": [],
+                    "env": {}
+                  },
+                  "github": {
+                    "type": "stdio",
+                    "command": "${githubMcpServer}/bin/github-mcp-server",
+                    "args": ["stdio"],
+                    "env": {
+                      "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
                   }
                 }
-              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
-              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+              echo "✓ Added MCP servers to ~/.claude.json"
             fi
           '';
         };
@@ -501,26 +514,34 @@ MSMTPEOF
           ];
 
           shellHook = ''
-            # Set up Claude Code MCP configuration if not exists
-            CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-            CLAUDE_CONFIG_JSON="$CLAUDE_CONFIG_DIR/config.json"
+            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
+            CLAUDE_JSON="$HOME/.claude.json"
 
-            if [ ! -f "$CLAUDE_CONFIG_JSON" ]; then
-              mkdir -p "$CLAUDE_CONFIG_DIR"
-              ${pkgs.jq}/bin/jq -s '
-                .[0] * {
-                  mcpServers: (.[0].mcpServers // {}) * {
-                    github: {
-                      command: "${githubMcpServer}/bin/github-mcp-server",
-                      args: ["stdio"],
-                      env: {
-                        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                      }
+            if [ -f "$CLAUDE_JSON" ] && ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
+              : # MCP servers already configured
+            else
+              if [ ! -f "$CLAUDE_JSON" ]; then
+                echo '{}' > "$CLAUDE_JSON"
+              fi
+              ${pkgs.jq}/bin/jq '. * {
+                mcpServers: (.mcpServers // {}) * {
+                  "context7": {
+                    "type": "stdio",
+                    "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
+                    "args": [],
+                    "env": {}
+                  },
+                  "github": {
+                    "type": "stdio",
+                    "command": "${githubMcpServer}/bin/github-mcp-server",
+                    "args": ["stdio"],
+                    "env": {
+                      "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
                   }
                 }
-              ' "${mcpConfig}" > "$CLAUDE_CONFIG_JSON"
-              echo "✓ Created Claude Code MCP config: $CLAUDE_CONFIG_JSON"
+              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+              echo "✓ Added MCP servers to ~/.claude.json"
             fi
           '';
         };
