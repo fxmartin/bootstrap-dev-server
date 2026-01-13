@@ -1,0 +1,4 @@
+[submodule "external/nix-install"]
+	path = external/nix-install
+	url = https://github.com/fxmartin/nix-install.git
+	branch = main

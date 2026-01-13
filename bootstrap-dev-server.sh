@@ -343,6 +343,10 @@ clone_bootstrap_repo() {
         log_info "Pulling latest changes..."
         if (cd "${REPO_CLONE_DIR}" && git pull --quiet); then
             log_ok "Repository updated"
+            # Update submodules (Claude Code configs from nix-install)
+            log_info "Updating submodules..."
+            (cd "${REPO_CLONE_DIR}" && git submodule update --recursive)
+            log_ok "Submodules updated"
         else
             log_warn "Failed to pull updates (continuing with existing files)"
         fi
@@ -365,6 +369,11 @@ clone_bootstrap_repo() {
 
     # Checkout the files
     git checkout
+
+    # Initialize submodules (Claude Code configs from nix-install)
+    log_info "Initializing Git submodules..."
+    git submodule update --init --recursive
+    log_ok "Submodules initialized"
 
     log_ok "Repository cloned (sparse) at ${REPO_CLONE_DIR}"
     log_info "Only ${BOOTSTRAP_SUBDIR}/ folder downloaded"

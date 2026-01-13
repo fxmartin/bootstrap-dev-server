@@ -230,7 +230,7 @@
             # Set up Claude Code agents and commands
             # Symlink from repo to ~/.claude for version control
             CLAUDE_USER_DIR="$HOME/.claude"
-            REPO_CLAUDE_DIR="$HOME/.local/share/bootstrap-dev-server/config/claude"
+            REPO_CLAUDE_DIR="$HOME/.local/share/bootstrap-dev-server/external/nix-install/config/claude"
 
             if [ -d "$REPO_CLAUDE_DIR" ]; then
               mkdir -p "$CLAUDE_USER_DIR"
@@ -335,6 +335,10 @@ dev-update() {
   if [[ -d "$REPO_DIR/.git" ]]; then
     echo "📥 Pulling latest from bootstrap-dev-server repo..."
     (cd "$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
+
+    # Update submodules (Claude Code configs from nix-install)
+    echo "🔗 Updating Claude Code configs from nix-install..."
+    (cd "$REPO_DIR" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
   fi
 
   # Update flake.lock (flake.nix is symlinked, no copy needed)
