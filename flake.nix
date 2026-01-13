@@ -35,7 +35,7 @@
             # Context7 MCP server - No authentication required
             context7.enable = true;
             # Sequential Thinking MCP server - No authentication required
-            sequential-thinking.enable = true;
+            sequential-thinking.enable = false;
           };
         };
 
@@ -120,7 +120,7 @@
 
             # Nix Development
             pkgs.nil              # Nix LSP for editor integration
-            pkgs.nixfmt-rfc-style # Nix code formatter (RFC compliant)
+            pkgs.nixfmt           # Nix code formatter (RFC style)
             pkgs.nix-tree         # Visualize Nix store dependencies
             pkgs.nix-diff         # Compare Nix derivations
 
