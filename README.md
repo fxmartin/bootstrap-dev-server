@@ -448,7 +448,7 @@ Claude Code MCP servers are automatically configured:
 
 - **Context7**: Documentation lookup (no auth required)
 - **GitHub**: Repository access (requires Personal Access Token)
-- **Sequential Thinking**: Enhanced reasoning (no auth required)
+- **Sequential Thinking**: Enhanced reasoning (no auth required) - *currently disabled due to [upstream build issue](https://github.com/natsukium/mcp-servers-nix/issues/285)*
 
 **To configure GitHub MCP server:**
 
@@ -940,6 +940,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
+- [natsukium/mcp-servers-nix](https://github.com/natsukium/mcp-servers-nix) for MCP server Nix packaging
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client
