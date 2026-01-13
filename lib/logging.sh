@@ -1,324 +1,279 @@
 #!/usr/bin/env bash
-# ABOUTME: Professional logging library for bootstrap scripts
-# ABOUTME: Provides timestamps, log levels, file output, and color support
+# ABOUTME: Shared logging library with timestamps and log files
+# ABOUTME: Used by bootstrap-dev-server.sh, hcloud-provision.sh, and other scripts
 #
 # Usage:
 #   source lib/logging.sh
-#   init_logging "my-script"     # Initialize with script name for log file
-#   log_info "Starting process"
-#   log_ok "Task completed"
-#   log_warn "Non-critical issue"
-#   log_error "Something failed"
-#   log_phase "Setup"            # Major phase marker
-#   log_timer_start "build"      # Start timing an operation
-#   log_timer_end "build"        # End timing and log duration
-#
-# Environment variables:
-#   LOG_LEVEL      - DEBUG, INFO, WARN, ERROR (default: INFO)
-#   LOG_FILE       - Path to log file (default: auto-created)
-#   LOG_DIR        - Directory for log files (default: ~/.local/log/bootstrap)
-#   LOG_TIMESTAMPS - true/false (default: true)
-#   NO_COLOR       - Set to disable colors
-
-# Prevent multiple sourcing
-[[ -n "${_LOGGING_LOADED:-}" ]] && return 0
-readonly _LOGGING_LOADED=1
+#   init_logging "script-name"    # Initialize logging (creates log file)
+#   log_info "message"            # Info level
+#   log_ok "message"              # Success message
+#   log_warn "message"            # Warning message (to stderr)
+#   log_error "message"           # Error message (to stderr)
+#   log_step "message"            # Major step marker
+#   log_phase "phase name"        # Phase marker
+#   log_debug "message"           # Debug (only if LOG_LEVEL=DEBUG)
+#   log_timer_start "name"        # Start timing
+#   log_timer_end "name"          # End timing and print duration
 
 # =============================================================================
-# Configuration (overridable via environment)
+# Configuration
 # =============================================================================
+
+# Log level: DEBUG, INFO, WARN, ERROR
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
-LOG_FILE="${LOG_FILE:-}"
-LOG_DIR="${LOG_DIR:-${HOME}/.local/log/bootstrap}"
-LOG_TIMESTAMPS="${LOG_TIMESTAMPS:-true}"
-NO_COLOR="${NO_COLOR:-}"
 
-# =============================================================================
-# ANSI Color Codes
-# =============================================================================
-if [[ -t 1 && -z "${NO_COLOR}" ]]; then
-    readonly _LOG_RED='\033[0;31m'
-    readonly _LOG_GREEN='\033[0;32m'
-    readonly _LOG_YELLOW='\033[1;33m'
-    readonly _LOG_BLUE='\033[0;34m'
-    readonly _LOG_CYAN='\033[0;36m'
-    readonly _LOG_GRAY='\033[0;90m'
-    readonly _LOG_NC='\033[0m'
+# Log file path (set by init_logging)
+LOG_FILE="${LOG_FILE:-}"
+
+# Log directory
+LOG_DIR="${LOG_DIR:-${HOME}/.local/log/bootstrap}"
+
+# Colors for output (can be disabled with NO_COLOR=1)
+if [[ -z "${NO_COLOR:-}" && -t 1 ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    CYAN='\033[0;36m'
+    NC='\033[0m' # No Color
 else
-    readonly _LOG_RED=''
-    readonly _LOG_GREEN=''
-    readonly _LOG_YELLOW=''
-    readonly _LOG_BLUE=''
-    readonly _LOG_CYAN=''
-    readonly _LOG_GRAY=''
-    readonly _LOG_NC=''
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    CYAN=''
+    NC=''
 fi
 
-# =============================================================================
-# Log Levels (numeric for comparison)
-# =============================================================================
-# Note: Log level comparison is done via case statement in _log_should_log()
-# to maintain bash 3.2 compatibility (no associative arrays)
+# Timer storage (associative array)
+declare -A LOG_TIMERS
 
 # =============================================================================
-# State Variables
-# =============================================================================
-# shellcheck disable=SC2034  # LOG_PHASE is set for external use by scripts
-LOG_PHASE=""
-LOG_FUNCTION=""
-# Timer storage uses dynamic variable names for bash 3.2 compatibility
-# e.g., _LOG_TIMER_build=1234567890
-
-# =============================================================================
-# Internal Functions
+# Initialization
 # =============================================================================
 
-# Check if level should be logged based on LOG_LEVEL setting
-# Uses case statement to avoid associative array issues with set -u
-_log_should_log() {
-    local level="${1:-INFO}"
-    local log_level="${LOG_LEVEL:-INFO}"
-    local current_level msg_level
-
-    # Convert log level to numeric value
-    case "$log_level" in
-        DEBUG) current_level=0 ;;
-        INFO|OK|STEP) current_level=1 ;;
-        WARN) current_level=2 ;;
-        ERROR) current_level=3 ;;
-        *) current_level=1 ;;
-    esac
-
-    case "$level" in
-        DEBUG) msg_level=0 ;;
-        INFO|OK|STEP) msg_level=1 ;;
-        WARN) msg_level=2 ;;
-        ERROR) msg_level=3 ;;
-        *) msg_level=1 ;;
-    esac
-
-    [[ ${msg_level} -ge ${current_level} ]]
-}
-
-# Generate ISO-format timestamp
-_log_timestamp() {
-    date '+%Y-%m-%d %H:%M:%S'
-}
-
-# Route output to appropriate destination (stdout/stderr + optional file)
-_log_output() {
-    local level="${1}"
-    local use_stderr="${2}"
-
-    if [[ -n "${LOG_FILE}" ]]; then
-        if [[ "${use_stderr}" == "true" ]]; then
-            tee -a "${LOG_FILE}" >&2
-        else
-            tee -a "${LOG_FILE}"
-        fi
-    else
-        if [[ "${use_stderr}" == "true" ]]; then
-            cat >&2
-        else
-            cat
-        fi
-    fi
-}
-
-# Core logging function
-_log() {
-    local level="${1}"
-    local color="${2}"
-    local msg="${3}"
-    local use_stderr="${4:-false}"
-    local ts=""
-    local output
-
-    _log_should_log "${level}" || return 0
-
-    [[ "${LOG_TIMESTAMPS}" == "true" ]] && ts="$(_log_timestamp) "
-
-    # Format output based on terminal detection
-    if [[ -t 1 && -z "${NO_COLOR}" ]]; then
-        output=$(printf '%s%b[%-5s]%b %s\n' "${ts}" "${color}" "${level}" "${_LOG_NC}" "${msg}")
-    else
-        output=$(printf '%s%-5s %s\n' "${ts}" "${level}" "${msg}")
-    fi
-
-    echo "${output}" | _log_output "${level}" "${use_stderr}"
-}
-
-# =============================================================================
-# Public API - Basic Logging
-# =============================================================================
-
-log_debug() {
-    _log "DEBUG" "${_LOG_GRAY}" "${1}" "false"
-}
-
-log_info() {
-    _log "INFO" "${_LOG_BLUE}" "${1}" "false"
-}
-
-log_ok() {
-    _log "OK" "${_LOG_GREEN}" "${1}" "false"
-}
-
-log_warn() {
-    _log "WARN" "${_LOG_YELLOW}" "${1}" "true"
-}
-
-log_error() {
-    _log "ERROR" "${_LOG_RED}" "${1}" "true"
-}
-
-log_step() {
-    _log "STEP" "${_LOG_CYAN}" "═══ ${1} ═══" "false"
-}
-
-log_fatal() {
-    log_error "${1}"
-    log_error "Fatal error - aborting script"
-    exit "${2:-1}"
-}
-
-# =============================================================================
-# Public API - Phase/Context Tracking
-# =============================================================================
-
-log_phase() {
-    # shellcheck disable=SC2034  # LOG_PHASE is set for external use
-    LOG_PHASE="${1}"
-    log_step "Phase: ${1}"
-}
-
-log_enter() {
-    LOG_FUNCTION="${FUNCNAME[1]}"
-    log_debug "Entering ${LOG_FUNCTION}()"
-}
-
-log_exit() {
-    local code="${1:-0}"
-    log_debug "Exiting ${LOG_FUNCTION}() with code ${code}"
-    LOG_FUNCTION=""
-}
-
-# =============================================================================
-# Public API - Performance Timing
-# =============================================================================
-
-# Sanitize timer name to valid bash variable name
-_log_timer_varname() {
-    local name="${1:-unknown}"
-    # Replace non-alphanumeric chars with underscore
-    echo "_LOG_TIMER_${name//[^a-zA-Z0-9_]/_}"
-}
-
-log_timer_start() {
-    local name="${1:-unknown}"
-    local varname
-    varname=$(_log_timer_varname "$name")
-    local timestamp
-    # Use seconds since epoch (macOS date doesn't support %N)
-    timestamp=$(date +%s)
-    # shellcheck disable=SC2086  # Variable name is sanitized
-    eval "${varname}=${timestamp}"
-    log_debug "Timer '${name}' started"
-}
-
-log_timer_end() {
-    local name="${1:-unknown}"
-    local varname
-    varname=$(_log_timer_varname "$name")
-    local start=""
-
-    # Safe variable access - check if set
-    # shellcheck disable=SC2086  # Variable name is sanitized
-    eval "start=\${${varname}:-}"
-
-    if [[ -z "${start}" ]]; then
-        log_warn "Timer '${name}' was never started"
-        return 1
-    fi
-
-    local end duration
-    end=$(date +%s)
-    duration=$((end - start))
-
-    log_info "${name} completed in ${duration}s"
-    # shellcheck disable=SC2086  # Variable name is sanitized
-    unset "${varname}"
-}
-
-# =============================================================================
-# Public API - Initialization & Management
-# =============================================================================
-
+# Initialize logging with optional script name
+# Creates log directory and log file
 init_logging() {
     local script_name="${1:-bootstrap}"
-    local log_dir="${LOG_DIR:-${HOME}/.local/log/bootstrap}"
+    local timestamp
+    timestamp=$(date '+%Y%m%d-%H%M%S')
 
-    # If user specified LOG_FILE, use it
-    if [[ -n "${LOG_FILE}" ]]; then
-        # Ensure parent directory exists
-        mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
-        log_debug "Using user-specified log file: ${LOG_FILE}"
+    # Create log directory
+    mkdir -p "${LOG_DIR}"
+
+    # Set log file path
+    LOG_FILE="${LOG_DIR}/${script_name}-${timestamp}.log"
+
+    # Write initial log entry
+    {
+        echo "=========================================="
+        echo "Log started: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "Script: ${script_name}"
+        echo "User: $(whoami)"
+        echo "Host: $(hostname)"
+        echo "PWD: $(pwd)"
+        echo "=========================================="
+        echo ""
+    } >> "${LOG_FILE}"
+
+    log_debug "Logging initialized: ${LOG_FILE}"
+}
+
+# =============================================================================
+# Log Level Check
+# =============================================================================
+
+# Check if a log level should be output based on current LOG_LEVEL
+should_log() {
+    local level="$1"
+
+    case "${LOG_LEVEL}" in
+        DEBUG)
+            return 0
+            ;;
+        INFO)
+            [[ "${level}" != "DEBUG" ]]
+            ;;
+        WARN)
+            [[ "${level}" == "WARN" || "${level}" == "ERROR" ]]
+            ;;
+        ERROR)
+            [[ "${level}" == "ERROR" ]]
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+# =============================================================================
+# Core Logging Functions
+# =============================================================================
+
+# Internal: Write to log file if enabled
+write_to_log() {
+    local message="$1"
+    if [[ -n "${LOG_FILE}" && -w "$(dirname "${LOG_FILE}")" ]]; then
+        echo "${message}" >> "${LOG_FILE}" 2>/dev/null || true
+    fi
+}
+
+# Internal: Format and output log message
+log_message() {
+    local level="$1"
+    local color="$2"
+    local message="$3"
+    local to_stderr="${4:-false}"
+
+    # Skip if log level doesn't match
+    if ! should_log "${level}"; then
         return 0
     fi
 
-    # Auto-create log file in log directory
-    if mkdir -p "${log_dir}" 2>/dev/null; then
-        if [[ -w "${log_dir}" ]]; then
-            LOG_FILE="${log_dir}/${script_name}-$(date +%Y%m%d-%H%M%S).log"
-            log_info "Logging to: ${LOG_FILE}"
-        else
-            log_warn "Log directory not writable: ${log_dir}"
-        fi
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    local formatted_console="${timestamp} ${color}[${level}]${NC} ${message}"
+    local formatted_file="${timestamp} [${level}] ${message}"
+
+    # Write to console
+    if [[ "${to_stderr}" == "true" ]]; then
+        echo -e "${formatted_console}" >&2
     else
-        log_warn "Could not create log directory: ${log_dir}"
+        echo -e "${formatted_console}"
     fi
+
+    # Write to log file
+    write_to_log "${formatted_file}"
 }
 
-rotate_logs() {
-    local log_dir="${LOG_DIR:-${HOME}/.local/log/bootstrap}"
-    local keep="${1:-10}"
+# =============================================================================
+# Public Logging Functions
+# =============================================================================
 
-    [[ -d "${log_dir}" ]] || return 0
+# Info level message
+log_info() {
+    log_message "INFO" "${BLUE}" "$1"
+}
 
-    # Find and delete old log files, keeping the most recent N
-    # Use find instead of ls for better handling of special filenames
-    local log_count
-    # shellcheck disable=SC2312  # Pipeline is intentional, errors are acceptable
-    log_count=$(find "${log_dir}" -maxdepth 1 -name "*.log" -type f 2>/dev/null | wc -l || echo 0)
+# Success/OK message
+log_ok() {
+    log_message "OK" "${GREEN}" "$1"
+}
 
-    if [[ ${log_count} -gt ${keep} ]]; then
-        local to_delete=$((log_count - keep))
-        log_debug "Rotating logs: removing ${to_delete} old log file(s)"
-        # Sort by modification time, oldest first, delete excess
-        # shellcheck disable=SC2312  # Pipeline is intentional for log rotation
-        find "${log_dir}" -maxdepth 1 -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null |
-            sort -n |
-            head -n "${to_delete}" |
-            cut -d' ' -f2- |
-            xargs -r rm -f || true
+# Warning message (to stderr)
+log_warn() {
+    log_message "WARN" "${YELLOW}" "$1" "true"
+}
+
+# Error message (to stderr)
+log_error() {
+    log_message "ERROR" "${RED}" "$1" "true"
+}
+
+# Step marker (for major steps)
+log_step() {
+    local message="$1"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    echo -e "${timestamp} ${CYAN}[STEP]${NC}  ═══ ${message} ═══"
+    write_to_log "${timestamp} [STEP] ═══ ${message} ═══"
+}
+
+# Phase marker
+log_phase() {
+    log_step "Phase: $1"
+}
+
+# Debug message (only if LOG_LEVEL=DEBUG)
+log_debug() {
+    if [[ "${LOG_LEVEL}" == "DEBUG" ]]; then
+        log_message "DEBUG" "${NC}" "$1"
     fi
 }
 
 # =============================================================================
-# Compatibility Aliases (for gradual migration)
+# Timer Functions
 # =============================================================================
 
-# These match the old function signatures exactly
-# Can be removed once migration is complete
-# shellcheck disable=SC2034  # These are used by scripts that source this library
-RED="${_LOG_RED}"
-# shellcheck disable=SC2034
-GREEN="${_LOG_GREEN}"
-# shellcheck disable=SC2034
-YELLOW="${_LOG_YELLOW}"
-# shellcheck disable=SC2034
-BLUE="${_LOG_BLUE}"
-# shellcheck disable=SC2034
-CYAN="${_LOG_CYAN}"
-# shellcheck disable=SC2034
-NC="${_LOG_NC}"
+# Start a named timer
+log_timer_start() {
+    local name="$1"
+    LOG_TIMERS["${name}"]=$(date +%s)
+    log_debug "Timer started: ${name}"
+}
+
+# End a named timer and log duration
+log_timer_end() {
+    local name="$1"
+    local start_time="${LOG_TIMERS[${name}]:-}"
+
+    if [[ -z "${start_time}" ]]; then
+        log_warn "Timer '${name}' was not started"
+        return 1
+    fi
+
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    local minutes=$((duration / 60))
+    local seconds=$((duration % 60))
+
+    if [[ ${minutes} -gt 0 ]]; then
+        log_info "Timer '${name}': ${minutes}m ${seconds}s"
+    else
+        log_info "Timer '${name}': ${seconds}s"
+    fi
+
+    # Clean up
+    unset "LOG_TIMERS[${name}]"
+}
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Print a horizontal line
+log_line() {
+    local char="${1:--}"
+    local width="${2:-60}"
+    printf '%*s\n' "${width}" '' | tr ' ' "${char}"
+}
+
+# Print a boxed message
+log_box() {
+    local message="$1"
+    local width=$((${#message} + 4))
+
+    log_line "═" "${width}"
+    echo "║ ${message} ║"
+    log_line "═" "${width}"
+}
+
+# Get current log file path
+get_log_file() {
+    echo "${LOG_FILE}"
+}
+
+# Tail the current log file
+tail_log() {
+    local lines="${1:-20}"
+    if [[ -f "${LOG_FILE}" ]]; then
+        tail -n "${lines}" "${LOG_FILE}"
+    else
+        echo "No log file available"
+    fi
+}
+
+# =============================================================================
+# Export Functions
+# =============================================================================
+
+# Export all functions for use in subshells
+export -f log_info log_ok log_warn log_error log_step log_phase log_debug
+export -f log_timer_start log_timer_end
+export -f log_line log_box get_log_file tail_log
+export -f init_logging should_log write_to_log log_message
