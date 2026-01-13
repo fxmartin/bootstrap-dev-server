@@ -940,6 +940,9 @@ After installation:
 │   └── share/bootstrap-dev-server/  # Clone of this repo
 │       ├── flake.nix          # Dev environment definition
 │       ├── flake.lock         # Locked package versions
+│       ├── external/
+│       │   └── nix-install/   # Git submodule (Claude configs source)
+│       │       └── config/claude/
 │       ├── lib/
 │       │   └── logging.sh     # Shared logging library
 │       ├── config/
@@ -961,6 +964,20 @@ After installation:
 ```
 
 **Note**: `~/.config/nix-dev-env` is a symlink to the repo. Changes to `flake.nix` are reflected immediately (after re-entering the dev shell with `dev`).
+
+### Claude Code Configuration
+
+Claude Code agents, commands, and global CLAUDE.md are sourced from the [`nix-install`](https://github.com/fxmartin/nix-install) repository via Git submodule. This ensures consistent Claude Code configuration across all environments.
+
+The `~/.claude/` directory contains symlinks to the submodule:
+- `agents/` → Custom agent definitions
+- `commands/` → Slash command definitions
+- `CLAUDE.md` → Global instructions
+
+**Updating Claude configs:**
+```bash
+dev-update   # Pulls repo + syncs submodule automatically
+```
 
 ---
 

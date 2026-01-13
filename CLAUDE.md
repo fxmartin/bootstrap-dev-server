@@ -94,6 +94,10 @@ bootstrap-dev-server/
 ├── hcloud-provision.sh       # Hetzner Cloud provisioner
 ├── flake.nix                 # Nix dev shell definition
 ├── flake.lock                # Locked package versions
+├── .gitmodules               # Git submodule configuration
+├── external/
+│   └── nix-install/          # Submodule: nix-install repo (source of truth)
+│       └── config/claude/    # Claude Code configs (agents, commands, CLAUDE.md)
 ├── lib/
 │   └── logging.sh            # Shared logging library
 ├── scripts/
