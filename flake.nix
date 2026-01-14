@@ -14,6 +14,9 @@
     };
 
     # MCP servers for Claude Code (Context7, GitHub, Sequential Thinking)
+    # NOTE: nixpkgs.follows means mcp-servers-nix uses our nixpkgs version.
+    # If nixpkgs upgrades Node.js beyond v22, MCP server builds may fail because
+    # upstream requires Node.js 22 (see natsukium/mcp-servers-nix#285, fix: #276).
     mcp-servers-nix = {
       url = "github:natsukium/mcp-servers-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -99,7 +102,7 @@
             pkgs.python312Packages.rich          # Pretty terminal output
             pkgs.pre-commit                      # Git hooks for code quality
 
-            # Node.js
+            # Node.js (pinned to v22 - MCP servers require it, see mcp-servers-nix#285)
             pkgs.nodejs_22
 
             # React/Frontend Development
