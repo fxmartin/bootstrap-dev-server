@@ -198,6 +198,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 ### Development Environment
 - **Claude Code** with auto-updates
+- **GSD (Get Shit Done)**: Meta-prompting system for spec-driven development with Claude Code
 - **MCP Servers**: Context7, GitHub, Sequential Thinking
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
@@ -248,10 +249,11 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 | Command | Description |
 |---------|-------------|
 | `dev` | Enter full dev environment |
-| `dev minimal` | Minimal environment (Claude + basics) |
-| `dev python` | Python-focused environment |
+| `dm` | Minimal environment (Claude + basics) |
+| `dp` | Python-focused environment |
 | `dev-update` | Pull latest from repo + update Nix packages |
 | `claude` | Start Claude Code |
+| `/gsd:help` | Show GSD commands (inside Claude Code) |
 
 ---
 
@@ -468,6 +470,28 @@ Claude Code MCP servers are automatically configured:
    dev
    claude mcp list
    ```
+
+### GSD (Get Shit Done)
+
+[GSD](https://github.com/glittercowboy/get-shit-done) is a meta-prompting and context engineering system that prevents quality degradation when working on projects with Claude Code. It's automatically installed on first shell entry.
+
+**Key features:**
+- Spec-driven development with phases and atomic tasks
+- Each task runs in fresh AI context to maintain quality
+- Prevents "context rot" as the context window fills
+
+**Verify installation:**
+```bash
+ls ~/.claude/skills/       # GSD skills directory
+```
+
+**Usage (inside Claude Code):**
+```
+/gsd:help                  # Show all GSD commands
+/gsd:new-project           # Start a new project with deep context gathering
+/gsd:progress              # Check project progress
+/gsd:execute-plan          # Execute a plan file
+```
 
 ### Project-Specific Environments
 
@@ -764,7 +788,9 @@ After installation:
 ├── .claude.json               # Claude Code config (includes MCP servers)
 ├── .claude/
 │   ├── agents/                # Custom agent definitions (symlinked)
-│   └── commands/              # Custom slash commands (symlinked)
+│   ├── commands/              # Custom slash commands (symlinked)
+│   ├── skills/                # GSD skills (auto-installed)
+│   └── .gsd-installed         # Marker file (prevents reinstall)
 ├── .config/
 │   └── nix-dev-env -> ~/.local/share/bootstrap-dev-server  # Symlink!
 ├── .local/
@@ -943,6 +969,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
 - [natsukium/mcp-servers-nix](https://github.com/natsukium/mcp-servers-nix) for MCP server Nix packaging
+- [glittercowboy/get-shit-done](https://github.com/glittercowboy/get-shit-done) for the GSD meta-prompting system
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client

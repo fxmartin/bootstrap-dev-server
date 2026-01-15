@@ -35,6 +35,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 
 **Development Environment:**
 - Claude Code with MCP servers (Context7, GitHub, Sequential Thinking)
+- GSD (Get Shit Done) - meta-prompting system for spec-driven development
 - Python 3.12 + uv + ruff + pytest stack
 - Node.js 22 + bun + pnpm + TypeScript
 - Nix development tools (nil, nixfmt-rfc-style)
