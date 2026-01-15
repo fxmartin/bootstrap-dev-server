@@ -34,8 +34,9 @@
         # MCP servers:
         # - context7: from mcp-servers-nix (referenced directly in shellHook)
         # - github: from nixpkgs 25.11
-        # - sequential-thinking: DISABLED - upstream build broken (issue #285)
+        # - sequential-thinking: from mcp-servers-nix (issue #285 fixed)
         githubMcpServer = pkgs.github-mcp-server;
+        sequentialThinkingMcp = mcp-servers-nix.packages.${system}.mcp-server-sequential-thinking;
       in
       {
         # Default dev shell
@@ -209,6 +210,12 @@
                     "env": {
                       "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
+                  },
+                  "sequential-thinking": {
+                    "type": "stdio",
+                    "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
+                    "args": [],
+                    "env": {}
                   }
                 }
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
@@ -499,6 +506,12 @@ MSMTPEOF
                     "env": {
                       "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
+                  },
+                  "sequential-thinking": {
+                    "type": "stdio",
+                    "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
+                    "args": [],
+                    "env": {}
                   }
                 }
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
@@ -570,6 +583,12 @@ MSMTPEOF
                     "env": {
                       "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
                     }
+                  },
+                  "sequential-thinking": {
+                    "type": "stdio",
+                    "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
+                    "args": [],
+                    "env": {}
                   }
                 }
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"

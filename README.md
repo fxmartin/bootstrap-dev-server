@@ -450,7 +450,7 @@ Claude Code MCP servers are automatically configured:
 
 - **Context7**: Documentation lookup (no auth required)
 - **GitHub**: Repository access (requires Personal Access Token)
-- **Sequential Thinking**: Enhanced reasoning (no auth required) - *currently disabled due to [upstream build issue](https://github.com/natsukium/mcp-servers-nix/issues/285); fix pending in [PR #276](https://github.com/natsukium/mcp-servers-nix/pull/276) (Node.js 22 pinning)*
+- **Sequential Thinking**: Enhanced reasoning (no auth required)
 
 **To configure GitHub MCP server:**
 
