@@ -199,6 +199,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 ### Development Environment
 - **Claude Code** with auto-updates
 - **GSD (Get Shit Done)**: Meta-prompting system for spec-driven development with Claude Code
+- **everything-claude-code**: Production-ready Claude Code plugin with agents, skills, commands, rules, and hooks
 - **MCP Servers**: Context7, GitHub, Sequential Thinking
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
@@ -491,6 +492,30 @@ ls ~/.claude/skills/       # GSD skills directory
 /gsd:new-project           # Start a new project with deep context gathering
 /gsd:progress              # Check project progress
 /gsd:execute-plan          # Execute a plan file
+```
+
+### everything-claude-code Plugin
+
+[everything-claude-code](https://github.com/affaan-m/everything-claude-code) is a comprehensive Claude Code plugin with production-ready configurations. It's automatically installed on first shell entry.
+
+**What it includes:**
+| Component | Examples |
+|-----------|----------|
+| **Agents** | Planner, Architect, TDD Guide, Code Reviewer, Security Reviewer |
+| **Skills** | Coding standards, backend/frontend patterns, TDD workflow |
+| **Commands** | `/tdd`, `/plan`, `/e2e`, `/code-review`, `/build-fix` |
+| **Rules** | Security, coding style, testing, git workflow standards |
+| **Hooks** | Session lifecycle, strategic compaction, pattern extraction |
+
+**Verify installation:**
+```bash
+claude plugin list         # Should show everything-claude-code
+```
+
+**Note:** The plugin is installed via marketplace. If you need to reinstall:
+```bash
+claude plugin marketplace add affaan-m/everything-claude-code
+claude plugin install everything-claude-code@everything-claude-code
 ```
 
 ### Project-Specific Environments
@@ -790,7 +815,9 @@ After installation:
 │   ├── agents/                # Custom agent definitions (symlinked)
 │   ├── commands/              # Custom slash commands (symlinked)
 │   ├── skills/                # GSD skills (auto-installed)
-│   └── .gsd-installed         # Marker file (prevents reinstall)
+│   ├── plugins/               # Installed Claude Code plugins
+│   ├── .gsd-installed         # Marker file (prevents reinstall)
+│   └── .ecc-installed         # everything-claude-code marker
 ├── .config/
 │   └── nix-dev-env -> ~/.local/share/bootstrap-dev-server  # Symlink!
 ├── .local/
@@ -970,6 +997,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
 - [natsukium/mcp-servers-nix](https://github.com/natsukium/mcp-servers-nix) for MCP server Nix packaging
 - [glittercowboy/get-shit-done](https://github.com/glittercowboy/get-shit-done) for the GSD meta-prompting system
+- [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code) for the comprehensive Claude Code plugin
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client

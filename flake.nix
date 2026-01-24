@@ -298,6 +298,21 @@
               fi
             fi
 
+            # Install everything-claude-code plugin (all components)
+            # Adds: agents, skills, commands, rules, hooks, scripts
+            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
+            if [ ! -f "$ECC_MARKER" ]; then
+              echo "📦 Installing everything-claude-code plugin..."
+              # First add the marketplace, then install the plugin
+              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
+                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
+                touch "$ECC_MARKER"
+                echo "✓ everything-claude-code plugin installed"
+              else
+                echo "⚠️  Plugin installation failed (non-critical, continuing)"
+              fi
+            fi
+
             # Create zsh config directory if needed
             mkdir -p "$HOME/.config/zsh"
 
@@ -551,6 +566,19 @@ MSMTPEOF
                 echo "⚠️  GSD installation failed (non-critical, continuing)"
               fi
             fi
+
+            # Install everything-claude-code plugin (all components)
+            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
+            if [ ! -f "$ECC_MARKER" ]; then
+              echo "📦 Installing everything-claude-code plugin..."
+              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
+                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
+                touch "$ECC_MARKER"
+                echo "✓ everything-claude-code plugin installed"
+              else
+                echo "⚠️  Plugin installation failed (non-critical, continuing)"
+              fi
+            fi
           '';
         };
 
@@ -634,6 +662,19 @@ MSMTPEOF
                 echo "✓ GSD installed to ~/.claude/"
               else
                 echo "⚠️  GSD installation failed (non-critical, continuing)"
+              fi
+            fi
+
+            # Install everything-claude-code plugin (all components)
+            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
+            if [ ! -f "$ECC_MARKER" ]; then
+              echo "📦 Installing everything-claude-code plugin..."
+              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
+                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
+                touch "$ECC_MARKER"
+                echo "✓ everything-claude-code plugin installed"
+              else
+                echo "⚠️  Plugin installation failed (non-critical, continuing)"
               fi
             fi
           '';
