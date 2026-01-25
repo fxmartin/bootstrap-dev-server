@@ -21,9 +21,15 @@
       url = "github:natsukium/mcp-servers-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Clawdbot - AI assistant gateway (WhatsApp, Telegram, Discord, etc.)
+    nix-clawdbot = {
+      url = "github:clawdbot/nix-clawdbot";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, claude-code-nix, mcp-servers-nix }:
+  outputs = { self, nixpkgs, flake-utils, claude-code-nix, mcp-servers-nix, nix-clawdbot }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -47,6 +53,9 @@
             # Claude Code
             claude-code-nix.packages.${system}.claude-code
 
+            # Clawdbot - AI assistant gateway
+            nix-clawdbot.packages.${system}.clawdbot
+
             # Core CLI tools
             pkgs.git
             pkgs.curl
@@ -54,6 +63,7 @@
             pkgs.jq
             pkgs.yq
             pkgs.ripgrep
+            pkgs.mgrep     # Multi-line grep
             pkgs.fd
             pkgs.bat
             pkgs.eza
