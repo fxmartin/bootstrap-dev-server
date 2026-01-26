@@ -64,6 +64,12 @@
             pkgs.btop
             pkgs.gotop  # Terminal-based graphical activity monitor
 
+            # Modern CLI replacements
+            pkgs.sd        # Intuitive find & replace (sed alternative)
+            pkgs.dust      # Visual disk usage (du alternative)
+            pkgs.choose    # Human-friendly column select (cut/awk alternative)
+            pkgs.xh        # Friendly HTTP client (curl alternative)
+
             # Editors
             pkgs.neovim
             pkgs.helix
