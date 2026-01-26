@@ -1,7 +1,7 @@
-# ABOUTME: Nix flake for CX11 Dev Server Environment
+# ABOUTME: Nix flake for Bootstrap Dev Server Environment
 # ABOUTME: Provides development shells with Claude Code, MCP servers, Python, Node.js, and CLI tools
 {
-  description = "CX11 Dev Server Environment";
+  description = "Bootstrap Dev Server Environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

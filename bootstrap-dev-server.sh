@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #===============================================================================
-# CX11 Dev Server Bootstrap Script
+# Bootstrap Dev Server Script
 #
 # Usage: curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | bash
 #
 # Idempotent: Safe to run multiple times
 # Requirements: Fresh Ubuntu 24.04 server with sudo access
+# Supports: Hetzner Cloud (cx23, cx33, etc.), Parallels VM, Docker/Podman
 #===============================================================================
 
 set -euo pipefail
@@ -1791,31 +1792,26 @@ main() {
     done
 
     # Profile-aware title
-    local profile_name
+    local profile_title
     case "${SERVER_PROFILE}" in
         dev)
-            profile_name="Dev Server"
+            profile_title="Dev Server Bootstrap"
             ;;
         nyx)
-            profile_name="Nyx Server (Dev + Clawdbot AI)"
+            profile_title="Nyx Server Bootstrap (Dev + Clawdbot)"
             ;;
         full)
-            profile_name="Full Server (Dev + Nyx)"
+            profile_title="Full Server Bootstrap (Dev + Nyx)"
             ;;
         *)
-            profile_name="Dev Server (${SERVER_PROFILE})"
+            profile_title="Server Bootstrap (${SERVER_PROFILE})"
             ;;
     esac
 
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║       ${profile_name} Bootstrap Script${NC}"
-    # Pad the line to 64 characters (including box characters)
-    local padding=$((63 - ${#profile_name} - 18))
-    printf "${BLUE}║       "
-    printf "%-${padding}s" ""
-    printf "║${NC}\n"
-    echo -e "${BLUE}║       Ubuntu 24.04 + Nix Flakes + Claude Code                 ║${NC}"
+    printf "${BLUE}║  %-60s║${NC}\n" "${profile_title}"
+    echo -e "${BLUE}║  Ubuntu 24.04 + Nix Flakes + Claude Code                      ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
