@@ -534,7 +534,7 @@ wait_for_server() {
 
         echo -n "."
         sleep 2
-        ((attempt++))
+        ((attempt++)) || true
     done
 
     if [[ ${attempt} -ge ${max_attempts} ]]; then
@@ -557,7 +557,7 @@ wait_for_server() {
         fi
         echo -n "."
         sleep 2
-        ((attempt++))
+        ((attempt++)) || true
     done
 
     log_error "SSH connection timeout"
