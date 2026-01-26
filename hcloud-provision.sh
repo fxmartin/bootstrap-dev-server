@@ -601,6 +601,18 @@ echo "User ${SSH_USER} created with SSH access"
 REMOTE_SCRIPT
 
     log_ok "User account created: ${SSH_USER}"
+
+    # Configure git identity if provided (needed before any git operations)
+    if [[ -n "${GIT_USER_NAME}" && -n "${GIT_USER_EMAIL}" ]]; then
+        log_info "Configuring git identity..."
+        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<GIT_SCRIPT
+set -e
+sudo -u ${SSH_USER} git config --global user.name "${GIT_USER_NAME}"
+sudo -u ${SSH_USER} git config --global user.email "${GIT_USER_EMAIL}"
+echo "Git configured: ${GIT_USER_NAME} <${GIT_USER_EMAIL}>"
+GIT_SCRIPT
+        log_ok "Git identity configured"
+    fi
 }
 
 #===============================================================================
