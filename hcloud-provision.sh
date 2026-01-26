@@ -550,7 +550,7 @@ wait_for_server() {
     log_info "Waiting for SSH to be available..."
     attempt=0
     while [[ ${attempt} -lt 30 ]]; do
-        if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes \
+        if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
             -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" "echo ok" &>/dev/null; then
             log_ok "SSH is available"
             return 0
@@ -572,7 +572,7 @@ setup_user_account() {
 
     # Commands to run on server as root
     # shellcheck disable=SC2087  # Client-side expansion of SSH_USER/SERVER_NAME is intentional
-    ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<REMOTE_SCRIPT
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<REMOTE_SCRIPT
 set -e
 
 # Set hostname to match the Hetzner server name (used in security reports, etc.)
@@ -605,7 +605,7 @@ REMOTE_SCRIPT
     # Configure git identity if provided (needed before any git operations)
     if [[ -n "${GIT_USER_NAME}" && -n "${GIT_USER_EMAIL}" ]]; then
         log_info "Configuring git identity..."
-        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<GIT_SCRIPT
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<GIT_SCRIPT
 set -e
 sudo -u ${SSH_USER} git config --global user.name "${GIT_USER_NAME}"
 sudo -u ${SSH_USER} git config --global user.email "${GIT_USER_EMAIL}"
@@ -682,7 +682,7 @@ run_bootstrap() {
         log_info "Git user email: ${GIT_USER_EMAIL}"
     fi
 
-    ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
         "${bootstrap_exports}curl -fsSL '${BOOTSTRAP_URL}' | bash"
 
     log_ok "Bootstrap complete!"
@@ -705,13 +705,13 @@ run_profile() {
         ;;
     nyx)
         log_info "Installing Nyx (Clawdbot AI assistant) profile..."
-        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
             "curl -fsSL '${PROFILE_URL_BASE}/nyx.sh' | sudo bash"
         log_ok "Nyx profile installed!"
         ;;
     full)
         log_info "Installing full profile (dev + nyx)..."
-        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
             "curl -fsSL '${PROFILE_URL_BASE}/nyx.sh' | sudo bash"
         log_ok "Full profile installed!"
         ;;
