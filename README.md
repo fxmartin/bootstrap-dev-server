@@ -1175,12 +1175,14 @@ These limitations are documented and expected - E2E tests focus on the installat
 
 **Production Test Results (2026-01-26)**
 
-Full end-to-end validation on live Hetzner Cloud VPS completed successfully:
+Full end-to-end validation on live Hetzner Cloud VPS completed successfully for both profiles:
 
-**Test Configuration:**
+#### Dev Profile Test
+
+**Configuration:**
 - **Server**: Hetzner cx23 (2 vCPU, 4GB RAM, 40GB SSD)
 - **Location**: nbg1 (Nuremberg, Germany)
-- **Profile**: dev (base environment without clawdbot)
+- **Profile**: dev (base environment)
 - **OS**: Ubuntu 24.04.3 LTS
 
 **Results:**
@@ -1189,19 +1191,43 @@ Full end-to-end validation on live Hetzner Cloud VPS completed successfully:
 - ✅ Claude Code 2.1.19 installed and operational
 - ✅ All 3 MCP servers connected (Context7, GitHub, Sequential Thinking)
 - ✅ Python 3.13.11, Node.js v22.22.0
-- ✅ Nix environment build successful
+- ✅ Nix environment build successful (no OOM issues)
 - ✅ Security hardening applied (SSH, UFW, Fail2Ban, GeoIP, Tailscale, auditd)
 - ✅ Email notifications configured
 
-**Verified Server Requirements:**
-- **cx23 (4GB RAM)**: ✅ Sufficient for dev profile
-- **cx33 (8GB RAM)**: Recommended for nyx profile (includes clawdbot)
+#### Nyx Profile Test
 
-**Known Issues Resolved:**
-1. Email config read permission (required sudo for root-owned `/etc/security-report.conf`)
-2. Clawdbot removed from base flake.nix (caused OOM on cx23 servers)
+**Configuration:**
+- **Server**: Hetzner cx33 (4 vCPU, 8GB RAM, 160GB SSD)
+- **Location**: nbg1 (Nuremberg, Germany)
+- **Profile**: nyx (dev + Clawdbot AI assistant)
+- **OS**: Ubuntu 24.04.3 LTS
 
-Both issues fixed in commit `9d66a56`.
+**Results:**
+- ✅ Complete bootstrap in **~8-10m** (estimated)
+- ✅ All 5 phases completed successfully
+- ✅ Dev profile components installed (Claude Code, MCP servers, Nix)
+- ✅ Clawdbot 2026.1.24-3 installed via npm
+- ✅ Clawdbot gateway operational at `~/.local/share/npm-global/bin/clawdbot`
+- ✅ No OOM issues during npm install (8GB RAM sufficient)
+- ✅ Security hardening applied
+
+#### Verified Server Requirements
+
+| Profile | Min RAM | Recommended Server | Monthly Cost* | Status |
+|---------|---------|-------------------|---------------|--------|
+| dev | 4GB | cx23 | ~€5.50 | ✅ Tested |
+| nyx | 8GB | cx33 | ~€11 | ✅ Tested |
+| full | 8GB | cx33 | ~€11 | ⚠️ Not tested yet |
+
+*Approximate Hetzner Cloud pricing as of 2026-01-26
+
+#### Known Issues Resolved
+
+1. **Email config read permission** - Required sudo for root-owned `/etc/security-report.conf` (fixed in commit `9d66a56`)
+2. **Clawdbot OOM on cx23** - Removed from base flake.nix, now installed only via nyx profile (fixed in commit `9d66a56`)
+3. **Hardcoded "CX11" references** - Removed server type assumptions (fixed in commit `a44fb93`)
+4. **Profile-agnostic messages** - Bootstrap now displays profile-specific titles (fixed in commit `e8c7abd`)
 
 ### Cross-Platform Support
 
