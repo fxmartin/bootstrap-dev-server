@@ -747,6 +747,7 @@ ${port_line}    User ${SSH_USER}
     IdentityFile ${SSH_KEY_PATH}
     IdentitiesOnly yes
     AddKeysToAgent yes
+    IgnoreUnknown UseKeychain
     UseKeychain yes
     ForwardAgent no
     StrictHostKeyChecking accept-new"
