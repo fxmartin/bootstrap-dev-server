@@ -70,6 +70,10 @@ SSH_KEY_PATH="${SSH_KEY_PATH:-${HOME}/.ssh/id_devserver}"
 SSH_USER="${SSH_USER:-fx}"
 BOOTSTRAP_URL="https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh"
 
+# Profile configuration (dev=default, nyx=Clawdbot AI assistant, full=both)
+SERVER_PROFILE="${SERVER_PROFILE:-dev}"
+PROFILE_URL_BASE="https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/profiles"
+
 # Security hardening configuration (passed to bootstrap script)
 BOOTSTRAP_SSH_PORT="${BOOTSTRAP_SSH_PORT:-22}"           # SSH port (22 = standard, 22222 = recommended)
 BOOTSTRAP_GEOIP_ENABLED="${BOOTSTRAP_GEOIP_ENABLED:-false}"  # Enable GeoIP country blocking
@@ -93,6 +97,7 @@ OPTIONS:
     --name NAME         Server name (default: dev-server)
     --type TYPE         Server type (default: cx33)
     --location LOC      Datacenter location (default: fsn1)
+    --profile PROFILE   Installation profile: dev, nyx, full (default: dev)
     --user USER         Username to create (default: fx)
     --ssh-key PATH      Path to SSH private key (default: ~/.ssh/id_devserver)
     --yes, -y           Auto-confirm bootstrap (no prompt)
@@ -156,6 +161,12 @@ EXAMPLES:
 
     # Create ARM server (cheapest, but ARM-only software)
     ./hcloud-provision.sh --name arm-dev --type cax11
+
+    # Create Nyx AI assistant server (Clawdbot)
+    ./hcloud-provision.sh --name nyx --type cx23 --profile nyx
+
+    # Create full server (dev tools + Nyx assistant)
+    ./hcloud-provision.sh --name fullstack --profile full
 
     # Delete a server
     ./hcloud-provision.sh --delete dev-server
@@ -246,6 +257,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --location)
         SERVER_LOCATION="$2"
+        shift 2
+        ;;
+    --profile)
+        SERVER_PROFILE="$2"
         shift 2
         ;;
     --user)
@@ -659,6 +674,39 @@ run_bootstrap() {
         "${bootstrap_exports}curl -fsSL '${BOOTSTRAP_URL}' | bash"
 
     log_ok "Bootstrap complete!"
+
+    # Run profile-specific setup if not default 'dev' profile
+    if [[ "${SERVER_PROFILE}" != "dev" ]]; then
+        run_profile
+    fi
+}
+
+#===============================================================================
+# Run Profile
+#===============================================================================
+run_profile() {
+    log_step "Running profile: ${SERVER_PROFILE}"
+
+    case "${SERVER_PROFILE}" in
+    dev)
+        log_info "Default dev profile - no additional setup needed"
+        ;;
+    nyx)
+        log_info "Installing Nyx (Clawdbot AI assistant) profile..."
+        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
+            "curl -fsSL '${PROFILE_URL_BASE}/nyx.sh' | sudo bash"
+        log_ok "Nyx profile installed!"
+        ;;
+    full)
+        log_info "Installing full profile (dev + nyx)..."
+        ssh -o StrictHostKeyChecking=no -i "${SSH_KEY_PATH}" -t "${SSH_USER}@${SERVER_IP}" \
+            "curl -fsSL '${PROFILE_URL_BASE}/nyx.sh' | sudo bash"
+        log_ok "Full profile installed!"
+        ;;
+    *)
+        log_warn "Unknown profile: ${SERVER_PROFILE}, skipping"
+        ;;
+    esac
 }
 
 #===============================================================================
@@ -733,6 +781,7 @@ print_summary() {
     echo -e "    Type:     ${YELLOW}${SERVER_TYPE}${NC}"
     echo -e "    IP:       ${YELLOW}${SERVER_IP}${NC}"
     echo -e "    Location: ${YELLOW}${SERVER_LOCATION}${NC}"
+    echo -e "    Profile:  ${YELLOW}${SERVER_PROFILE}${NC}"
     echo ""
     echo -e "  ${BLUE}Connect:${NC}"
     echo -e "    SSH:  ${YELLOW}ssh ${SERVER_NAME}${NC}  (or ssh ${SSH_USER}@${SERVER_IP})"
