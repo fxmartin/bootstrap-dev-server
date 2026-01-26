@@ -1175,7 +1175,7 @@ configure_update_notifications() {
 
     # Read email from config
     local report_email
-    report_email=$(grep "^REPORT_EMAIL=" "${REPORT_CONFIG}" 2>/dev/null | cut -d'"' -f2)
+    report_email=$(sudo grep "^REPORT_EMAIL=" "${REPORT_CONFIG}" 2>/dev/null | cut -d'"' -f2)
     if [[ -z "${report_email}" ]]; then
         log_warn "No email found in config - skipping update notifications"
         return 0
