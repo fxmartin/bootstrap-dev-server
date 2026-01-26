@@ -55,6 +55,7 @@ upgrade_logging() {
 # Configuration - Edit these for your setup
 #===============================================================================
 DEV_USER="${DEV_USER:-$(whoami)}"
+SERVER_PROFILE="${SERVER_PROFILE:-dev}"  # Server profile: dev, nyx, full
 SSH_PORT="${SSH_PORT:-22}"
 MOSH_PORT_START="${MOSH_PORT_START:-60000}"
 MOSH_PORT_END="${MOSH_PORT_END:-60010}"
@@ -1695,9 +1696,26 @@ print_summary() {
         mosh_cmd="mosh --ssh=\"ssh -p ${SSH_PORT}\" ${DEV_USER}@${IP_ADDR}"
     fi
 
+    # Profile-aware completion message
+    local completion_msg
+    case "${SERVER_PROFILE}" in
+        dev)
+            completion_msg="Dev Server Bootstrap Complete!"
+            ;;
+        nyx)
+            completion_msg="Nyx Server Bootstrap Complete! (Dev + Clawdbot)"
+            ;;
+        full)
+            completion_msg="Full Server Bootstrap Complete! (Dev + Nyx)"
+            ;;
+        *)
+            completion_msg="Server Bootstrap Complete! (${SERVER_PROFILE})"
+            ;;
+    esac
+
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  ✅ Dev Server Bootstrap Complete!${NC}"
+    echo -e "${GREEN}  ✅ ${completion_msg}${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${BLUE}Connection:${NC}"
@@ -1772,9 +1790,31 @@ main() {
         esac
     done
 
+    # Profile-aware title
+    local profile_name
+    case "${SERVER_PROFILE}" in
+        dev)
+            profile_name="Dev Server"
+            ;;
+        nyx)
+            profile_name="Nyx Server (Dev + Clawdbot AI)"
+            ;;
+        full)
+            profile_name="Full Server (Dev + Nyx)"
+            ;;
+        *)
+            profile_name="Dev Server (${SERVER_PROFILE})"
+            ;;
+    esac
+
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║       CX11 Dev Server Bootstrap Script                        ║${NC}"
+    echo -e "${BLUE}║       ${profile_name} Bootstrap Script${NC}"
+    # Pad the line to 64 characters (including box characters)
+    local padding=$((63 - ${#profile_name} - 18))
+    printf "${BLUE}║       "
+    printf "%-${padding}s" ""
+    printf "║${NC}\n"
     echo -e "${BLUE}║       Ubuntu 24.04 + Nix Flakes + Claude Code                 ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""

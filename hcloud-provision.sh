@@ -714,6 +714,10 @@ run_bootstrap() {
     # Build environment variables to pass to bootstrap
     # Using 'export' so they're available to the piped bash process
     local bootstrap_exports=""
+
+    # Pass server profile to bootstrap for display customization
+    bootstrap_exports+="export SERVER_PROFILE='${SERVER_PROFILE}'; "
+
     if [[ "${BOOTSTRAP_SSH_PORT}" != "22" ]]; then
         bootstrap_exports+="export SSH_PORT=${BOOTSTRAP_SSH_PORT}; "
         log_info "SSH port will be changed to: ${BOOTSTRAP_SSH_PORT}"
