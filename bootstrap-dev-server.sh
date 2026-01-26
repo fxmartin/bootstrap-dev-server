@@ -1773,7 +1773,7 @@ main() {
     regenerate_host_keys
     configure_firewall
     configure_fail2ban
-    install_geoip_shell
+    install_geoip_shell || true  # Optional: Tailscale provides backup access
     install_tailscale
     install_auditd
     harden_sysctl
