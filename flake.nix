@@ -185,6 +185,11 @@
           ];
 
           shellHook = ''
+            # Handle Ghostty terminal - fallback if terminfo missing
+            if [[ "$TERM" == "xterm-ghostty" ]] && ! infocmp xterm-ghostty &>/dev/null 2>&1; then
+              export TERM=xterm-256color
+            fi
+
             export EDITOR=nvim
             export VISUAL=nvim
 
@@ -516,6 +521,11 @@ MSMTPEOF
           ];
 
           shellHook = ''
+            # Handle Ghostty terminal - fallback if terminfo missing
+            if [[ "$TERM" == "xterm-ghostty" ]] && ! infocmp xterm-ghostty &>/dev/null 2>&1; then
+              export TERM=xterm-256color
+            fi
+
             # Set up Claude Code MCP servers in ~/.claude.json (user scope)
             # Each server is checked individually - missing ones are added without overwriting existing config
             CLAUDE_JSON="$HOME/.claude.json"
@@ -614,6 +624,11 @@ MSMTPEOF
           ];
 
           shellHook = ''
+            # Handle Ghostty terminal - fallback if terminfo missing
+            if [[ "$TERM" == "xterm-ghostty" ]] && ! infocmp xterm-ghostty &>/dev/null 2>&1; then
+              export TERM=xterm-256color
+            fi
+
             # Set up Claude Code MCP servers in ~/.claude.json (user scope)
             # Each server is checked individually - missing ones are added without overwriting existing config
             CLAUDE_JSON="$HOME/.claude.json"
