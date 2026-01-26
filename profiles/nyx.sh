@@ -3,10 +3,15 @@
 # This profile transforms a base Ubuntu server into a Clawdbot-powered
 # personal AI assistant (codename: Nyx)
 
-set -euo pipefail
+set -eo pipefail
 
 # Source logging library if available
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Handle case where script is piped to bash (BASH_SOURCE is unset)
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+else
+    SCRIPT_DIR="/tmp"
+fi
 if [[ -f "${SCRIPT_DIR}/lib/logging.sh" ]]; then
     source "${SCRIPT_DIR}/lib/logging.sh"
 else
@@ -439,7 +444,7 @@ main() {
     log_ok "Nyx profile installation complete!"
 }
 
-# Run main if script is executed directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Run main if script is executed directly or piped
+if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
