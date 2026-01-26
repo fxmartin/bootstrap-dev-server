@@ -285,11 +285,17 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - Syntax-aware diff: difftastic
 
 #### CLI Productivity
-- Search: ripgrep, fd, fzf
-- File viewing: bat, eza, tree
-- Git: lazygit, delta, git-lfs
-- Other: jq, yq, httpie, websocat, glow
-- Shell: zsh, starship, zoxide, direnv, tmux
+
+**Modern Replacements** (token-efficient, better defaults):
+- Search: `ripgrep` (grep), `fd` (find), `fzf` (fuzzy finder)
+- File viewing: `bat` (cat), `eza` (ls), `tree`
+- Text processing: `sd` (sed), `choose` (cut/awk)
+- Disk usage: `dust` (du), `ncdu` (interactive du)
+- HTTP: `xh` (curl), `httpie`
+- Git: `lazygit`, `delta` (diff), `git-lfs`
+- Data: `jq`, `yq`, `miller` (CSV/JSON), `csvkit`
+- Shell: `zsh`, `starship`, `zoxide`, `direnv`, `tmux`
+- Other: `websocat`, `glow` (markdown)
 
 #### Editors
 - Neovim, Helix
@@ -304,6 +310,62 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 | `dev-update` | Pull latest from repo + update Nix packages |
 | `claude` | Start Claude Code |
 | `/gsd:help` | Show GSD commands (inside Claude Code) |
+
+### Modern CLI Tools Guide
+
+The dev environment includes modern replacements for classic Unix tools. These tools are faster, have better defaults, and **save tokens** in Claude Code sessions by providing simpler syntax.
+
+#### Text Processing
+
+| Classic | Modern | Example |
+|---------|--------|---------|
+| `grep` | `rg` (ripgrep) | `rg "pattern"` - respects .gitignore by default |
+| `find` | `fd` | `fd "\.py$"` vs `find . -name "*.py"` |
+| `sed` | `sd` | `sd 'old' 'new' file` vs `sed -i 's/old/new/g' file` |
+| `cat` | `bat` | `bat file` - syntax highlighting, line numbers |
+| `ls` | `eza` | `eza -la` - icons, git status, better colors |
+| `cut/awk` | `choose` | `echo "a b c" \| choose 0 2` vs `awk '{print $1, $3}'` |
+
+#### Disk & Network
+
+| Classic | Modern | Example |
+|---------|--------|---------|
+| `du` | `dust` | `dust` - visual tree, auto-sorted |
+| `du` | `ncdu` | `ncdu` - interactive disk usage analyzer |
+| `diff` | `delta` | `git diff` - structural, syntax-aware |
+| `diff` | `difftastic` | `difft file1 file2` - AST-based diff |
+| `curl` | `xh` | `xh get api.github.com/users/fx` - auto-formats JSON |
+
+#### Quick Examples
+
+```bash
+# sd - Find & replace (intuitive regex)
+sd 'foo' 'bar' file.txt              # Simple replacement
+sd '(\w+)@' '$1+spam@' emails.txt    # Regex groups work naturally
+
+# dust - Visual disk usage
+dust                                 # Current directory, visual tree
+dust -d 2 /var/log                   # Max depth 2
+
+# choose - Column selection
+ps aux | choose -f '\s+' 1 10        # Process name and memory
+echo "foo bar baz" | choose 0 2      # First and third words
+
+# xh - HTTP client
+xh get api.github.com/users/fxmartin          # GET with JSON formatting
+xh post httpbin.org/post name=fx city=Paris   # POST form data
+xh put api.example.com/users/1 name=François  # PUT request
+
+# bat - Cat with wings
+bat file.py                          # Syntax highlighting
+bat -pp file.py                      # Plain output (no decorations)
+bat --diff file.py                   # Show git diff
+
+# fd - Fast find
+fd "\.md$"                           # Find markdown files
+fd -e py -e js                       # Multiple extensions
+fd -H config                         # Include hidden files
+```
 
 ---
 
