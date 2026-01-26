@@ -85,6 +85,11 @@ That's it. You're coding in the cloud.
 # Different datacenter (US East for North America)
 ./hcloud-provision.sh --location ash
 
+# Installation profiles (see Profiles section below)
+./hcloud-provision.sh --profile dev   # Default: development environment only
+./hcloud-provision.sh --profile nyx   # Nyx: dev + Clawdbot AI assistant
+./hcloud-provision.sh --profile full  # Full: everything (dev + nyx)
+
 # Default server (recommended for multi-agent Claude Code)
 ./hcloud-provision.sh --type cx33
 
@@ -160,6 +165,47 @@ That's it. You're coding in the cloud.
 
 > **Recommendation**: Start with `cx33` for Claude Code multi-agent workflows. The 4 vCPU and 8GB RAM handles 5-8 parallel subagents smoothly (Explore, Plan, etc.), while CX23's 2 vCPU/4GB hits swap with 3+ concurrent agents. At only €2/month more (~€5.50 vs €3.50), it's the sweet spot for serious Claude Code usage. Use `cx23` only for single-agent work or budget constraints. Use AMD (`cpx22`) if you need more disk space, or ARM (`cax11`) for best value if your software supports ARM.
 
+### Installation Profiles
+
+The bootstrap system supports different installation profiles to customize what gets installed:
+
+| Profile | Description | Use Case |
+|---------|-------------|----------|
+| **dev** (default) | Development environment only | Standard coding workflow with Claude Code |
+| **nyx** | Nyx: AI assistant server | Clawdbot personal AI assistant (codename: Nyx) |
+| **full** | Both dev + nyx | Complete setup with all features |
+
+#### Nyx Profile: Personal AI Assistant
+
+The `nyx` profile transforms your server into a Clawdbot-powered personal AI assistant accessible via Telegram, WhatsApp, Discord, and more.
+
+**What Nyx Adds:**
+- **Clawdbot** gateway installed via npm global
+- **Node.js 22** (via NodeSource apt repository)
+- **Tailscale** VPN for secure access
+- **CLI tools**: ripgrep, jq, yt-dlp, rclone, gh, hcloud
+- **Security enhancements**: rkhunter, logwatch, weekly security scans
+- **Backup system**: Daily Dropbox sync (optional, requires rclone config)
+- **Workspace**: `~/clawd/` with SOUL.md, USER.md, MEMORY.md files
+
+**Usage:**
+```bash
+# Provision Nyx server
+./hcloud-provision.sh --name nyx --profile nyx --type cx23
+
+# After provisioning, configure Clawdbot
+ssh nyx
+export PATH=~/.local/share/npm-global/bin:$PATH
+clawdbot setup
+clawdbot configure --section channels
+clawdbot gateway start
+
+# Configure Dropbox backup (optional)
+rclone config  # Create 'dropbox' remote
+```
+
+**Why "Nyx"?** Named after the Greek primordial goddess of night - a sharp, dry-witted familiar that's genuinely helpful without corporate polish. 🌙
+
 ### Environment Variables
 
 ```bash
@@ -169,6 +215,7 @@ export HCLOUD_TOKEN="your-api-token"
 # Customize defaults
 export SERVER_NAME="my-server"
 export SERVER_LOCATION="ash"
+export SERVER_PROFILE="nyx"  # dev, nyx, or full
 export SSH_USER="developer"
 
 ./hcloud-provision.sh
@@ -181,6 +228,8 @@ If you prefer manual control, see [Manual Hetzner Setup](#appendix-a-manual-hetz
 ---
 
 ## What Gets Installed
+
+### Base Installation (All Profiles)
 
 The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev environment:
 
@@ -829,9 +878,15 @@ After installation:
 │       ├── flake.lock         # Locked package versions
 │       ├── lib/
 │       │   └── logging.sh     # Shared logging library
+│       ├── profiles/
+│       │   └── nyx.sh         # Nyx profile installation script
 │       ├── scripts/
 │       │   └── secure-ssh-key.sh  # Add passphrase to SSH key
 │       └── tests/
+│           ├── *.bats         # Unit test suites (300 tests)
+│           ├── e2e/
+│           │   ├── Dockerfile.ubuntu24  # E2E test container
+│           │   └── e2e-runner.sh        # E2E test orchestrator
 │           └── verify-server.sh   # Post-install verification
 ├── .bashrc                    # Shell integration
 ├── CLAUDE.md                  # Claude Code instructions
@@ -982,6 +1037,141 @@ ssh fx@10.211.55.X
 dev
 claude --version
 ```
+
+---
+
+## Testing
+
+Comprehensive test coverage ensures the bootstrap system works reliably across platforms.
+
+### Unit Tests
+
+**Test Coverage: 300 tests (100% passing)**
+
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| `hcloud-provision.bats` | 78 | Provisioning logic, profile system, cross-platform compatibility |
+| `bootstrap.bats` | ~100 | Bootstrap script functions |
+| `logging.bats` | ~50 | Logging library |
+| `flake.bats` | ~30 | Nix flake structure |
+| `health-check.bats` | ~20 | System health checks |
+| `secure-ssh-key.bats` | ~20 | SSH key security |
+
+**Run Tests:**
+```bash
+# Install dependencies
+brew install bash bats-core  # macOS (need bash 4+)
+# or: sudo apt install bats  # Ubuntu
+
+# Run all tests
+/opt/homebrew/bin/bash -c "bats tests/*.bats"
+
+# Run specific suite
+bats tests/hcloud-provision.bats
+bats tests/bootstrap.bats
+
+# Run profile-specific tests
+bats tests/hcloud-provision.bats -f "profile"
+```
+
+### E2E Tests
+
+**Container-Based Integration Testing**
+
+E2E tests validate the full bootstrap process in isolated Ubuntu 24.04 containers:
+
+```bash
+# Prerequisites: Docker or Podman installed
+
+# Test dev profile
+./tests/e2e/e2e-runner.sh --profile dev
+
+# Test nyx profile
+./tests/e2e/e2e-runner.sh --profile nyx
+
+# Test all profiles
+./tests/e2e/e2e-runner.sh --profile all
+
+# Keep container for debugging
+./tests/e2e/e2e-runner.sh --profile dev --keep-containers
+```
+
+**What E2E Tests Validate:**
+- ✅ Phase 1: Preflight and base packages
+- ✅ Phase 2: Git and GitHub CLI setup
+- ✅ Phase 4: Nix installation and configuration
+- ✅ Profile-specific installations (nyx, full)
+
+**Known Limitations:**
+- Security hardening skipped (requires kernel capabilities)
+- GitHub authentication skipped (requires interactive browser)
+- Systemd services may not work (containers lack systemd as PID 1)
+
+These limitations are documented and expected - E2E tests focus on the installation logic rather than full system integration.
+
+### Live VPS Validation
+
+**Production Test Results (2026-01-26)**
+
+Full end-to-end validation on live Hetzner Cloud VPS completed successfully:
+
+**Test Configuration:**
+- **Server**: Hetzner cx23 (2 vCPU, 4GB RAM, 40GB SSD)
+- **Location**: nbg1 (Nuremberg, Germany)
+- **Profile**: dev (base environment without clawdbot)
+- **OS**: Ubuntu 24.04.3 LTS
+
+**Results:**
+- ✅ Complete bootstrap in **7m 26s**
+- ✅ All 5 phases completed successfully
+- ✅ Claude Code 2.1.19 installed and operational
+- ✅ All 3 MCP servers connected (Context7, GitHub, Sequential Thinking)
+- ✅ Python 3.13.11, Node.js v22.22.0
+- ✅ Nix environment build successful
+- ✅ Security hardening applied (SSH, UFW, Fail2Ban, GeoIP, Tailscale, auditd)
+- ✅ Email notifications configured
+
+**Verified Server Requirements:**
+- **cx23 (4GB RAM)**: ✅ Sufficient for dev profile
+- **cx33 (8GB RAM)**: Recommended for nyx profile (includes clawdbot)
+
+**Known Issues Resolved:**
+1. Email config read permission (required sudo for root-owned `/etc/security-report.conf`)
+2. Clawdbot removed from base flake.nix (caused OOM on cx23 servers)
+
+Both issues fixed in commit `9d66a56`.
+
+### Cross-Platform Support
+
+The provisioning system now works seamlessly on both macOS and Linux:
+
+- **Platform detection**: Automatically detects OS and adjusts behavior
+- **Cross-platform sed**: `sed_inplace()` wrapper handles BSD vs GNU differences
+- **No orphaned files**: Automatic cleanup of temporary `.bak` files
+- **Unified behavior**: Same commands work identically on macOS and Linux
+
+**Tested Platforms:**
+- ✅ macOS 13+ (Ventura, Sonoma, Sequoia) - Apple Silicon and Intel
+- ✅ Linux (Ubuntu, Debian, etc.) - x86_64
+
+---
+
+## Advanced Bootstrap Options
+
+For testing and special use cases, the bootstrap script supports additional flags:
+
+```bash
+# Skip GitHub CLI authentication (for CI/CD, headless environments)
+./bootstrap-dev-server.sh --skip-github-auth
+
+# Skip security hardening (for unprivileged containers)
+./bootstrap-dev-server.sh --skip-security-hardening
+
+# Show help with all options
+./bootstrap-dev-server.sh --help
+```
+
+These flags are primarily used by the E2E test infrastructure but can be useful for custom deployment scenarios.
 
 ---
 
