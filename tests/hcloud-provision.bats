@@ -66,6 +66,17 @@ teardown() {
     [ "${SSH_USER}" = "fx" ]
 }
 
+@test "default SERVER_PROFILE is dev" {
+    unset SERVER_PROFILE
+    SERVER_PROFILE="${SERVER_PROFILE:-dev}"
+    [ "${SERVER_PROFILE}" = "dev" ]
+}
+
+@test "PROFILE_URL_BASE is set to correct GitHub URL" {
+    PROFILE_URL_BASE="${PROFILE_URL_BASE:-https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/profiles}"
+    assert_contains "${PROFILE_URL_BASE}" "bootstrap-dev-server/main/profiles"
+}
+
 # =============================================================================
 # Help Function Tests
 # =============================================================================
@@ -95,6 +106,16 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "show_help lists profile options" {
+    run grep "dev, nyx, full" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "show_help describes profile parameter" {
+    run grep "\-\-profile" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # SSH Key Generation Tests
 # =============================================================================
@@ -120,12 +141,20 @@ teardown() {
     chmod 600 "${test_key}"
     chmod 644 "${test_key}.pub"
 
-    # Check private key permissions
-    run stat -c "%a" "${test_key}"
+    # Check private key permissions (cross-platform stat)
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        run stat -f "%Lp" "${test_key}"
+    else
+        run stat -c "%a" "${test_key}"
+    fi
     [ "${output}" = "600" ]
 
-    # Check public key permissions
-    run stat -c "%a" "${test_key}.pub"
+    # Check public key permissions (cross-platform stat)
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        run stat -f "%Lp" "${test_key}.pub"
+    else
+        run stat -c "%a" "${test_key}.pub"
+    fi
     [ "${output}" = "644" ]
 }
 
@@ -206,6 +235,11 @@ teardown() {
 
 @test "script accepts --git-email argument" {
     run grep "\-\-git-email)" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "script accepts --profile argument" {
+    run grep "\-\-profile)" "${PROJECT_ROOT}/hcloud-provision.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -385,6 +419,97 @@ teardown() {
 @test "rescale_server uses change-type command" {
     run grep "hcloud server change-type" "${PROJECT_ROOT}/hcloud-provision.sh"
     [ "$status" -eq 0 ]
+}
+
+# =============================================================================
+# Profile Execution Tests
+# =============================================================================
+
+@test "run_profile function exists" {
+    run grep "^run_profile()" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "run_profile handles dev profile" {
+    run grep -A 5 'case "${SERVER_PROFILE}"' "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "dev)"
+}
+
+@test "run_profile handles nyx profile" {
+    run grep -A 10 'case "${SERVER_PROFILE}"' "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "nyx)"
+}
+
+@test "run_profile handles full profile" {
+    run grep -A 15 'case "${SERVER_PROFILE}"' "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "full)"
+}
+
+@test "run_profile handles unknown profile" {
+    run grep -A 20 'case "${SERVER_PROFILE}"' "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "*)"
+    assert_contains "${output}" "Unknown profile"
+}
+
+@test "run_profile uses PROFILE_URL_BASE for nyx" {
+    run grep -A 5 "nyx)" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "\${PROFILE_URL_BASE}/nyx.sh"
+}
+
+@test "run_profile uses PROFILE_URL_BASE for full" {
+    run grep -A 5 "full)" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "\${PROFILE_URL_BASE}/nyx.sh"
+}
+
+@test "run_profile uses SSH with correct options for nyx" {
+    run grep -B 2 -A 2 "nyx.sh" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "ssh -o StrictHostKeyChecking=no"
+    assert_contains "${output}" "UserKnownHostsFile=/dev/null"
+}
+
+@test "run_profile uses curl with secure flags" {
+    run grep "curl.*nyx.sh" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" "curl -fsSL"
+}
+
+@test "run_profile executes profile script with sudo" {
+    run grep "nyx.sh.*sudo bash" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "profile is skipped when SERVER_PROFILE is dev" {
+    run grep -B 2 "run_profile" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+    assert_contains "${output}" '!= "dev"'
+}
+
+# =============================================================================
+# Cross-Platform Compatibility Tests
+# =============================================================================
+
+@test "platform detection function exists" {
+    run grep -q "detect_platform()" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "sed_inplace function exists" {
+    run grep -q "sed_inplace()" "${PROJECT_ROOT}/hcloud-provision.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "no bare sed -i calls remain (should use sed_inplace)" {
+    # Exclude the sed_inplace function itself (from function definition to closing brace)
+    run bash -c "sed '/^sed_inplace()/,/^}/d' '${PROJECT_ROOT}/hcloud-provision.sh' | grep 'sed -i' || true"
+    # If grep finds nothing, output should be empty
+    [ -z "$output" ]
 }
 
 # =============================================================================

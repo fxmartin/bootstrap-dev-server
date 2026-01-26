@@ -64,6 +64,12 @@ UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting fo
 GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
 
+# GitHub authentication
+SKIP_GITHUB_AUTH="${SKIP_GITHUB_AUTH:-false}"      # Skip GitHub CLI authentication (for testing)
+
+# Security hardening (for testing in containers without privileges)
+SKIP_SECURITY_HARDENING="${SKIP_SECURITY_HARDENING:-false}"  # Skip security hardening phase
+
 # Internal state (set by functions)
 SSH_RESTART_NEEDED=false                           # Set by harden_ssh() if restart needed
 
@@ -1352,6 +1358,9 @@ create_dev_flake() {
         mv "${FLAKE_DIR}" "${FLAKE_DIR}.backup.${backup_suffix}"
     fi
 
+    # Create parent directory if it doesn't exist
+    mkdir -p "$(dirname "${FLAKE_DIR}")"
+
     # Create symlink
     if ! ln -s "${SOURCE_DIR}" "${FLAKE_DIR}"; then
         log_error "Failed to create symlink: ${FLAKE_DIR} -> ${SOURCE_DIR}"
@@ -1733,6 +1742,36 @@ print_summary() {
 # Main
 #===============================================================================
 main() {
+    # Parse command line arguments
+    for arg in "$@"; do
+        case "${arg}" in
+            --yes|-y)
+                # Non-interactive mode (kept for compatibility, not used yet)
+                ;;
+            --skip-github-auth)
+                SKIP_GITHUB_AUTH=true
+                ;;
+            --skip-security-hardening)
+                SKIP_SECURITY_HARDENING=true
+                ;;
+            --help|-h)
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --yes, -y                   Run in non-interactive mode (future use)"
+                echo "  --skip-github-auth          Skip GitHub CLI authentication (for testing)"
+                echo "  --skip-security-hardening   Skip security hardening phase (for containers)"
+                echo "  --help, -h                  Show this help message"
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: ${arg}"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+        esac
+    done
+
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       CX11 Dev Server Bootstrap Script                        ║${NC}"
@@ -1748,40 +1787,48 @@ main() {
     log_phase "2: Git and GitHub Setup"
     install_github_cli
     configure_git_identity
-    authenticate_github_cli
+    if [[ "${SKIP_GITHUB_AUTH}" != "true" ]]; then
+        authenticate_github_cli
+    else
+        log_warn "Skipping GitHub CLI authentication (--skip-github-auth)"
+    fi
     clone_bootstrap_repo
 
     # Upgrade to full logging library now that repo is cloned
     upgrade_logging
 
-    log_phase "3: Security Hardening"
-    # Warn about potential SSH disconnection during security hardening
-    echo ""
-    log_warn "╔════════════════════════════════════════════════════════════════════╗"
-    log_warn "║  SSH connection may drop during security hardening.                 ║"
-    log_warn "║  If disconnected, wait 30 seconds then reconnect and re-run:        ║"
-    log_warn "║                                                                     ║"
-    log_warn "║    ssh ${DEV_USER}@\$(hostname -I | awk '{print \$1}')                          ║"
-    log_warn "║    cd ~/.local/share/bootstrap-dev-server                           ║"
-    log_warn "║    ./bootstrap-dev-server.sh                                        ║"
-    log_warn "║                                                                     ║"
-    log_warn "║  The script is idempotent - it will resume where it left off.       ║"
-    log_warn "╚════════════════════════════════════════════════════════════════════╝"
-    echo ""
-    log_timer_start "security_hardening" 2>/dev/null || true
-    harden_ssh
-    regenerate_host_keys
-    configure_firewall
-    configure_fail2ban
-    install_geoip_shell || true  # Optional: Tailscale provides backup access
-    install_tailscale
-    install_auditd
-    harden_sysctl
-    harden_pam
-    setup_security_report
-    configure_update_notifications
-    clean_old_kernels
-    log_timer_end "security_hardening" 2>/dev/null || true
+    if [[ "${SKIP_SECURITY_HARDENING}" != "true" ]]; then
+        log_phase "3: Security Hardening"
+        # Warn about potential SSH disconnection during security hardening
+        echo ""
+        log_warn "╔════════════════════════════════════════════════════════════════════╗"
+        log_warn "║  SSH connection may drop during security hardening.                 ║"
+        log_warn "║  If disconnected, wait 30 seconds then reconnect and re-run:        ║"
+        log_warn "║                                                                     ║"
+        log_warn "║    ssh ${DEV_USER}@\$(hostname -I | awk '{print \$1}')                          ║"
+        log_warn "║    cd ~/.local/share/bootstrap-dev-server                           ║"
+        log_warn "║    ./bootstrap-dev-server.sh                                        ║"
+        log_warn "║                                                                     ║"
+        log_warn "║  The script is idempotent - it will resume where it left off.       ║"
+        log_warn "╚════════════════════════════════════════════════════════════════════╝"
+        echo ""
+        log_timer_start "security_hardening" 2>/dev/null || true
+        harden_ssh
+        regenerate_host_keys
+        configure_firewall
+        configure_fail2ban
+        install_geoip_shell || true  # Optional: Tailscale provides backup access
+        install_tailscale
+        install_auditd
+        harden_sysctl
+        harden_pam
+        setup_security_report
+        configure_update_notifications
+        clean_old_kernels
+        log_timer_end "security_hardening" 2>/dev/null || true
+    else
+        log_warn "Skipping Phase 3: Security Hardening (--skip-security-hardening)"
+    fi
 
     log_phase "4: Nix Installation and Configuration"
     log_timer_start "nix_setup" 2>/dev/null || true

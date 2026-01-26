@@ -1,0 +1,22 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    sudo curl wget git openssh-server iputils-ping \
+    && apt-get clean
+
+# Create test user (fx) with sudo
+RUN useradd -m -s /bin/bash fx \
+    && echo "fx ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/fx
+
+# Set git identity (required for bootstrap)
+RUN sudo -u fx git config --global user.name "Test User" \
+    && sudo -u fx git config --global user.email "test@example.com"
+
+# Create SSH privilege separation directory (required for SSH config validation)
+RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
+
+# Keep container running
+CMD ["/bin/bash", "-c", "tail -f /dev/null"]

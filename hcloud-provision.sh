@@ -59,6 +59,55 @@ else
 fi
 
 #===============================================================================
+# Platform Detection
+#===============================================================================
+detect_platform() {
+    case "$(uname -s)" in
+        Darwin*)
+            echo "macos"
+            ;;
+        Linux*)
+            echo "linux"
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
+PLATFORM=$(detect_platform)
+
+#===============================================================================
+# Cross-Platform sed In-Place Editing
+#===============================================================================
+# Usage: sed_inplace 's/old/new/' file
+#        sed_inplace -e 's/a/b/' -e 's/c/d/' file
+sed_inplace() {
+    local backup_ext=".bak.$$"  # Use PID for unique backup
+    local sed_args=()
+    local file=""
+
+    # Parse arguments (everything except last is sed expression, last is file)
+    while [[ $# -gt 1 ]]; do
+        sed_args+=("$1")
+        shift
+    done
+    file="$1"
+
+    # Platform-specific sed syntax
+    if [[ "${PLATFORM}" == "macos" ]]; then
+        # macOS/BSD sed requires backup extension
+        sed -i "${backup_ext}" "${sed_args[@]}" "${file}"
+    else
+        # GNU sed (Linux)
+        sed -i"${backup_ext}" "${sed_args[@]}" "${file}"
+    fi
+
+    # Clean up backup file
+    rm -f "${file}${backup_ext}"
+}
+
+#===============================================================================
 # Configuration
 #===============================================================================
 SERVER_NAME="${SERVER_NAME:-dev-server}"
@@ -760,7 +809,7 @@ ${port_line}    User ${SSH_USER}
     if [[ -f "${ssh_config}" ]] && grep -q "^Host ${SERVER_NAME}\$" "${ssh_config}"; then
         log_info "SSH config entry for '${SERVER_NAME}' already exists, updating..."
         # Remove old entry (from "Host $SERVER_NAME" to next "Host " or end of file)
-        sed -i.bak "/^Host ${SERVER_NAME}\$/,/^Host /{/^Host ${SERVER_NAME}\$/d;/^Host /!d;}" "${ssh_config}"
+        sed_inplace "/^Host ${SERVER_NAME}\$/,/^Host /{/^Host ${SERVER_NAME}\$/d;/^Host /!d;}" "${ssh_config}"
         # If the sed left the file empty or just whitespace, remove it
         if [[ ! -s "${ssh_config}" ]] || ! grep -q '[^[:space:]]' "${ssh_config}"; then
             rm -f "${ssh_config}"
@@ -846,11 +895,10 @@ delete_server() {
     if [[ -f "${ssh_config}" ]] && grep -q "^Host ${name}\$" "${ssh_config}"; then
         log_info "Removing SSH config entry for '${name}'..."
         # Create backup and remove the entry block
-        sed -i.bak "/^Host ${name}\$/,/^Host /{/^Host ${name}\$/d;/^Host /!d;}" "${ssh_config}"
+        sed_inplace "/^Host ${name}\$/,/^Host /{/^Host ${name}\$/d;/^Host /!d;}" "${ssh_config}"
         # Clean up empty lines at end of file
         # shellcheck disable=SC2016  # Single quotes intentional - sed needs literal $ for end-of-file
-        sed -i.bak -e :a -e '/^\n*$/{${d};N;ba' -e '}' "${ssh_config}" 2>/dev/null || true
-        rm -f "${ssh_config}.bak"
+        sed_inplace -e :a -e '/^\n*$/{${d};N;ba' -e '}' "${ssh_config}" 2>/dev/null || true
         log_ok "SSH config entry removed"
     fi
 }
