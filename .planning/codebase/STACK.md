@@ -76,6 +76,9 @@
 - podman - Container runtime (`pkgs.podman`)
 - podman-compose - Container orchestration (`pkgs.podman-compose`)
 
+**Monitoring:**
+- Beszel agent - System resource metrics collector (downloaded binary, systemd user service, port 45876)
+
 **Database Clients:**
 - sqlite - SQLite CLI (`pkgs.sqlite`)
 - postgresql - PostgreSQL client (`pkgs.postgresql`)

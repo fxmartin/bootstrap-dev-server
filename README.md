@@ -244,6 +244,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
 - **PAM hardening**: Empty passwords disallowed (nullok removed)
 - **Daily security report**: Email summary of Fail2Ban, SSH, UFW, and audit events (7am daily)
+- **Beszel agent**: System resource monitoring, ships metrics to Beszel Hub on Nyx via Tailscale (port 45876)
 
 ### Development Environment
 - **Claude Code** with auto-updates
@@ -379,7 +380,8 @@ Actual bootstrap timing from a CX33 server in Falkenstein (fsn1), December 2025:
 | 2 | Git & GitHub Setup | ~70s |
 | 3 | Security Hardening | ~53s |
 | 4 | Nix Installation | ~217s (3m 37s) |
-| 5 | Final SSH Configuration | instant |
+| 5 | Monitoring Agent | ~10s |
+| 6 | Final SSH Configuration | instant |
 | **Total** | **Full bootstrap** | **~6-7 minutes** |
 
 > **Note**: Phase 4 (Nix) takes the longest as it downloads and caches all development packages (~140 packages). Subsequent runs are much faster due to caching.
@@ -940,10 +942,13 @@ After installation:
 │       ├── flake.lock         # Locked package versions
 │       ├── lib/
 │       │   └── logging.sh     # Shared logging library
+│       ├── config/
+│       │   └── beszel-agent.service  # Beszel agent systemd service
 │       ├── profiles/
 │       │   └── nyx.sh         # Nyx profile installation script
 │       ├── scripts/
-│       │   └── secure-ssh-key.sh  # Add passphrase to SSH key
+│       │   ├── secure-ssh-key.sh  # Add passphrase to SSH key
+│       │   └── install-beszel-agent.sh  # Beszel agent installer
 │       └── tests/
 │           ├── *.bats         # Unit test suites (300 tests)
 │           ├── e2e/

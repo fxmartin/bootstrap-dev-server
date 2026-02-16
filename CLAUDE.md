@@ -33,6 +33,9 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Kernel hardening (sysctl)
 - Daily security report via email
 
+**Monitoring:**
+- Beszel agent (ships system metrics to Beszel Hub on Nyx via Tailscale, port 45876)
+
 **Development Environment:**
 - Claude Code with MCP servers (Context7, GitHub, Sequential Thinking)
 - GSD (Get Shit Done) - meta-prompting system for spec-driven development
@@ -94,14 +97,16 @@ bootstrap-dev-server/
 ├── lib/
 │   └── logging.sh            # Shared logging library
 ├── scripts/
-│   └── secure-ssh-key.sh     # SSH key passphrase helper
+│   ├── secure-ssh-key.sh     # SSH key passphrase helper
+│   └── install-beszel-agent.sh  # Beszel monitoring agent installer
 ├── tests/
 │   └── verify-server.sh      # Post-install verification
-└── config/
-    └── claude/               # Claude Code configuration (synced to ~/.claude)
-        ├── CLAUDE.md         # Multi-agent workflow system
-        ├── agents/           # Specialized agent definitions
-        └── commands/         # Slash command definitions
+├── config/
+│   ├── claude/               # Claude Code configuration (synced to ~/.claude)
+│   │   ├── CLAUDE.md         # Multi-agent workflow system
+│   │   ├── agents/           # Specialized agent definitions
+│   │   └── commands/         # Slash command definitions
+│   └── beszel-agent.service  # Beszel agent systemd user service
 ```
 
 ## Code Standards

@@ -1,0 +1,13 @@
+[Unit]
+Description=Beszel Agent - System Resource Metrics Collector
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/beszel-agent.env
+ExecStart=%h/.local/bin/beszel-agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -676,6 +676,92 @@ install_tailscale() {
 }
 
 #===============================================================================
+# Install Beszel Agent (System Resource Monitoring)
+#===============================================================================
+install_beszel_agent() {
+    log_info "Installing Beszel agent..."
+
+    local bin_dir="${HOME}/.local/bin"
+    local service_dir="${HOME}/.config/systemd/user"
+    local env_file="${HOME}/.config/beszel-agent.env"
+    local agent_port="45876"
+
+    mkdir -p "${bin_dir}" "${service_dir}"
+
+    # Download agent binary (idempotent)
+    local os arch tarball_url
+    os=$(uname -s)
+    arch=$(uname -m)
+    case "${arch}" in
+        x86_64)  arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        armv7l)  arch="arm" ;;
+    esac
+    tarball_url="https://github.com/henrygd/beszel/releases/latest/download/beszel-agent_${os}_${arch}.tar.gz"
+
+    if [[ -f "${bin_dir}/beszel-agent" ]]; then
+        log_ok "Beszel agent binary already installed"
+    else
+        log_info "Downloading beszel-agent for ${os}/${arch}..."
+        if curl -sL "${tarball_url}" | tar -xz -C "${bin_dir}" beszel-agent 2>/dev/null; then
+            chmod 755 "${bin_dir}/beszel-agent"
+            log_ok "Beszel agent binary installed"
+        else
+            log_warn "Failed to download beszel-agent (non-critical, skip)"
+            return 0
+        fi
+    fi
+
+    # Install systemd user service
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local service_src="${script_dir}/config/beszel-agent.service"
+
+    if [[ -f "${service_src}" ]]; then
+        cp "${service_src}" "${service_dir}/beszel-agent.service"
+    else
+        cat > "${service_dir}/beszel-agent.service" <<SVCEOF
+[Unit]
+Description=Beszel Agent - System Resource Metrics Collector
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/beszel-agent.env
+ExecStart=%h/.local/bin/beszel-agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+SVCEOF
+    fi
+
+    # Create placeholder env file if not configured
+    if [[ ! -f "${env_file}" ]]; then
+        mkdir -p "$(dirname "${env_file}")"
+        cat > "${env_file}" <<ENVEOF
+# Beszel agent configuration
+# Get the KEY value from Beszel Hub after adding this system
+KEY=
+PORT=${agent_port}
+ENVEOF
+        log_warn "Beszel agent env created at ${env_file} (KEY needs configuration)"
+    fi
+
+    # Enable service (don't start until KEY is configured)
+    systemctl --user daemon-reload
+    systemctl --user enable beszel-agent
+
+    if grep -q '^KEY=.\+' "${env_file}" 2>/dev/null; then
+        systemctl --user start beszel-agent
+        log_ok "Beszel agent running on port ${agent_port}"
+    else
+        log_warn "Beszel agent enabled (configure KEY in ${env_file} then: systemctl --user start beszel-agent)"
+    fi
+}
+
+#===============================================================================
 # Install and Configure auditd (System Auditing)
 #===============================================================================
 install_auditd() {
@@ -1880,7 +1966,10 @@ main() {
     log_timer_end "nix_cache_warmup" 2>/dev/null || true
     log_timer_end "nix_setup" 2>/dev/null || true
 
-    log_phase "5: Final SSH Configuration"
+    log_phase "5: Monitoring Agent"
+    install_beszel_agent
+
+    log_phase "6: Final SSH Configuration"
     restart_ssh_final
 
     log_phase "Complete"

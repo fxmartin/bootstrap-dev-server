@@ -42,7 +42,14 @@
 - Depends on: Security hardening complete
 - Used by: Developer workflow
 
-**Phase 5: Finalization**
+**Phase 5: Monitoring Agent**
+- Purpose: Beszel agent for centralised resource monitoring
+- Contains: Binary download, systemd user service, env config
+- Entry: `install_beszel_agent()` in `bootstrap-dev-server.sh`
+- Depends on: Tailscale installed (Phase 3)
+- Used by: Beszel Hub on Nyx for resource dashboards
+
+**Phase 6: Finalization**
 - Purpose: Deferred SSH restart, summary
 - Contains: SSH service restart, completion summary
 - Entry: `restart_ssh_final()`, `print_summary()` in `bootstrap-dev-server.sh`
@@ -75,7 +82,7 @@
 4. SSH key upload to Hetzner
 5. Server creation (Ubuntu 24.04)
 6. Create user account + sudo access
-7. Run bootstrap-dev-server.sh on remote
+7. Run bootstrap-dev-server.sh on remote (includes Beszel agent)
 8. Update local SSH config
 
 **State Management:**
@@ -124,6 +131,11 @@
 - Location: `scripts/` (106 lines)
 - Triggers: Direct execution
 - Responsibilities: Add passphrase to SSH key
+
+**Utility Entry: `scripts/install-beszel-agent.sh`**
+- Location: `scripts/`
+- Triggers: Direct execution or called by bootstrap
+- Responsibilities: Download Beszel agent, configure systemd user service
 
 ## Error Handling
 
