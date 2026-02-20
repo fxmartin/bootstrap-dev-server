@@ -141,7 +141,6 @@
             pkgs.podman-compose
 
             # Network tools
-            pkgs.mosh
             pkgs.httpie
             pkgs.websocat
 
@@ -428,7 +427,7 @@ alias mail='msmtp'
 # - Attaches to existing 'main' session or creates new one
 # - Only runs on SSH connections (not local terminals)
 # - Skips if already inside tmux
-if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
+if [[ ( -n "$SSH_CONNECTION" || -n "$MOSH_CONNECTION" ) && -z "$TMUX" ]]; then
   tmux attach-session -t main 2>/dev/null || tmux new-session -s main
 fi
 # <<< nix-dev-env zsh config <<<

@@ -134,7 +134,8 @@ install_base_packages() {
         fail2ban \
         zsh \
         uidmap \
-        unattended-upgrades
+        unattended-upgrades \
+        mosh
 
     log_ok "Base packages installed"
 }

@@ -177,6 +177,13 @@ if command -v ufw &>/dev/null; then
         else
             warn "Mosh ports may not be configured"
         fi
+
+        # Test 3.5: Mosh server binary
+        if command -v mosh-server &>/dev/null; then
+            pass "mosh-server binary is installed"
+        else
+            fail "mosh-server not found on PATH"
+        fi
     else
         fail "UFW is not active"
     fi

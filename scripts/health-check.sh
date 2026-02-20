@@ -149,6 +149,14 @@ if command -v ufw &>/dev/null; then
             print_status "warn" "Mosh ports may not be configured"
             echo "    → Run: sudo ufw allow 60000:60010/udp"
         fi
+
+        # Check mosh-server binary
+        if command -v mosh-server &>/dev/null; then
+            print_status "ok" "mosh-server binary available"
+        else
+            print_status "warn" "mosh-server not installed"
+            echo "    → Run: sudo apt-get install mosh"
+        fi
     else
         print_status "error" "UFW is not active"
         echo "    → Run: sudo ufw enable"
