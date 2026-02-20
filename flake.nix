@@ -358,9 +358,9 @@ alias ....='cd ../../..'
 alias health-check='bash ~/.local/share/bootstrap-dev-server/scripts/health-check.sh'
 
 # Dev environment
-alias dev='nix develop ~/.config/nix-dev-env'
-alias dm='nix develop ~/.config/nix-dev-env#minimal'
-alias dp='nix develop ~/.config/nix-dev-env#python'
+alias dev='nix develop ~/.config/nix-dev-env --no-warn-dirty'
+alias dm='nix develop ~/.config/nix-dev-env#minimal --no-warn-dirty'
+alias dp='nix develop ~/.config/nix-dev-env#python --no-warn-dirty'
 
 # Update dev environment
 # - Pulls latest from bootstrap-dev-server repo (flake.nix is symlinked, so changes apply automatically)
