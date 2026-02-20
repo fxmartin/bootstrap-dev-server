@@ -297,34 +297,6 @@
               [ -f "$REPO_CLAUDE_DIR/CLAUDE.md" ] && ensure_symlink "$REPO_CLAUDE_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md"
             fi
 
-            # Install GSD (Get Shit Done) for Claude Code
-            # Only runs once - checks for existing installation
-            GSD_MARKER="$CLAUDE_USER_DIR/.gsd-installed"
-            if [ ! -f "$GSD_MARKER" ]; then
-              echo "📦 Installing GSD (Get Shit Done) for Claude Code..."
-              if ${pkgs.nodejs_22}/bin/npx --yes get-shit-done-cc --global 2>/dev/null; then
-                touch "$GSD_MARKER"
-                echo "✓ GSD installed to ~/.claude/"
-              else
-                echo "⚠️  GSD installation failed (non-critical, continuing)"
-              fi
-            fi
-
-            # Install everything-claude-code plugin (all components)
-            # Adds: agents, skills, commands, rules, hooks, scripts
-            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
-            if [ ! -f "$ECC_MARKER" ]; then
-              echo "📦 Installing everything-claude-code plugin..."
-              # First add the marketplace, then install the plugin
-              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
-                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
-                touch "$ECC_MARKER"
-                echo "✓ everything-claude-code plugin installed"
-              else
-                echo "⚠️  Plugin installation failed (non-critical, continuing)"
-              fi
-            fi
-
             # Create zsh config directory if needed
             mkdir -p "$HOME/.config/zsh"
 
@@ -517,7 +489,6 @@ MSMTPEOF
             pkgs.neovim
             pkgs.gotop
             pkgs.shellcheck
-            pkgs.nodejs_22  # Required for GSD installation
           ];
 
           shellHook = ''
@@ -568,33 +539,6 @@ MSMTPEOF
                 "env": {}
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
               echo "✓ Added sequential-thinking MCP server"
-            fi
-
-            # Install GSD (Get Shit Done) for Claude Code
-            CLAUDE_USER_DIR="$HOME/.claude"
-            GSD_MARKER="$CLAUDE_USER_DIR/.gsd-installed"
-            if [ ! -f "$GSD_MARKER" ]; then
-              mkdir -p "$CLAUDE_USER_DIR"
-              echo "📦 Installing GSD (Get Shit Done) for Claude Code..."
-              if ${pkgs.nodejs_22}/bin/npx --yes get-shit-done-cc --global 2>/dev/null; then
-                touch "$GSD_MARKER"
-                echo "✓ GSD installed to ~/.claude/"
-              else
-                echo "⚠️  GSD installation failed (non-critical, continuing)"
-              fi
-            fi
-
-            # Install everything-claude-code plugin (all components)
-            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
-            if [ ! -f "$ECC_MARKER" ]; then
-              echo "📦 Installing everything-claude-code plugin..."
-              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
-                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
-                touch "$ECC_MARKER"
-                echo "✓ everything-claude-code plugin installed"
-              else
-                echo "⚠️  Plugin installation failed (non-critical, continuing)"
-              fi
             fi
           '';
         };
@@ -620,7 +564,6 @@ MSMTPEOF
             pkgs.neovim
             pkgs.gotop
             pkgs.shellcheck
-            pkgs.nodejs_22  # Required for GSD installation
           ];
 
           shellHook = ''
@@ -671,33 +614,6 @@ MSMTPEOF
                 "env": {}
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
               echo "✓ Added sequential-thinking MCP server"
-            fi
-
-            # Install GSD (Get Shit Done) for Claude Code
-            CLAUDE_USER_DIR="$HOME/.claude"
-            GSD_MARKER="$CLAUDE_USER_DIR/.gsd-installed"
-            if [ ! -f "$GSD_MARKER" ]; then
-              mkdir -p "$CLAUDE_USER_DIR"
-              echo "📦 Installing GSD (Get Shit Done) for Claude Code..."
-              if ${pkgs.nodejs_22}/bin/npx --yes get-shit-done-cc --global 2>/dev/null; then
-                touch "$GSD_MARKER"
-                echo "✓ GSD installed to ~/.claude/"
-              else
-                echo "⚠️  GSD installation failed (non-critical, continuing)"
-              fi
-            fi
-
-            # Install everything-claude-code plugin (all components)
-            ECC_MARKER="$CLAUDE_USER_DIR/.ecc-installed"
-            if [ ! -f "$ECC_MARKER" ]; then
-              echo "📦 Installing everything-claude-code plugin..."
-              if claude plugin marketplace add affaan-m/everything-claude-code 2>/dev/null && \
-                 claude plugin install everything-claude-code@everything-claude-code 2>/dev/null; then
-                touch "$ECC_MARKER"
-                echo "✓ everything-claude-code plugin installed"
-              else
-                echo "⚠️  Plugin installation failed (non-critical, continuing)"
-              fi
             fi
           '';
         };
