@@ -384,6 +384,15 @@ dev-update() {
   echo "⬆️  Updating Nix packages..."
   (cd "$FLAKE_DIR" && nix flake update)
 
+  # Commit and push updated flake.lock so new provisions get recent packages
+  if [[ -d "$REPO_DIR/.git" ]]; then
+    (cd "$REPO_DIR" && git diff --quiet flake.lock 2>/dev/null) || {
+      echo "📌 Committing updated flake.lock..."
+      (cd "$REPO_DIR" && git add flake.lock && git commit -m "chore: update flake.lock with latest nixpkgs" && git push) \
+        || echo "⚠️  Failed to commit/push flake.lock (continuing anyway)"
+    }
+  fi
+
   echo ""
   echo "✅ Dev environment updated!"
   echo "   Exit and run 'dev' to use new packages"
