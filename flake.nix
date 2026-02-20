@@ -72,7 +72,6 @@
 
             # Editors
             pkgs.neovim
-            pkgs.helix
 
             # Shell enhancements
             pkgs.zsh
