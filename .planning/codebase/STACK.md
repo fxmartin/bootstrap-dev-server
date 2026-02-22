@@ -50,7 +50,7 @@
 **Critical:**
 - claude-code-nix - Claude Code AI assistant (`claude-code-nix.packages.${system}.claude-code`)
 - mcp-servers-nix - MCP servers for Claude (`mcp-servers-nix.packages.${system}.context7-mcp`)
-- github-mcp-server - GitHub integration for Claude (`pkgs.github-mcp-server`)
+- gh - GitHub CLI for all GitHub operations (`pkgs.gh`)
 
 **Python Dev Stack:**
 - ruff - Python linter/formatter (`pkgs.ruff`)

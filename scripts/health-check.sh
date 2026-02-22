@@ -354,12 +354,6 @@ if [[ -f "${MCP_CONFIG}" ]]; then
         print_status "warn" "Context7 MCP server not found in config"
     fi
 
-    if grep -q "github" "${MCP_CONFIG}" 2>/dev/null; then
-        print_status "ok" "GitHub MCP server configured"
-    else
-        print_status "warn" "GitHub MCP server not found in config"
-    fi
-
     if grep -q "sequential-thinking" "${MCP_CONFIG}" 2>/dev/null; then
         print_status "ok" "Sequential Thinking MCP server configured"
     else

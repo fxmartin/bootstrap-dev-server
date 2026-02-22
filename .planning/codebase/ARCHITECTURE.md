@@ -26,7 +26,7 @@
 - Contains: Git config, GitHub CLI installation, OAuth authentication
 - Entry: `install_github_cli()`, `configure_git_identity()`, `setup_github_auth()` in `bootstrap-dev-server.sh`
 - Depends on: Phase 1 completion
-- Used by: Repository cloning, Claude Code GitHub MCP
+- Used by: Repository cloning, `gh` CLI for GitHub operations
 
 **Phase 3: Security Hardening**
 - Purpose: SSH, firewall, intrusion prevention

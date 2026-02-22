@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # MCP servers for Claude Code (Context7, GitHub, Sequential Thinking)
+    # MCP servers for Claude Code (Context7, Sequential Thinking)
     # NOTE: nixpkgs.follows means mcp-servers-nix uses our nixpkgs version.
     # If nixpkgs upgrades Node.js beyond v22, MCP server builds may fail because
     # upstream requires Node.js 22 (see natsukium/mcp-servers-nix#285, fix: #276).
@@ -33,9 +33,8 @@
 
         # MCP servers:
         # - context7: from mcp-servers-nix (referenced directly in shellHook)
-        # - github: from nixpkgs 25.11
         # - sequential-thinking: from mcp-servers-nix (issue #285 fixed)
-        githubMcpServer = pkgs.github-mcp-server;
+        # Note: GitHub MCP removed — use `gh` CLI instead (faster, no token config needed)
         sequentialThinkingMcp = mcp-servers-nix.packages.${system}.mcp-server-sequential-thinking;
       in
       {
@@ -193,9 +192,9 @@
 
             # Set up Claude Code MCP servers in ~/.claude.json (user scope)
             # Each server is checked individually - missing ones are added without overwriting existing config
+            # Note: GitHub operations use `gh` CLI (already in PATH) — no MCP server needed
             CLAUDE_JSON="$HOME/.claude.json"
             MCP_UPDATED=false
-            GITHUB_NEEDS_TOKEN=false
 
             # Create file if it doesn't exist
             if [ ! -f "$CLAUDE_JSON" ]; then
@@ -214,21 +213,6 @@
               MCP_UPDATED=true
             fi
 
-            # Add github if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.github' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.github = {
-                "type": "stdio",
-                "command": "${githubMcpServer}/bin/github-mcp-server",
-                "args": ["stdio"],
-                "env": {
-                  "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                }
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added github MCP server"
-              MCP_UPDATED=true
-              GITHUB_NEEDS_TOKEN=true
-            fi
-
             # Add sequential-thinking if missing
             if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
               ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
@@ -239,28 +223,6 @@
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
               echo "✓ Added sequential-thinking MCP server"
               MCP_UPDATED=true
-            fi
-
-            # Show GitHub token instructions only if github was just added
-            if [ "$GITHUB_NEEDS_TOKEN" = true ]; then
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "📝 IMPORTANT: Configure GitHub MCP Server"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo ""
-              echo "1. Create GitHub Personal Access Token:"
-              echo "   → Visit: https://github.com/settings/tokens"
-              echo "   → Click 'Generate new token (classic)'"
-              echo "   → Scopes: ✓ repo, ✓ read:org, ✓ read:user"
-              echo ""
-              echo "2. Add token to ~/.claude.json:"
-              echo "   → Edit: $CLAUDE_JSON"
-              echo "   → Find 'github' → 'env', replace YOUR_TOKEN_HERE:"
-              echo "     \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"ghp_...\""
-              echo ""
-              echo "3. Verify: claude mcp list"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo ""
             fi
 
             # Set up Claude Code agents and commands
@@ -476,7 +438,7 @@ MSMTPEOF
               echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
               echo "   Python: $(python3 --version)"
               echo "   Node:   $(node --version)"
-              echo "   MCP:    Context7, GitHub, Sequential Thinking"
+              echo "   MCP:    Context7, Sequential Thinking"
               echo ""
               export __NIX_DEV_ZSH_LAUNCHED=1
               exec zsh
@@ -522,19 +484,6 @@ MSMTPEOF
                 "env": {}
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
               echo "✓ Added context7 MCP server"
-            fi
-
-            # Add github if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.github' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.github = {
-                "type": "stdio",
-                "command": "${githubMcpServer}/bin/github-mcp-server",
-                "args": ["stdio"],
-                "env": {
-                  "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                }
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added github MCP server (configure token in ~/.claude.json)"
             fi
 
             # Add sequential-thinking if missing
@@ -597,19 +546,6 @@ MSMTPEOF
                 "env": {}
               }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
               echo "✓ Added context7 MCP server"
-            fi
-
-            # Add github if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.github' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.github = {
-                "type": "stdio",
-                "command": "${githubMcpServer}/bin/github-mcp-server",
-                "args": ["stdio"],
-                "env": {
-                  "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
-                }
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added github MCP server (configure token in ~/.claude.json)"
             fi
 
             # Add sequential-thinking if missing

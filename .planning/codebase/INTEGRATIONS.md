@@ -17,11 +17,9 @@
 - Auth: Device flow OAuth or token-based (`bootstrap-dev-server.sh` lines 302-328)
 - Setup URL: https://github.com/login/device
 
-**GitHub MCP Server:**
-- Service: Claude Code GitHub operations
-- Config location: `~/.claude.json` (mcpServers.github)
-- Auth: GITHUB_PERSONAL_ACCESS_TOKEN (manual setup required)
-- Scopes: repo, read:org, read:user
+**GitHub via gh CLI:**
+- Claude Code uses `gh` CLI for all GitHub operations (no MCP server)
+- Auth: `gh auth login` (device flow OAuth)
 
 ## Data Storage
 
@@ -89,7 +87,7 @@
 
 **Production:**
 - Required: Hetzner API token (for provisioning)
-- Required: GitHub token (for MCP server)
+- Required: GitHub auth via `gh auth login`
 - Required: Gandi email credentials (for security reports)
 - Secrets location: Interactive prompts, `~/.msmtprc`
 
@@ -107,7 +105,7 @@
 **Claude Code Integrations:**
 - Claude Code - Main AI assistant (`claude-code-nix`)
 - Context7 MCP - Code context retrieval (`mcp-servers-nix.context7-mcp`)
-- GitHub MCP - GitHub operations (`pkgs.github-mcp-server`)
+- GitHub via `gh` CLI (`pkgs.gh`) — no MCP server
 - Sequential Thinking - DISABLED (upstream build broken, issue #285)
 - GSD - Meta-prompting system (`npx get-shit-done-cc`)
 

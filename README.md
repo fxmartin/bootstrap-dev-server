@@ -248,7 +248,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 ### Development Environment
 - **Claude Code** with auto-updates
-- **MCP Servers**: Context7, GitHub, Sequential Thinking
+- **MCP Servers**: Context7, Sequential Thinking (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
 
@@ -560,27 +560,13 @@ See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detaile
 Claude Code MCP servers are automatically configured:
 
 - **Context7**: Documentation lookup (no auth required)
-- **GitHub**: Repository access (requires Personal Access Token)
 - **Sequential Thinking**: Enhanced reasoning (no auth required)
 
-**To configure GitHub MCP server:**
+GitHub operations use the `gh` CLI (included in the dev shell) instead of an MCP server. Authenticate with:
 
-1. Create a GitHub Personal Access Token:
-   - Visit: https://github.com/settings/tokens
-   - Scopes: `repo`, `read:org`, `read:user`
-
-2. Add token to config:
-   ```bash
-   nano ~/.claude.json
-   # Find "github" → "env", replace YOUR_TOKEN_HERE:
-   "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token_here"
-   ```
-
-3. Verify:
-   ```bash
-   dev
-   claude mcp list
-   ```
+```bash
+gh auth login
+```
 
 ### Project-Specific Environments
 
@@ -1158,7 +1144,7 @@ Full end-to-end validation on live Hetzner Cloud VPS completed successfully for 
 - ✅ Complete bootstrap in **7m 26s**
 - ✅ All 5 phases completed successfully
 - ✅ Claude Code 2.1.19 installed and operational
-- ✅ All 3 MCP servers connected (Context7, GitHub, Sequential Thinking)
+- ✅ MCP servers connected (Context7, Sequential Thinking)
 - ✅ Python 3.13.11, Node.js v22.22.0
 - ✅ Nix environment build successful (no OOM issues)
 - ✅ Security hardening applied (SSH, UFW, Fail2Ban, GeoIP, Tailscale, auditd)

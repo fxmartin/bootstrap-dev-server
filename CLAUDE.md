@@ -37,7 +37,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Beszel agent (ships system metrics to Beszel Hub on Nyx via Tailscale, port 45876)
 
 **Development Environment:**
-- Claude Code with MCP servers (Context7, GitHub, Sequential Thinking)
+- Claude Code with MCP servers (Context7, Sequential Thinking) + `gh` CLI for GitHub
 - Python 3.12 + uv + ruff + pytest stack
 - Node.js 22 + bun + pnpm + TypeScript
 - Nix development tools (nil, nixfmt-rfc-style)
