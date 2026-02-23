@@ -148,6 +148,7 @@
 
             # Development utilities
             pkgs.gh  # GitHub CLI
+            pkgs.hcloud  # Hetzner Cloud CLI
             pkgs.lazygit
             pkgs.delta  # Git diff viewer
 
@@ -171,8 +172,13 @@
             pkgs.miller   # CSV/JSON/tabular data swiss army knife
             pkgs.csvkit   # CSV manipulation suite
 
-            # Security
+            # Security & secrets
             pkgs.gnupg    # GPG for commit signing
+            pkgs.sops     # Encrypted secrets management
+            pkgs.age      # Modern file encryption (used with SOPS)
+
+            # Network security
+            pkgs.nmap     # Network discovery and security auditing
 
             # Productivity
             pkgs.hyperfine  # CLI benchmarking
