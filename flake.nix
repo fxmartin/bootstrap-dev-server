@@ -398,6 +398,14 @@ alias mail='msmtp'
 if [[ ( -n "$SSH_CONNECTION" || -n "$MOSH_CONNECTION" ) && -z "$TMUX" ]]; then
   tmux attach-session -t main 2>/dev/null || tmux new-session -s main
 fi
+
+# Auto-enter nix dev shell inside tmux
+# - Only activates inside tmux sessions (new panes/windows get it too)
+# - Skips if already inside a nix dev shell (IN_NIX_SHELL is set by nix develop)
+# - Uses exec so exiting the dev shell exits the pane cleanly
+if [[ -n "$TMUX" && -z "$IN_NIX_SHELL" ]]; then
+  exec nix develop ~/.config/nix-dev-env --no-warn-dirty -c zsh
+fi
 # <<< nix-dev-env zsh config <<<
 ZSHEOF
               echo "✓ Created ~/.zshrc with dev environment config"

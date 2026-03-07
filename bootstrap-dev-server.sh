@@ -1525,6 +1525,22 @@ claude-quick() {
         nix run "${FLAKE_DIR}#minimal" -- claude "\$@"
     fi
 }
+
+# Auto-launch tmux on SSH/Mosh connection
+# - Attaches to existing 'main' session or creates new one
+# - Only runs on SSH/Mosh connections (not local terminals)
+# - Skips if already inside tmux
+if [[ ( -n "\${SSH_CONNECTION:-}" || -n "\${MOSH_CONNECTION:-}" ) && -z "\${TMUX:-}" ]]; then
+    tmux attach-session -t main 2>/dev/null || tmux new-session -s main
+fi
+
+# Auto-enter nix dev shell inside tmux
+# - Only activates inside tmux sessions (new panes/windows get it too)
+# - Skips if already inside a nix dev shell (IN_NIX_SHELL is set by nix develop)
+# - Uses exec so exiting the dev shell exits the pane cleanly
+if [[ -n "\${TMUX:-}" && -z "\${IN_NIX_SHELL:-}" ]]; then
+    exec nix develop ${FLAKE_DIR} --no-warn-dirty -c \${SHELL}
+fi
 # <<< nix-dev-env <<<
 SHELLEOF
 
