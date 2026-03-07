@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # MCP servers for Claude Code (Context7, Sequential Thinking)
+    # MCP servers for Claude Code (Context7)
     # NOTE: nixpkgs.follows means mcp-servers-nix uses our nixpkgs version.
     # If nixpkgs upgrades Node.js beyond v22, MCP server builds may fail because
     # upstream requires Node.js 22 (see natsukium/mcp-servers-nix#285, fix: #276).
@@ -33,9 +33,8 @@
 
         # MCP servers:
         # - context7: from mcp-servers-nix (referenced directly in shellHook)
-        # - sequential-thinking: from mcp-servers-nix (issue #285 fixed)
         # Note: GitHub MCP removed — use `gh` CLI instead (faster, no token config needed)
-        sequentialThinkingMcp = mcp-servers-nix.packages.${system}.mcp-server-sequential-thinking;
+        # Note: Sequential Thinking MCP removed — Claude has native extended thinking
       in
       {
         # Default dev shell
@@ -219,17 +218,6 @@
               MCP_UPDATED=true
             fi
 
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
-              MCP_UPDATED=true
-            fi
 
             # Set up Claude Code agents and commands
             # Symlink from repo to ~/.claude for version control (self-healing)
@@ -452,7 +440,7 @@ MSMTPEOF
               echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
               echo "   Python: $(python3 --version)"
               echo "   Node:   $(node --version)"
-              echo "   MCP:    Context7, Sequential Thinking"
+              echo "   MCP:    Context7"
               echo ""
               export __NIX_DEV_ZSH_LAUNCHED=1
               exec zsh
@@ -500,16 +488,6 @@ MSMTPEOF
               echo "✓ Added context7 MCP server"
             fi
 
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
-            fi
           '';
         };
 
@@ -562,16 +540,6 @@ MSMTPEOF
               echo "✓ Added context7 MCP server"
             fi
 
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
-            fi
           '';
         };
       });
