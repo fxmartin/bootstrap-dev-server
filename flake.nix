@@ -261,6 +261,9 @@
 
               # Symlink CLAUDE.md
               [ -f "$REPO_CLAUDE_DIR/CLAUDE.md" ] && ensure_symlink "$REPO_CLAUDE_DIR/CLAUDE.md" "$CLAUDE_USER_DIR/CLAUDE.md"
+
+              # Symlink statusline-command.sh
+              [ -f "$REPO_CLAUDE_DIR/statusline-command.sh" ] && ensure_symlink "$REPO_CLAUDE_DIR/statusline-command.sh" "$CLAUDE_USER_DIR/statusline-command.sh"
             fi
 
             # Create zsh config directory if needed
