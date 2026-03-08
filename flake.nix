@@ -264,6 +264,9 @@
 
               # Symlink statusline-command.sh
               [ -f "$REPO_CLAUDE_DIR/statusline-command.sh" ] && ensure_symlink "$REPO_CLAUDE_DIR/statusline-command.sh" "$CLAUDE_USER_DIR/statusline-command.sh"
+
+              # Symlink settings.json
+              [ -f "$REPO_CLAUDE_DIR/settings.json" ] && ensure_symlink "$REPO_CLAUDE_DIR/settings.json" "$CLAUDE_USER_DIR/settings.json"
             fi
 
             # Create zsh config directory if needed
