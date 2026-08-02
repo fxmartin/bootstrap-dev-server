@@ -151,6 +151,40 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "flake does not pin python312 (uncached on nixos-unstable, forces source builds)" {
+    run grep -E "python312" "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -ne 0 ]
+}
+
+@test "flake python devShells use pkgs.python3 (tracks nixpkgs default/cached interpreter)" {
+    run grep -c "pkgs\.python3\b" "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -eq 0 ]
+    [ "$output" -ge 2 ]
+}
+
+@test "flake python devShells use pkgs.python3Packages (tracks nixpkgs default/cached interpreter)" {
+    run grep -c "pkgs\.python3Packages\." "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -eq 0 ]
+    [ "$output" -ge 2 ]
+}
+
+@test "flake preserves python3Packages toolchain members after python312 rename" {
+    for pkg in pip virtualenv isort mypy pylint flake8 pytest; do
+        run grep -qE "pkgs\.python3Packages\.${pkg}\b" "${PROJECT_ROOT}/flake.nix"
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "flake default devShell (dev-server) uses pkgs.python3 as its interpreter" {
+    run bash -c "sed -n '/name = \"dev-server\"/,/devShells\.minimal/p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\.python3\$'"
+    [ "$status" -eq 0 ]
+}
+
+@test "flake python devShell (python-dev) uses pkgs.python3 as its interpreter" {
+    run bash -c "sed -n '/name = \"python-dev\"/,\$p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\.python3\$'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Container Tools Tests
 # =============================================================================
