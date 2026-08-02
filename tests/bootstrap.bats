@@ -605,6 +605,120 @@ extract_exec_start_body() {
     [ "$status" -ne 0 ]
 }
 
+@test "setup_nix_update_timer ExecStart pipeline: leading checkout resets a dirty flake.lock before pulling" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+    # Simulate a stray dirty flake.lock left over from a previous crashed run.
+    echo "dirty-leftover" > "${work_dir}/flake.lock"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        if [[ "$1" == "pull" ]]; then
+            # A real `git pull` refuses to run over local modifications. This
+            # mock only succeeds if the leading `git checkout -- flake.lock`
+            # already discarded the dirty edit before we get here.
+            [[ -n "$(command git -C "$PWD" status --porcelain -- flake.lock)" ]] && return 1
+            return 0
+        fi
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "updated-lock" ]
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: rolls back and skips build when nix flake update itself fails" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    local build_marker="${TEST_TEMP_DIR}/build-invoked.marker"
+    mkdir -p "${work_dir}"
+    rm -f "${build_marker}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        if [[ "$1" == "flake" ]]; then
+            echo "partial-lock-from-failed-update" > "$PWD/flake.lock"
+            return 1
+        fi
+        [[ "$1" == "build" ]] && { touch "${build_marker}"; return 0; }
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+    [ ! -e "${build_marker}" ]
+}
+
+@test "configure_update_notifications ExecStart pipeline: git pull failure is recorded as failed status, not swallowed" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body 'Update the nix-flake-update service to include notification')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 1
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "failed" ]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
 # =============================================================================
 # Dev Flake Tests
 # =============================================================================
