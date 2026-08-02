@@ -301,6 +301,80 @@ EOF
 }
 
 # =============================================================================
+# Nix Garbage Collection Tests
+# =============================================================================
+
+@test "setup_nix_gc_timer function exists" {
+    run grep "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup_nix_gc_timer is called from main" {
+    run grep -A150 "^main()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"setup_nix_gc_timer"* ]]
+}
+
+@test "Nix GC service runs nix-collect-garbage" {
+    run grep "nix-collect-garbage --delete-older-than 30d" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "Nix GC timer runs weekly, offset after the flake update timer" {
+    run grep "OnCalendar=Sun \*-\*-\* 04:00:00" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "Nix GC timer unit is named nix-gc" {
+    run grep 'TIMER_NAME="nix-gc"' "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup_nix_gc_timer skips re-creation when timer already enabled" {
+    run grep -A50 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'systemctl is-enabled "${TIMER_NAME}.timer"'* ]]
+    [[ "$output" == *"Nix GC timer already configured"* ]]
+    [[ "$output" == *"return 0"* ]]
+}
+
+@test "Nix GC unit files are written to the systemd system directory" {
+    run grep -A5 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'SERVICE_FILE="/etc/systemd/system/${TIMER_NAME}.service"'* ]]
+    [[ "$output" == *'TIMER_FILE="/etc/systemd/system/${TIMER_NAME}.timer"'* ]]
+}
+
+@test "Nix GC timer catches up on missed runs (persistent)" {
+    run grep -A50 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Persistent=true"* ]]
+}
+
+@test "Nix GC timer is wired to timers.target for activation" {
+    run grep -A50 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WantedBy=timers.target"* ]]
+}
+
+@test "Nix GC timer is enabled and started immediately after creation" {
+    run grep -A50 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'systemctl enable "${TIMER_NAME}.timer"'* ]]
+    [[ "$output" == *'systemctl start "${TIMER_NAME}.timer"'* ]]
+}
+
+@test "verify-server.sh checks that the Nix GC timer is enabled" {
+    run grep "systemctl is-enabled --quiet nix-gc.timer" "${PROJECT_ROOT}/tests/verify-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "README documents Nix GC timer remediation" {
+    run grep "nix-gc.timer" "${PROJECT_ROOT}/README.md"
+    [ "$status" -eq 0 ]
+}
+
+# =============================================================================
 # Dev Flake Tests
 # =============================================================================
 

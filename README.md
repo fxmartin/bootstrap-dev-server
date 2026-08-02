@@ -733,6 +733,22 @@ Source the profile or reconnect:
 . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 ```
 
+### Nix store filling up the disk
+
+The weekly flake update (`nix-flake-update.timer`) builds a new closure every run, so old generations and unreferenced store paths must be reclaimed or the disk fills up. Bootstrap installs a weekly `nix-gc.timer` (Sundays at 4am) that runs `nix-collect-garbage --delete-older-than 30d` to handle this automatically.
+
+Check it's enabled:
+```bash
+systemctl status nix-gc.timer
+```
+
+On a server bootstrapped before this timer existed, or if disk usage is already critical, reclaim space manually:
+```bash
+nix-collect-garbage --delete-older-than 30d
+# or, more aggressively:
+sudo nix-collect-garbage -d
+```
+
 ### Slow first `nix develop`
 
 First run downloads packages. Subsequent runs are instant. Pre-warm with:

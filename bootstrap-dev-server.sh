@@ -1598,6 +1598,58 @@ TIMEREOF
 }
 
 #===============================================================================
+# Setup systemd timer for weekly Nix garbage collection
+#===============================================================================
+setup_nix_gc_timer() {
+    log_info "Setting up weekly Nix garbage collection timer..."
+
+    local TIMER_NAME="nix-gc"
+    local SERVICE_FILE="/etc/systemd/system/${TIMER_NAME}.service"
+    local TIMER_FILE="/etc/systemd/system/${TIMER_NAME}.timer"
+
+    # Check if already configured
+    if systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
+        log_ok "Nix GC timer already configured"
+        return 0
+    fi
+
+    # Create the service unit (runs as root to delete other users' generations too)
+    sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+[Unit]
+Description=Garbage collect old Nix store paths
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
+ExecStart=/nix/var/nix/profiles/default/bin/nix-collect-garbage --delete-older-than 30d
+SERVICEEOF
+
+    # Create the timer unit (weekly on Sunday at 4am, after the flake update timer)
+    sudo tee "${TIMER_FILE}" >/dev/null <<TIMEREOF
+[Unit]
+Description=Weekly Nix garbage collection
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+    # Enable and start the timer
+    sudo systemctl daemon-reload
+    sudo systemctl enable "${TIMER_NAME}.timer"
+    sudo systemctl start "${TIMER_NAME}.timer"
+
+    log_ok "Weekly Nix GC timer configured (Sundays at 4am, deletes generations older than 30 days)"
+    log_info "Check status: systemctl status ${TIMER_NAME}.timer"
+    log_info "View next run: systemctl list-timers ${TIMER_NAME}.timer"
+}
+
+#===============================================================================
 # Configure tmux
 #===============================================================================
 configure_tmux() {
@@ -1959,6 +2011,7 @@ main() {
     create_dev_flake
     setup_shell_integration
     setup_nix_update_timer
+    setup_nix_gc_timer
     configure_tmux
     create_claude_md
     configure_podman
