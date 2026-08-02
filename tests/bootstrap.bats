@@ -301,6 +301,36 @@ EOF
 }
 
 # =============================================================================
+# Nix Garbage Collection Tests
+# =============================================================================
+
+@test "setup_nix_gc_timer function exists" {
+    run grep "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup_nix_gc_timer is called from main" {
+    run grep -A150 "^main()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"setup_nix_gc_timer"* ]]
+}
+
+@test "Nix GC service runs nix-collect-garbage" {
+    run grep "nix-collect-garbage --delete-older-than 30d" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "Nix GC timer runs weekly, offset after the flake update timer" {
+    run grep "OnCalendar=Sun \*-\*-\* 04:00:00" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "Nix GC timer unit is named nix-gc" {
+    run grep 'TIMER_NAME="nix-gc"' "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+# =============================================================================
 # Dev Flake Tests
 # =============================================================================
 

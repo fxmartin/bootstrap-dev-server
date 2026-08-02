@@ -235,6 +235,13 @@ if command -v nix &>/dev/null; then
     else
         fail "Nix flakes not available"
     fi
+
+    # Test 5.4: Nix garbage collection timer enabled
+    if systemctl is-enabled --quiet nix-gc.timer 2>/dev/null; then
+        pass "Nix GC timer is enabled"
+    else
+        fail "Nix GC timer is not enabled (Nix store will grow unbounded)"
+    fi
 else
     # Source nix profile and retry
     if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
