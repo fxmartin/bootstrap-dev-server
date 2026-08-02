@@ -85,27 +85,27 @@
             pkgs.git-lfs  # Git Large File Storage
 
             # Python
-            pkgs.python312
-            pkgs.python312Packages.pip
-            pkgs.python312Packages.virtualenv
+            pkgs.python3
+            pkgs.python3Packages.pip
+            pkgs.python3Packages.virtualenv
             pkgs.uv  # Fast Python package installer
 
             # Python Development Tools
             pkgs.ruff    # Fast Python linter and formatter
             pkgs.black   # Python code formatter
-            pkgs.python312Packages.isort   # Import statement organizer
-            pkgs.python312Packages.mypy    # Static type checker
-            pkgs.python312Packages.pylint        # Comprehensive linter
-            pkgs.python312Packages.flake8        # Style guide enforcement
-            pkgs.python312Packages.flake8-bugbear # Additional flake8 bug checks
+            pkgs.python3Packages.isort   # Import statement organizer
+            pkgs.python3Packages.mypy    # Static type checker
+            pkgs.python3Packages.pylint        # Comprehensive linter
+            pkgs.python3Packages.flake8        # Style guide enforcement
+            pkgs.python3Packages.flake8-bugbear # Additional flake8 bug checks
 
             # Python Testing & Debugging
-            pkgs.python312Packages.pytest        # Testing framework
-            pkgs.python312Packages.pytest-asyncio # Async test support for FastAPI
-            pkgs.python312Packages.pytest-cov    # Test coverage reporting
-            pkgs.python312Packages.httpx         # Async HTTP client for testing
-            pkgs.python312Packages.ipython       # Enhanced REPL for debugging
-            pkgs.python312Packages.rich          # Pretty terminal output
+            pkgs.python3Packages.pytest        # Testing framework
+            pkgs.python3Packages.pytest-asyncio # Async test support for FastAPI
+            pkgs.python3Packages.pytest-cov    # Test coverage reporting
+            pkgs.python3Packages.httpx         # Async HTTP client for testing
+            pkgs.python3Packages.ipython       # Enhanced REPL for debugging
+            pkgs.python3Packages.rich          # Pretty terminal output
             pkgs.pre-commit                      # Git hooks for code quality
 
             # Node.js (pinned to v22 - MCP servers require it, see mcp-servers-nix#285)
@@ -516,16 +516,16 @@ MSMTPEOF
           name = "python-dev";
           buildInputs = [
             claude-code-nix.packages.${system}.claude-code
-            pkgs.python312
-            pkgs.python312Packages.pip
-            pkgs.python312Packages.virtualenv
+            pkgs.python3
+            pkgs.python3Packages.pip
+            pkgs.python3Packages.virtualenv
             pkgs.uv
             # Python Development Tools
             pkgs.ruff
             pkgs.black
-            pkgs.python312Packages.isort
-            pkgs.python312Packages.mypy
-            pkgs.python312Packages.pylint
+            pkgs.python3Packages.isort
+            pkgs.python3Packages.mypy
+            pkgs.python3Packages.pylint
             # Core tools
             pkgs.git
             pkgs.git-lfs
