@@ -375,6 +375,351 @@ EOF
 }
 
 # =============================================================================
+# Nix Flake Update Reliability Tests (issue #3)
+#
+# A broken devShell build (disk pressure, unstable package breakage) must not
+# leave an unbuilt flake.lock in place while the unit reports success, and a
+# failing `git pull` must not be silently swallowed forever.
+# =============================================================================
+
+@test "setup_nix_update_timer: devShell warm-build failure is not swallowed by || true" {
+    run grep -A50 "^setup_nix_update_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"nix build \${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || true"* ]]
+    [[ "$output" != *"nix build \${FLAKE_DIR}#devShells.x86_64-linux.default --no-link 2>&1 | tee -a /tmp/nix-update-output.txt || true"* ]]
+}
+
+@test "setup_nix_update_timer: rolls back flake.lock when the devShell build fails" {
+    run grep -A50 "^setup_nix_update_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"git checkout -- flake.lock"* ]]
+}
+
+@test "setup_nix_update_timer: git pull failures are surfaced, not swallowed" {
+    run grep -A50 "^setup_nix_update_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"git pull --quiet || true"* ]]
+}
+
+@test "configure_update_notifications: devShell warm-build failure is not swallowed by || true" {
+    run grep -A50 "Update the nix-flake-update service to include notification" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"nix build \${FLAKE_DIR}#devShells.x86_64-linux.default --no-link 2>&1 | tee -a /tmp/nix-update-output.txt || true"* ]]
+}
+
+@test "configure_update_notifications: rolls back flake.lock and records failed status when the devShell build fails" {
+    run grep -A50 "Update the nix-flake-update service to include notification" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"git checkout -- flake.lock"* ]]
+    [[ "$output" == *'echo "failed" > /tmp/nix-update-status.txt'* ]]
+}
+
+@test "configure_update_notifications: git pull failures are surfaced, not swallowed" {
+    run grep -A50 "Update the nix-flake-update service to include notification" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"git pull --quiet || true"* ]]
+}
+
+# Helper: pull the literal ExecStart command body out of the given
+# heredoc-generated systemd unit so it can be executed against mocked
+# git/nix in a throwaway repo, verifying actual runtime behavior rather
+# than just the presence of certain substrings.
+extract_exec_start_body() {
+    local anchor="$1"
+    local exec_line
+    exec_line=$(grep -A50 "${anchor}" "${PROJECT_ROOT}/bootstrap-dev-server.sh" | grep "^ExecStart=/bin/bash -c" | head -1)
+    local cmd_body="${exec_line#ExecStart=/bin/bash -c \'}"
+    cmd_body="${cmd_body%\'}"
+    # The source heredoc is unquoted, so a literal "\$" in the script becomes
+    # "$" once systemd's ExecStart is actually written to disk. Mirror that
+    # unescaping here so the extracted body runs the same way it would live.
+    cmd_body="${cmd_body//\\\$/\$}"
+    echo "${cmd_body}"
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: rolls back flake.lock and fails when nix build fails" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 1
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: keeps flake.lock and succeeds when nix build succeeds" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "updated-lock" ]
+}
+
+@test "configure_update_notifications ExecStart pipeline: rolls back flake.lock and records failed status when nix build fails" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body 'Update the nix-flake-update service to include notification')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 1
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "failed" ]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "configure_update_notifications ExecStart pipeline: keeps flake.lock and records success status when nix build succeeds" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body 'Update the nix-flake-update service to include notification')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "updated-lock" ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "success" ]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: git pull failure is surfaced and lock is not silently kept dirty" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 1
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: leading checkout resets a dirty flake.lock before pulling" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+    # Simulate a stray dirty flake.lock left over from a previous crashed run.
+    echo "dirty-leftover" > "${work_dir}/flake.lock"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        if [[ "$1" == "pull" ]]; then
+            # A real `git pull` refuses to run over local modifications. This
+            # mock only succeeds if the leading `git checkout -- flake.lock`
+            # already discarded the dirty edit before we get here.
+            [[ -n "$(command git -C "$PWD" status --porcelain -- flake.lock)" ]] && return 1
+            return 0
+        fi
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        [[ "$1" == "flake" ]] && { echo "updated-lock" > "$PWD/flake.lock"; return 0; }
+        [[ "$1" == "build" ]] && return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "updated-lock" ]
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: rolls back and skips build when nix flake update itself fails" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    local build_marker="${TEST_TEMP_DIR}/build-invoked.marker"
+    mkdir -p "${work_dir}"
+    rm -f "${build_marker}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body '^setup_nix_update_timer()')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 0
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        if [[ "$1" == "flake" ]]; then
+            echo "partial-lock-from-failed-update" > "$PWD/flake.lock"
+            return 1
+        fi
+        [[ "$1" == "build" ]] && { touch "${build_marker}"; return 0; }
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+    [ ! -e "${build_marker}" ]
+}
+
+@test "configure_update_notifications ExecStart pipeline: git pull failure is recorded as failed status, not swallowed" {
+    local work_dir="${TEST_TEMP_DIR}/repo"
+    mkdir -p "${work_dir}"
+    git -C "${work_dir}" init -q
+    git -C "${work_dir}" config user.email "test@test"
+    git -C "${work_dir}" config user.name "test"
+    echo "original-lock" > "${work_dir}/flake.lock"
+    git -C "${work_dir}" add flake.lock
+    git -C "${work_dir}" commit -q -m "init"
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(extract_exec_start_body 'Update the nix-flake-update service to include notification')"
+    cmd_body="${cmd_body//\$\{REPO_DIR\}/${work_dir}}"
+    cmd_body="${cmd_body//\$\{FLAKE_DIR\}/${work_dir}}"
+
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "pull" ]] && return 1
+        command git "$@"
+    }
+    # shellcheck disable=SC2329
+    nix() {
+        return 0
+    }
+    export -f git nix
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat "${work_dir}/flake.lock")" = "original-lock" ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "failed" ]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+# =============================================================================
 # Dev Flake Tests
 # =============================================================================
 

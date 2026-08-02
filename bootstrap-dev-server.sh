@@ -1367,14 +1367,11 @@ User=${DEV_USER}
 Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
-# Pull latest repo changes
-ExecStartPre=/bin/bash -c 'cd ${REPO_DIR} && git pull --quiet || true'
-
-# Update flake.lock and capture output
-ExecStart=/bin/bash -c 'OUTPUT=\$(nix flake update --flake ${FLAKE_DIR} 2>&1) && echo "\$OUTPUT" > /tmp/nix-update-output.txt && echo "success" > /tmp/nix-update-status.txt || (echo "\$OUTPUT" > /tmp/nix-update-output.txt && echo "failed" > /tmp/nix-update-status.txt && exit 1)'
-
-# Pre-build to warm cache
-ExecStartPost=/bin/bash -c '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link 2>&1 | tee -a /tmp/nix-update-output.txt || true'
+# Pull latest repo, update flake.lock, and verify the devShell still builds
+# before keeping the change. Any failure rolls flake.lock back and records
+# status=failed so ExecStopPost's notification reports the real outcome
+# instead of always "success".
+ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; git checkout -- flake.lock; OUTPUT=\$( (git pull --quiet && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix flake update --flake ${FLAKE_DIR} && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else git checkout -- flake.lock; echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
 
 # Send notification (runs as root to access msmtp config)
 ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
@@ -1563,14 +1560,10 @@ User=${DEV_USER}
 Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
-# Pull latest repo changes
-ExecStartPre=/bin/bash -c 'cd ${REPO_DIR} && git pull --quiet || true'
-
-# Update flake.lock
-ExecStart=/nix/var/nix/profiles/default/bin/nix flake update --flake ${FLAKE_DIR}
-
-# Optional: pre-build to warm cache (comment out if too slow)
-ExecStartPost=/bin/bash -c '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || true'
+# Pull latest repo, update flake.lock, and verify the devShell still builds
+# before keeping the change. Any failure rolls flake.lock back so a broken
+# update is never left in place, and the failure is surfaced (not swallowed).
+ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git checkout -- flake.lock; git pull --quiet; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix flake update --flake ${FLAKE_DIR} && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || { git checkout -- flake.lock; exit 1; }'
 SERVICEEOF
 
     # Create the timer unit (weekly on Sunday at 3am)
