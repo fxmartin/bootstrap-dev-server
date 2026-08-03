@@ -108,9 +108,9 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-@test "flake includes mosh" {
+@test "flake does not include mosh (installed via apt so the server side survives dev shell exits)" {
     run grep "mosh" "${PROJECT_ROOT}/flake.nix"
-    [ "$status" -eq 0 ]
+    [ "$status" -ne 0 ]
 }
 
 # =============================================================================
@@ -180,6 +180,18 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "flake does not use removed nodePackages aliases (dropped from nixpkgs unstable)" {
+    run grep "nodePackages" "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -ne 0 ]
+}
+
+@test "flake node toolchain uses top-level packages" {
+    for pkg in typescript typescript-language-server eslint prettier; do
+        run grep -E "pkgs\.${pkg} " "${PROJECT_ROOT}/flake.nix"
+        [ "$status" -eq 0 ]
+    done
+}
+
 @test "flake python devShell (python-dev) uses pkgs.python3 as its interpreter" {
     run bash -c "sed -n '/name = \"python-dev\"/,\$p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\.python3\$'"
     [ "$status" -eq 0 ]
@@ -236,9 +248,9 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-@test "flake includes helix" {
+@test "flake does not include helix (removed from dev shell)" {
     run grep -i "helix" "${PROJECT_ROOT}/flake.nix"
-    [ "$status" -eq 0 ]
+    [ "$status" -ne 0 ]
 }
 
 # =============================================================================
