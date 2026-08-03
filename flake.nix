@@ -114,10 +114,10 @@
             # React/Frontend Development
             pkgs.bun                                    # Fast JS runtime/bundler
             pkgs.pnpm                                   # Efficient package manager
-            pkgs.nodePackages.typescript                # TypeScript compiler
-            pkgs.nodePackages.typescript-language-server # LSP for editors
-            pkgs.nodePackages.eslint                    # JS/TS linting
-            pkgs.nodePackages.prettier                  # Code formatting
+            pkgs.typescript                             # TypeScript compiler
+            pkgs.typescript-language-server             # LSP for editors
+            pkgs.eslint                                 # JS/TS linting
+            pkgs.prettier                               # Code formatting
 
             # Nix Development
             pkgs.nil              # Nix LSP for editor integration

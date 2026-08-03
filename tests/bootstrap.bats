@@ -330,10 +330,12 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "setup_nix_gc_timer skips re-creation when timer already enabled" {
-    run grep -A50 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+@test "setup_nix_gc_timer refreshes drifted unit files instead of skipping once enabled" {
+    run grep -A60 "^setup_nix_gc_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
     [ "$status" -eq 0 ]
-    [[ "$output" == *'systemctl is-enabled "${TIMER_NAME}.timer"'* ]]
+    [[ "$output" == *'install_systemd_unit "${SERVICE_FILE}"'* ]]
+    [[ "$output" == *'install_systemd_unit "${TIMER_FILE}"'* ]]
+    [[ "$output" == *'[[ ${UNITS_CHANGED} -eq 0 ]] && systemctl is-enabled "${TIMER_NAME}.timer"'* ]]
     [[ "$output" == *"Nix GC timer already configured"* ]]
     [[ "$output" == *"return 0"* ]]
 }
@@ -372,6 +374,79 @@ EOF
 @test "README documents Nix GC timer remediation" {
     run grep "nix-gc.timer" "${PROJECT_ROOT}/README.md"
     [ "$status" -eq 0 ]
+}
+
+# =============================================================================
+# install_systemd_unit Tests
+#
+# Unit files must converge on every bootstrap re-run: a fix to a unit's
+# content has to reach already-provisioned servers instead of being frozen
+# by a "skip once enabled/marker present" guard (that guard swallowed
+# fix #6 on live servers).
+# =============================================================================
+
+# Extract the helper from the script and run it with sudo mocked to a
+# passthrough, so the real cmp/install behavior is exercised against a
+# throwaway destination file.
+run_install_systemd_unit() {
+    local dest="$1"
+    local content="$2"
+    bash -c "
+        set -euo pipefail
+        sudo() { \"\$@\"; }
+        $(sed -n '/^install_systemd_unit()/,/^}$/p' "${PROJECT_ROOT}/bootstrap-dev-server.sh")
+        printf '%s\n' \"${content}\" | install_systemd_unit '${dest}'
+    "
+}
+
+@test "install_systemd_unit function exists" {
+    run grep "^install_systemd_unit()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "install_systemd_unit writes a missing unit and reports a change" {
+    local dest="${TEST_TEMP_DIR}/unit.service"
+    run run_install_systemd_unit "${dest}" "[Unit]"
+    [ "$status" -eq 0 ]
+    [ -f "${dest}" ]
+    [ "$(cat "${dest}")" = "[Unit]" ]
+}
+
+@test "install_systemd_unit rewrites a drifted unit and reports a change" {
+    local dest="${TEST_TEMP_DIR}/unit.service"
+    printf 'stale content\n' > "${dest}"
+    run run_install_systemd_unit "${dest}" "[Unit]"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${dest}")" = "[Unit]" ]
+}
+
+@test "install_systemd_unit leaves an identical unit alone and reports no change" {
+    local dest="${TEST_TEMP_DIR}/unit.service"
+    printf '[Unit]\n' > "${dest}"
+    run run_install_systemd_unit "${dest}" "[Unit]"
+    [ "$status" -eq 1 ]
+    [ "$(cat "${dest}")" = "[Unit]" ]
+}
+
+@test "setup_nix_update_timer refreshes drifted unit files instead of skipping once enabled" {
+    run grep -A70 "^setup_nix_update_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'install_systemd_unit "${SERVICE_FILE}"'* ]]
+    [[ "$output" == *'install_systemd_unit "${TIMER_FILE}"'* ]]
+    [[ "$output" == *'[[ ${UNITS_CHANGED} -eq 0 ]] && systemctl is-enabled "${TIMER_NAME}.timer"'* ]]
+}
+
+@test "setup_nix_update_timer does not clobber the notification-enhanced service" {
+    run grep -A70 "^setup_nix_update_timer()" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'grep -q "nix-update-notify" "${SERVICE_FILE}"'* ]]
+}
+
+@test "configure_update_notifications re-applies the service on content drift instead of freezing on the marker grep" {
+    run grep -A60 "Update the nix-flake-update service to include notification" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'install_systemd_unit "${SERVICE_FILE}"'* ]]
+    [[ "$output" != *'if grep -q "nix-update-notify" "${SERVICE_FILE}"; then'* ]]
 }
 
 # =============================================================================
