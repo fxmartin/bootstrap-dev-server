@@ -1,0 +1,5 @@
+# SDLC controller session state (SQLite)
+.sdlc-state.db
+.sdlc-state.db-shm
+.sdlc-state.db-wal
+.sdlc-state.db.logs/
