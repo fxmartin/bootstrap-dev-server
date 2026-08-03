@@ -1347,15 +1347,13 @@ NOTIFYEOF
     if [[ -f "${SERVICE_FILE}" ]]; then
         log_info "Updating Nix update service with email notification..."
 
-        # Check if notification already configured
-        if grep -q "nix-update-notify" "${SERVICE_FILE}"; then
-            log_ok "Nix update notification already configured"
-        else
-            # Create updated service file with notification
-            local FLAKE_DIR="/home/${DEV_USER}/.config/nix-dev-env"
-            local REPO_DIR="/home/${DEV_USER}/.local/share/bootstrap-dev-server"
+        local FLAKE_DIR="/home/${DEV_USER}/.config/nix-dev-env"
+        local REPO_DIR="/home/${DEV_USER}/.local/share/bootstrap-dev-server"
 
-            sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+        # Regenerate the notification-enhanced unit and rewrite it only on
+        # content drift, so fixes propagate to already-provisioned servers
+        # (the previous marker grep froze the first-ever version in place).
+        if install_systemd_unit "${SERVICE_FILE}" <<SERVICEEOF; then
 [Unit]
 Description=Update Nix flake packages
 After=network-online.target
@@ -1376,9 +1374,10 @@ ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; git checkout -- flake.lock; OU
 # Send notification (runs as root to access msmtp config)
 ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
 SERVICEEOF
-
             sudo systemctl daemon-reload
             log_ok "Nix update service updated with email notification"
+        else
+            log_ok "Nix update notification already configured"
         fi
     fi
 
@@ -1530,6 +1529,26 @@ SHELLEOF
 }
 
 #===============================================================================
+# Install a systemd unit from stdin only when its content differs from disk
+# Returns 0 when the unit was (re)written, 1 when it was already up to date
+#===============================================================================
+install_systemd_unit() {
+    local dest="$1"
+    local tmp
+    tmp="$(mktemp)"
+    cat >"${tmp}"
+
+    if cmp -s "${tmp}" "${dest}" 2>/dev/null; then
+        rm -f "${tmp}"
+        return 1
+    fi
+
+    sudo install -m 644 "${tmp}" "${dest}"
+    rm -f "${tmp}"
+    return 0
+}
+
+#===============================================================================
 # Setup systemd timer for weekly Nix flake updates
 #===============================================================================
 setup_nix_update_timer() {
@@ -1540,15 +1559,16 @@ setup_nix_update_timer() {
     local TIMER_FILE="/etc/systemd/system/${TIMER_NAME}.timer"
     local FLAKE_DIR="${HOME}/.config/nix-dev-env"
     local REPO_DIR="${HOME}/.local/share/bootstrap-dev-server"
+    local UNITS_CHANGED=0
 
-    # Check if already configured
-    if systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
-        log_ok "Nix update timer already configured"
-        return 0
-    fi
-
-    # Create the service unit (runs as the dev user, not root)
-    sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+    # Regenerate the units on every run and rewrite them only on content
+    # drift, so unit-file fixes reach already-provisioned servers instead of
+    # being skipped forever once the timer is enabled. The notification-
+    # enhanced service written by configure_update_notifications takes
+    # precedence: never clobber it with the plain unit.
+    # Service unit runs as the dev user, not root.
+    if ! sudo grep -q "nix-update-notify" "${SERVICE_FILE}" 2>/dev/null; then
+        if install_systemd_unit "${SERVICE_FILE}" <<SERVICEEOF; then
 [Unit]
 Description=Update Nix flake packages
 After=network-online.target
@@ -1565,9 +1585,12 @@ Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 # update is never left in place, and the failure is surfaced (not swallowed).
 ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git checkout -- flake.lock; git pull --quiet; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix flake update --flake ${FLAKE_DIR} && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || { git checkout -- flake.lock; exit 1; }'
 SERVICEEOF
+            UNITS_CHANGED=1
+        fi
+    fi
 
-    # Create the timer unit (weekly on Sunday at 3am)
-    sudo tee "${TIMER_FILE}" >/dev/null <<TIMEREOF
+    # Timer unit (weekly on Sunday at 3am)
+    if install_systemd_unit "${TIMER_FILE}" <<TIMEREOF; then
 [Unit]
 Description=Weekly Nix flake update
 
@@ -1579,8 +1602,14 @@ RandomizedDelaySec=1800
 [Install]
 WantedBy=timers.target
 TIMEREOF
+        UNITS_CHANGED=1
+    fi
 
-    # Enable and start the timer
+    if [[ ${UNITS_CHANGED} -eq 0 ]] && systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
+        log_ok "Nix update timer already configured"
+        return 0
+    fi
+
     sudo systemctl daemon-reload
     sudo systemctl enable "${TIMER_NAME}.timer"
     sudo systemctl start "${TIMER_NAME}.timer"
@@ -1599,15 +1628,13 @@ setup_nix_gc_timer() {
     local TIMER_NAME="nix-gc"
     local SERVICE_FILE="/etc/systemd/system/${TIMER_NAME}.service"
     local TIMER_FILE="/etc/systemd/system/${TIMER_NAME}.timer"
+    local UNITS_CHANGED=0
 
-    # Check if already configured
-    if systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
-        log_ok "Nix GC timer already configured"
-        return 0
-    fi
-
-    # Create the service unit (runs as root to delete other users' generations too)
-    sudo tee "${SERVICE_FILE}" >/dev/null <<SERVICEEOF
+    # Regenerate the units on every run and rewrite them only on content
+    # drift, so unit-file fixes reach already-provisioned servers instead of
+    # being skipped forever once the timer is enabled.
+    # Service unit runs as root to delete other users' generations too.
+    if install_systemd_unit "${SERVICE_FILE}" <<SERVICEEOF; then
 [Unit]
 Description=Garbage collect old Nix store paths
 After=network-online.target
@@ -1617,9 +1644,11 @@ Type=oneshot
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 ExecStart=/nix/var/nix/profiles/default/bin/nix-collect-garbage --delete-older-than 30d
 SERVICEEOF
+        UNITS_CHANGED=1
+    fi
 
-    # Create the timer unit (weekly on Sunday at 4am, after the flake update timer)
-    sudo tee "${TIMER_FILE}" >/dev/null <<TIMEREOF
+    # Timer unit (weekly on Sunday at 4am, after the flake update timer)
+    if install_systemd_unit "${TIMER_FILE}" <<TIMEREOF; then
 [Unit]
 Description=Weekly Nix garbage collection
 
@@ -1631,8 +1660,14 @@ RandomizedDelaySec=1800
 [Install]
 WantedBy=timers.target
 TIMEREOF
+        UNITS_CHANGED=1
+    fi
 
-    # Enable and start the timer
+    if [[ ${UNITS_CHANGED} -eq 0 ]] && systemctl is-enabled "${TIMER_NAME}.timer" &>/dev/null; then
+        log_ok "Nix GC timer already configured"
+        return 0
+    fi
+
     sudo systemctl daemon-reload
     sudo systemctl enable "${TIMER_NAME}.timer"
     sudo systemctl start "${TIMER_NAME}.timer"
