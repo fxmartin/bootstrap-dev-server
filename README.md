@@ -244,7 +244,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Kernel hardening**: sysctl settings for ICMP, SYN flood protection, martian logging
 - **PAM hardening**: Empty passwords disallowed (nullok removed)
 - **Daily security report**: Email summary of Fail2Ban, SSH, UFW, and audit events (7am daily)
-- **Beszel agent**: System resource monitoring, ships metrics to Beszel Hub on Nyx via Tailscale (port 45876)
+- **node_exporter**: Prometheus metrics on the Tailscale IP only (port 9100), scraped by Prometheus on the NAS - see [Monitoring](#monitoring-node_exporter)
 
 ### Development Environment
 - **Claude Code** with auto-updates
@@ -377,7 +377,7 @@ Actual bootstrap timing from a CX33 server in Falkenstein (fsn1), December 2025:
 | 2 | Git & GitHub Setup | ~70s |
 | 3 | Security Hardening | ~53s |
 | 4 | Nix Installation | ~217s (3m 37s) |
-| 5 | Monitoring Agent | ~10s |
+| 5 | Monitoring (node_exporter) | ~10s |
 | 6 | Final SSH Configuration | instant |
 | **Total** | **Full bootstrap** | **~6-7 minutes** |
 
@@ -679,6 +679,45 @@ nix develop
 
 ---
 
+## Monitoring (node_exporter)
+
+The server exposes Prometheus metrics with [node_exporter](https://github.com/prometheus/node_exporter),
+scraped by the Prometheus instance on the TerraMaster NAS over Tailscale
+([fxmartin/nix-install](https://github.com/fxmartin/nix-install) Epic-15 "Fleet Cockpit",
+issues #571-#575). Nothing else is installed here: no Prometheus, no Grafana, no alerting.
+
+**node_exporter has no authentication.** On a public Hetzner box the whole security model is:
+
+1. **Tailnet-only bind.** The unit starts through `config/node-exporter-start.sh`, which resolves
+   the node's Tailscale IPv4 (`tailscale ip -4`) and binds `--web.listen-address=<ip>:9100`.
+   It never binds `0.0.0.0`: if the tailnet is not up it retries 12 x 10 s, then exits non-zero,
+   and the unit's `StartLimit` stops a permanently-down tailnet from crash-looping forever.
+2. **Firewall on `tailscale0` only.** `ufw allow in on tailscale0 to any port 9100 proto tcp`.
+   There is no rule on the public interface.
+3. **Tailscale ACL.** Only the NAS may reach `dev-server:9100`. Add to the ACL in the
+   Tailscale admin console (adjust the NAS selector to its tag or hostname):
+
+   ```json
+   {"action": "accept", "src": ["tag:nas"], "dst": ["tag:server:9100"]}
+   ```
+
+Install details (`scripts/install-node-exporter.sh`, run by bootstrap phase 5, safe to re-run):
+
+- Pinned release, downloaded from the versioned release path (never `/releases/latest`) and
+  verified against the release's `sha256sums.txt` before extraction.
+- Binary at `/usr/local/bin/node_exporter`, run by the dedicated `node_exporter` system user
+  (nologin) from the system unit `/etc/systemd/system/node-exporter.service`.
+- Collectors: defaults plus `--collector.systemd` (unit state) and
+  `--collector.textfile.directory=/var/lib/node_exporter/textfile`, an empty directory reserved
+  for future custom metrics.
+
+Check it with `tests/verify-server.sh` (unit active, `/metrics` served on the Tailscale IP,
+nothing bound on `0.0.0.0:9100`), or by hand from a tailnet machine:
+
+```bash
+curl -s http://$(ssh dev-server tailscale ip -4):9100/metrics | grep node_exporter_build_info
+```
+
 ## SSH Key Security
 
 This project uses a **dedicated SSH key** (`~/.ssh/id_devserver`) for dev server access, separate from your GitHub or other service keys.
@@ -975,12 +1014,13 @@ After installation:
 │       ├── lib/
 │       │   └── logging.sh     # Shared logging library
 │       ├── config/
-│       │   └── beszel-agent.service  # Beszel agent systemd service
+│       │   ├── node-exporter.service   # node_exporter system unit
+│       │   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
 │       ├── profiles/
 │       │   └── nyx.sh         # Nyx profile installation script
 │       ├── scripts/
 │       │   ├── secure-ssh-key.sh  # Add passphrase to SSH key
-│       │   └── install-beszel-agent.sh  # Beszel agent installer
+│       │   └── install-node-exporter.sh  # node_exporter installer
 │       └── tests/
 │           ├── *.bats         # Unit test suites (300 tests)
 │           ├── e2e/

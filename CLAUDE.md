@@ -20,7 +20,8 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `bootstrap-dev-server.sh` | Main bootstrap script (idempotent, ~44KB) |
 | `flake.nix` | Nix dev shell definition with all tools |
 | `lib/logging.sh` | Shared logging library with timestamps and log files |
-| `lib/beszel.sh` | Beszel KEY predicate gating systemd enablement |
+| `scripts/install-node-exporter.sh` | node_exporter installer: pinned release, sha256-verified, dedicated user, UFW on tailscale0 |
+| `config/node-exporter-start.sh` | Unit wrapper: binds node_exporter to the Tailscale IP only, bounded wait for the tailnet |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `tests/verify-server.sh` | Post-install verification script |
 | `scripts/secure-ssh-key.sh` | Add passphrase to SSH key helper |
@@ -36,7 +37,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Daily security report via email
 
 **Monitoring:**
-- Beszel agent (ships system metrics to Beszel Hub on Nyx via Tailscale, port 45876)
+- Prometheus node_exporter on the Tailscale IP only (port 9100), scraped by Prometheus on the TerraMaster NAS over the tailnet (nix-install Epic-15 "Fleet Cockpit")
 
 **Development Environment:**
 - Claude Code + herdr (agent multiplexer) + `gh` CLI for GitHub
@@ -103,7 +104,7 @@ bootstrap-dev-server/
 │   └── logging.sh            # Shared logging library
 ├── scripts/
 │   ├── secure-ssh-key.sh     # SSH key passphrase helper
-│   └── install-beszel-agent.sh  # Beszel monitoring agent installer
+│   └── install-node-exporter.sh  # node_exporter installer (tailnet-only)
 ├── tests/
 │   └── verify-server.sh      # Post-install verification
 ├── config/
@@ -111,7 +112,8 @@ bootstrap-dev-server/
 │   │   ├── CLAUDE.md         # Multi-agent workflow system
 │   │   ├── agents/           # Specialized agent definitions
 │   │   └── commands/         # Slash command definitions
-│   └── beszel-agent.service  # Beszel agent systemd user service
+│   ├── node-exporter.service   # node_exporter system unit
+│   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
 ```
 
 ## Code Standards
@@ -200,7 +202,8 @@ has somewhere to land.
 - SSH key is dedicated (`~/.ssh/id_devserver`) - separate from GitHub/other services
 - Password authentication is disabled after bootstrap
 - Root login is disabled after bootstrap
-- UFW blocks all except SSH (22) and Mosh (60000-60010)
+- UFW blocks all except SSH (22) and Mosh (60000-60010); 9100 (node_exporter) is open on `tailscale0` only
+- node_exporter has no authentication: it binds to the Tailscale IP, never 0.0.0.0. Tailnet reachability + the tailscale0 UFW rule + the Tailscale ACL are the whole security model
 - Daily security reports sent via msmtp
 
 ## Troubleshooting
