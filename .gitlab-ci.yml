@@ -1,0 +1,61 @@
+# ABOUTME: CI for the local-ci-cd GitLab on home-lab, this repo's master remote.
+# ABOUTME: Minimum gate set — the two checks AGENT.md already requires: shellcheck and bats.
+#
+# Scope is deliberately small, same reasoning as omarchy-install: the
+# framework's full template also gates gitleaks, ruff, pytest, commitlint and
+# the risk gate, but this repo has no Python, no .gitleaks.toml and no
+# .commitlintrc.json, so those jobs would fail on missing inputs rather than
+# catch anything. shfmt is not gated either — the CI image does not carry it.
+# Add them when the inputs exist.
+#
+# Both jobs run on local/omarchy-install-ci, the image omarchy-install builds
+# from its ci/Containerfile on home-lab and pushes to the appliance's zot proxy
+# at 127.0.0.1:5001 — the only registry prepare_exec can pull from. It carries
+# bash, git, jq, ssh-keygen, python3, curl, shellcheck and bats, which is every
+# tool this suite reaches for; nix, hcloud, tailscale and gh are absent on
+# purpose and the tests that need them skip. The digest is shared with that
+# repo: re-pin here whenever it is rebuilt there.
+#
+# Not gated, and why: tests/e2e builds and runs an Ubuntu container, which the
+# job runner cannot do (no nested container runtime, no network). nix flake
+# check needs nix and the network. Both stay local, run by FX.
+
+# MR pipelines and pushes to the default branch only — no duplicate branch +
+# MR pipeline on the same commit. The merge_request_event rule is required, or
+# the sdlc controller's merge gate sees no pipeline to gate on.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+stages:
+  - lint
+  - test
+
+# The scripts AGENT.md documents for local lint, plus the two runnable test
+# harness scripts. --severity=warning is the same floor omarchy-install uses:
+# nothing at warning or above is suppressed, and shellcheck-version-dependent
+# info notes do not fail CI on what the local command never shows.
+shellcheck:
+  stage: lint
+  image: 127.0.0.1:5001/local/omarchy-install-ci@sha256:25270c64da5e4448abe6975c2ca908a4bba21f0a9bd64ef6f503e70280891ff1
+  script:
+    - shellcheck --version
+    - shellcheck --severity=warning bootstrap-dev-server.sh hcloud-provision.sh lib/*.sh scripts/*.sh profiles/*.sh tests/verify-server.sh tests/e2e/e2e-runner.sh
+
+# The suite sandboxes HOME under a temp dir, mocks sudo/apt-get/systemctl/ssh,
+# and mostly greps the scripts it covers, so it touches nothing on the runner
+# and behaves the same as root. The preflight is how a tool that goes missing
+# from a rebuilt image reads as a diagnosis rather than a cryptic skip count.
+bats:
+  stage: test
+  image: 127.0.0.1:5001/local/omarchy-install-ci@sha256:25270c64da5e4448abe6975c2ca908a4bba21f0a9bd64ef6f503e70280891ff1
+  before_script:
+    - 'echo "bash:    $(bash --version | head -1)"'
+    - 'echo "bats:    $(bats --version)"'
+    - 'echo "git:     $(command -v git || echo MISSING)"'
+    - 'echo "jq:      $(command -v jq || echo MISSING)"'
+    - 'echo "python3: $(command -v python3 || echo MISSING)"'
+    - 'echo "keygen:  $(command -v ssh-keygen || echo MISSING)"'
+  script:
+    - bats tests/

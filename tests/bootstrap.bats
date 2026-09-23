@@ -14,6 +14,12 @@ setup() {
     export LOG_DIR="${TEST_TEMP_DIR}/logs"
     export NO_COLOR=1
 
+    # The ExecStart pipelines source the Nix daemon profile, which exists only
+    # on a host with Nix installed. Point them at an empty stub so the pipeline
+    # logic is exercised on any machine, root CI containers included.
+    export NIX_DAEMON_STUB="${TEST_TEMP_DIR}/nix-daemon.sh"
+    : > "${NIX_DAEMON_STUB}"
+
     # Source the logging library
     source "${PROJECT_ROOT}/lib/logging.sh"
     init_logging "test-bootstrap"
@@ -509,6 +515,7 @@ extract_exec_start_body() {
     # "$" once systemd's ExecStart is actually written to disk. Mirror that
     # unescaping here so the extracted body runs the same way it would live.
     cmd_body="${cmd_body//\\\$/\$}"
+    cmd_body="${cmd_body//\/nix\/var\/nix\/profiles\/default\/etc\/profile.d\/nix-daemon.sh/${NIX_DAEMON_STUB}}"
     echo "${cmd_body}"
 }
 
