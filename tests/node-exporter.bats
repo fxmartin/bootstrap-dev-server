@@ -453,6 +453,14 @@ source_remove_beszel_agent() {
     [ "${status}" -eq 0 ]
 }
 
+@test "verify-server never pipes curl straight into grep -q" {
+    # grep -q exits on the first match and closes the pipe; curl then fails
+    # with a write error and, under pipefail, a healthy exporter reads as
+    # broken. Seen live on the first deployment (verify-server 14.2).
+    run bash -c "grep -nE 'curl .*\\| *grep -q' '${VERIFY}' || true"
+    [ -z "${output}" ]
+}
+
 @test "verify-server fails when anything listens on 0.0.0.0:9100" {
     run grep -q 'ss -ltn' "${VERIFY}"
     [ "${status}" -eq 0 ]
