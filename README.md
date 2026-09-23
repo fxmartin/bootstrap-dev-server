@@ -248,7 +248,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 ### Development Environment
 - **Claude Code** with auto-updates
-- **MCP Servers**: Context7, Sequential Thinking (GitHub via `gh` CLI)
+- **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
 
@@ -577,14 +577,24 @@ See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detaile
 
 ## Post-Installation
 
-### MCP Server Configuration
+### Herdr
 
-Claude Code MCP servers are automatically configured:
+[Herdr](https://herdr.dev) is an agent multiplexer: it keeps coding agents in persistent
+terminal panes and shows at a glance which are running, waiting, or idle. It ships in the
+default dev shell — just run `herdr`.
 
-- **Context7**: Documentation lookup (no auth required)
-- **Sequential Thinking**: Enhanced reasoning (no auth required)
+Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
+multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
+its own tmux window, or skipping tmux when you use it.
 
-GitHub operations use the `gh` CLI (included in the dev shell) instead of an MCP server. Authenticate with:
+### GitHub Authentication
+
+MCP servers were removed from this flake — Context7 and Sequential Thinking pulled in a
+`mcp-servers-nix` input that pinned Node.js to v22 and blocked nixpkgs upgrades. Entering
+the dev shell now prunes any leftover entries from `~/.claude.json`, since their
+`/nix/store` paths are garbage-collected and Claude Code would fail to start them.
+
+GitHub operations use the `gh` CLI (included in the dev shell). Authenticate with:
 
 ```bash
 gh auth login
@@ -898,7 +908,7 @@ After installation:
 
 ```
 ~
-├── .claude.json               # Claude Code config (includes MCP servers)
+├── .claude.json               # Claude Code config
 ├── .claude/
 │   ├── agents/                # Custom agent definitions (symlinked)
 │   └── commands/              # Custom slash commands (symlinked)
@@ -1266,7 +1276,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
-- [natsukium/mcp-servers-nix](https://github.com/natsukium/mcp-servers-nix) for MCP server Nix packaging
+- [herdrdev/herdr](https://github.com/herdrdev/herdr) for the agent multiplexer
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client

@@ -4,7 +4,7 @@ This repository was initially developed with Claude Code. Treat `CLAUDE.md` as t
 
 ## Project Summary
 
-Bootstrap Dev Server turns a fresh Ubuntu 24.04 server into a hardened, Nix-powered development environment with Claude Code, MCP servers, shell tooling, monitoring, and optional Nyx profile support.
+Bootstrap Dev Server turns a fresh Ubuntu 24.04 server into a hardened, Nix-powered development environment with Claude Code, herdr, shell tooling, monitoring, and optional Nyx profile support.
 
 Primary targets:
 
