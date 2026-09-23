@@ -172,6 +172,29 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `SSH_KEY_PATH` | ~/.ssh/id_devserver | SSH private key path |
 | `SSH_USER` | fx | Username to create on server |
 
+## Source Control — GitLab is master, GitHub is a mirror
+
+`origin` is the **local-ci-cd GitLab on `home-lab`**
+(`http://home-lab:8080/root/bootstrap-dev-server.git`). Branches, merge requests
+and issues live there. `github` is a named remote kept only so the push mirror
+has somewhere to land.
+
+- **Never push to `github`, and never merge on GitHub.** GitLab push-mirrors to
+  it; anything committed on the GitHub side is divergent history that the next
+  mirror run will fight with.
+- Use `glab` for merge requests, issues and API calls. It is authenticated at
+  the instance level (`glab auth status` → `home-lab:8080`, token in the OS
+  keyring), so every repo on that instance reuses the same login. `--hostname`
+  will not take a `host:port` — use `GITLAB_HOST=home-lab:8080`.
+- `gh` remains correct for reading the GitHub mirror, and for any *other* repo
+  that still has GitHub as its master. The `raw.githubusercontent.com` install
+  URLs in the README keep working because the mirror keeps GitHub current.
+- The `sdlc` controller's GitHub PR flow is **no longer authoritative** here.
+  `.sdlc-forge.yaml` points it at GitLab; issue numbers are GitLab iids.
+- Mirror lag is up to five minutes, and GitLab enforces a backoff between runs —
+  a manual sync request does not bypass it. A stale `github/main` is expected,
+  not a fault.
+
 ## Security Considerations
 
 - SSH key is dedicated (`~/.ssh/id_devserver`) - separate from GitHub/other services

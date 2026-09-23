@@ -39,7 +39,9 @@ Primary targets:
   - `shfmt -d -i 4 ...`
   - `bats tests/*.bats`
   - `nix flake check`
-- Use `gh` for GitHub operations. Do not rely on a GitHub MCP server.
+- GitLab on `home-lab` is master (`origin`); GitHub is a push mirror. Use `glab` for merge
+  requests, issues and API calls; never push to `github` or merge on GitHub. See the
+  "Source Control" section in `CLAUDE.md`. `gh` stays for read-only mirror checks.
 - Ask FX via Spokenly dictation if a decision would change live infrastructure, credentials, SSH access, firewalling, or server cost.
 
 ## Shell Conventions
