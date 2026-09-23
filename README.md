@@ -408,10 +408,32 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up --ssh
+sudo tailscale up --ssh --advertise-tags=tag:server
 ```
 
 This displays a URL to authenticate with your Tailscale account. The `--ssh` flag enables Tailscale SSH, allowing you to connect without SSH keys from any device on your Tailnet.
+
+**`--advertise-tags` is not optional for an always-on server.** A node authenticated as a
+user gets a node key that expires after **180 days**; when it does, the server silently
+drops off the tailnet while remaining perfectly healthy on its public IP — so nothing
+alerts you. A tagged node is owned by the tailnet rather than a user and its key never
+expires.
+
+The tag must already exist in your tailnet ACL under `tagOwners`, for example:
+
+```json
+"tagOwners": { "tag:server": ["autogroup:admin"] }
+```
+
+Override the default with `TAILSCALE_TAGS=tag:mytag`. If you have already authenticated
+untagged, either re-run the command above or disable key expiry for the machine in the
+admin console (**Machines → ⋯ → Disable key expiry**).
+
+Check where you stand at any time:
+
+```bash
+tailscale status --json | jq '.Self.KeyExpiry'   # null on a tagged node
+```
 
 Once connected, you can access your server via Tailscale IP which bypasses GeoIP restrictions:
 

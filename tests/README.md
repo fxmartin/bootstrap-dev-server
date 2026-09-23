@@ -28,6 +28,8 @@ bats tests/bootstrap.bats
 bats tests/hcloud-provision.bats
 bats tests/health-check.bats
 bats tests/secure-ssh-key.bats
+bats tests/beszel-agent.bats
+bats tests/tailscale.bats
 
 # Run with verbose output
 bats --verbose-run tests/

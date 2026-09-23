@@ -15,6 +15,8 @@
 #  10. Repository Clone    - bootstrap-dev-server repo cloned
 #  11. CLAUDE.md           - Template file created
 #  12. MCP Servers         - mcp-servers-nix in flake inputs
+#  13. Tailscale           - Authenticated, node key not expiring soon
+#  14. Monitoring          - Beszel agent configured and actually running
 #
 # Usage:
 #   ssh dev-server 'bash -s' < tests/verify-server.sh
@@ -418,6 +420,104 @@ if [[ -f "${DEV_FLAKE_PATH}/flake.lock" ]]; then
     fi
 else
     warn "Cannot check MCP servers - flake.lock missing"
+fi
+
+header "13. Tailscale Tests"
+
+if command -v tailscale &>/dev/null; then
+    pass "Tailscale is installed"
+
+    # Test 13.1: Backend is actually authenticated.
+    # An expired node key leaves tailscaled active and enabled but the backend
+    # in NeedsLogin, so `systemctl is-active` is not evidence of connectivity.
+    TS_STATE="$(tailscale status --json 2>/dev/null | grep -o '"BackendState": *"[^"]*"' | cut -d'"' -f4 || echo "unknown")"
+    case "${TS_STATE}" in
+        Running)
+            pass "Tailscale backend is Running"
+            TS_IP="$(tailscale ip -4 2>/dev/null || echo "unknown")"
+            info "Tailscale IP: ${TS_IP}"
+            ;;
+        NeedsLogin)
+            fail "Tailscale is NOT authenticated (BackendState=NeedsLogin) - run: sudo tailscale up --ssh --advertise-tags=tag:server"
+            ;;
+        Stopped)
+            fail "Tailscale is stopped (BackendState=Stopped) - run: sudo tailscale up"
+            ;;
+        *)
+            warn "Tailscale backend state is '${TS_STATE}'"
+            ;;
+    esac
+
+    # Test 13.2: Node key expiry.
+    # A tagged node reports no expiry; an untagged one expires after 180 days
+    # and drops off the tailnet silently.
+    # Scope to the Self object: peers carry their own KeyExpiry values.
+    # jq is not on the server outside the dev shell, hence the sed range.
+    TS_SELF_JSON="$(tailscale status --json 2>/dev/null | sed -n '/"Self":/,/"Peer":/p' || true)"
+    TS_EXPIRY="$(echo "${TS_SELF_JSON}" | grep -o '"KeyExpiry": *"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
+    if [[ -z "${TS_EXPIRY}" || "${TS_EXPIRY}" == "null" ]]; then
+        pass "Tailscale node key does not expire (tagged node or expiry disabled)"
+    else
+        EXPIRY_EPOCH="$(date -d "${TS_EXPIRY}" +%s 2>/dev/null || echo 0)"
+        NOW_EPOCH="$(date +%s)"
+        if [[ "${EXPIRY_EPOCH}" -eq 0 ]]; then
+            info "Tailscale node key expires: ${TS_EXPIRY}"
+        else
+            SECONDS_LEFT=$((EXPIRY_EPOCH - NOW_EPOCH))
+            DAYS_LEFT=$((SECONDS_LEFT / 86400))
+            if [[ "${DAYS_LEFT}" -lt 0 ]]; then
+                fail "Tailscale node key EXPIRED ${DAYS_LEFT#-} days ago (${TS_EXPIRY})"
+            elif [[ "${DAYS_LEFT}" -lt 30 ]]; then
+                warn "Tailscale node key expires in ${DAYS_LEFT} days (${TS_EXPIRY}) - re-auth with --advertise-tags or disable key expiry"
+            else
+                warn "Tailscale node key expires in ${DAYS_LEFT} days (${TS_EXPIRY}) - untagged node, will drop off the tailnet"
+            fi
+        fi
+    fi
+else
+    warn "Tailscale is not installed"
+fi
+
+header "14. Monitoring (Beszel) Tests"
+
+BESZEL_ENV="${HOME}/.config/beszel-agent.env"
+BESZEL_UNIT="${HOME}/.config/systemd/user/beszel-agent.service"
+
+if [[ -f "${BESZEL_UNIT}" ]]; then
+    pass "Beszel agent unit is installed"
+
+    # Test 14.1: KEY is configured
+    BESZEL_KEY="$(sed -n 's/^[[:space:]]*KEY=//p' "${BESZEL_ENV}" 2>/dev/null | tail -n 1 | tr -d '"'"'"'[:space:]')"
+    BESZEL_ENABLED=no
+    systemctl --user is-enabled --quiet beszel-agent 2>/dev/null && BESZEL_ENABLED=yes
+
+    if [[ -n "${BESZEL_KEY}" ]]; then
+        pass "Beszel agent KEY is configured"
+    elif [[ "${BESZEL_ENABLED}" == "yes" ]]; then
+        fail "Beszel agent is ENABLED with an empty KEY in ${BESZEL_ENV} - it will crash-loop on every boot"
+    else
+        warn "Beszel agent KEY is not configured (unit correctly left disabled)"
+    fi
+
+    # Test 14.2: If enabled, it must actually be running.
+    # A crash-looping unit reports 'activating' (auto-restart), which is
+    # neither 'active' nor 'failed' - so `is-active` alone would miss it.
+    if [[ "${BESZEL_ENABLED}" == "yes" ]]; then
+        BESZEL_STATE="$(systemctl --user is-active beszel-agent 2>/dev/null || true)"
+        case "${BESZEL_STATE}" in
+            active)
+                pass "Beszel agent is running"
+                ;;
+            activating)
+                fail "Beszel agent is crash-looping (state=activating) - check: journalctl --user -u beszel-agent"
+                ;;
+            *)
+                fail "Beszel agent is enabled but not running (state=${BESZEL_STATE:-unknown})"
+                ;;
+        esac
+    fi
+else
+    warn "Beszel agent is not installed"
 fi
 
 # ============================================================================

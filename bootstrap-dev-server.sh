@@ -66,6 +66,12 @@ UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting fo
 GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
 
+# Tailscale configuration
+# Tagged nodes are owned by the tailnet, not a user, so their node keys never
+# expire. An untagged `tailscale up` expires after 180 days and silently drops
+# the server off the tailnet.
+TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:server}"     # Tags to advertise on `tailscale up`
+
 # GitHub authentication
 SKIP_GITHUB_AUTH="${SKIP_GITHUB_AUTH:-false}"      # Skip GitHub CLI authentication (for testing)
 
@@ -671,8 +677,18 @@ install_tailscale() {
 
     log_ok "Tailscale installed"
     log_warn "╔════════════════════════════════════════════════════════════════════╗"
-    log_warn "║  Run 'sudo tailscale up --ssh' after bootstrap to authenticate.    ║"
-    log_warn "║  This enables Tailscale SSH for keyless access from your Tailnet.  ║"
+    log_warn "║  Authenticate after bootstrap:                                     ║"
+    log_warn "║                                                                    ║"
+    log_warn "║    sudo tailscale up --ssh --advertise-tags=${TAILSCALE_TAGS}"
+    log_warn "║                                                                    ║"
+    log_warn "║  --ssh enables Tailscale SSH for keyless tailnet access.           ║"
+    log_warn "║  --advertise-tags makes the node tailnet-owned so its key never    ║"
+    log_warn "║  expires. Without a tag the key expires after 180 days and the     ║"
+    log_warn "║  server drops off the tailnet with no warning.                     ║"
+    log_warn "║                                                                    ║"
+    log_warn "║  The tag must first exist in the tailnet ACL (tagOwners). If you   ║"
+    log_warn "║  authenticate untagged, disable key expiry for this machine in     ║"
+    log_warn "║  the admin console instead.                                        ║"
     log_warn "╚════════════════════════════════════════════════════════════════════╝"
 }
 
@@ -718,6 +734,18 @@ install_beszel_agent() {
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local service_src="${script_dir}/config/beszel-agent.service"
 
+    # Shared KEY predicate. Fail closed when unavailable (curl|bash run with no
+    # repo on disk): an unconfigured agent must never be enabled.
+    local beszel_lib="${script_dir}/lib/beszel.sh"
+    if [[ -f "${beszel_lib}" ]]; then
+        # shellcheck disable=SC1091  # Path is dynamically built from vars
+        # shellcheck source=lib/beszel.sh
+        source "${beszel_lib}"
+    else
+        log_warn "lib/beszel.sh not found - treating Beszel KEY as unconfigured"
+        beszel_key_configured() { return 1; }
+    fi
+
     if [[ -f "${service_src}" ]]; then
         cp "${service_src}" "${service_dir}/beszel-agent.service"
     else
@@ -725,6 +753,8 @@ install_beszel_agent() {
 [Unit]
 Description=Beszel Agent - System Resource Metrics Collector
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -750,15 +780,19 @@ ENVEOF
         log_warn "Beszel agent env created at ${env_file} (KEY needs configuration)"
     fi
 
-    # Enable service (don't start until KEY is configured)
+    # Enable the service only once a KEY is configured. Enabling it without one
+    # lets WantedBy=default.target start a guaranteed-failing agent on the next
+    # boot, which Restart=always then crash-loops indefinitely.
     systemctl --user daemon-reload
-    systemctl --user enable beszel-agent
 
-    if grep -q '^KEY=.\+' "${env_file}" 2>/dev/null; then
-        systemctl --user start beszel-agent
+    if beszel_key_configured "${env_file}"; then
+        systemctl --user enable --now beszel-agent
         log_ok "Beszel agent running on port ${agent_port}"
     else
-        log_warn "Beszel agent enabled (configure KEY in ${env_file} then: systemctl --user start beszel-agent)"
+        # Converge: undo a previous unconfigured enablement
+        systemctl --user disable --now beszel-agent 2>/dev/null || true
+        log_warn "Beszel agent NOT enabled - no KEY in ${env_file}"
+        log_warn "Add the Hub key, then: systemctl --user enable --now beszel-agent"
     fi
 }
 

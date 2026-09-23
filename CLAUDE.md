@@ -20,6 +20,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `bootstrap-dev-server.sh` | Main bootstrap script (idempotent, ~44KB) |
 | `flake.nix` | Nix dev shell definition with all tools |
 | `lib/logging.sh` | Shared logging library with timestamps and log files |
+| `lib/beszel.sh` | Beszel KEY predicate gating systemd enablement |
 | `tests/verify-server.sh` | Post-install verification script |
 | `scripts/secure-ssh-key.sh` | Add passphrase to SSH key helper |
 
@@ -155,6 +156,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `SSH_PORT` | 22 | SSH port |
 | `MOSH_PORT_START` | 60000 | Mosh UDP range start |
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
+| `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `LOG_LEVEL` | INFO | Minimum log level |
 | `LOG_FILE` | (auto) | Path to log file |
 

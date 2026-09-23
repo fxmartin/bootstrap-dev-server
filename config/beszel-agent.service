@@ -1,6 +1,11 @@
 [Unit]
 Description=Beszel Agent - System Resource Metrics Collector
 After=network.target
+# Give up instead of crash-looping forever on a permanent config error
+# (e.g. an unconfigured KEY). Without this, Restart=always retries every
+# RestartSec indefinitely.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

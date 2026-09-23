@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_PATH="${SCRIPT_DIR}/../lib/logging.sh"
 
+BESZEL_LIB_PATH="${SCRIPT_DIR}/../lib/beszel.sh"
+
 if [[ -f "${LIB_PATH}" ]]; then
     # shellcheck source=../lib/logging.sh
     source "${LIB_PATH}"
@@ -29,6 +31,10 @@ else
     # shellcheck disable=SC2312
     log_error() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${RED}[ERROR]${NC} ${1}" >&2; }
 fi
+
+# shellcheck disable=SC1091  # Path is dynamically built from vars
+# shellcheck source=../lib/beszel.sh
+source "${BESZEL_LIB_PATH}"
 
 # ============================================
 # Configuration
@@ -81,7 +87,7 @@ install_binary() {
 configure_env() {
     mkdir -p "$(dirname "${ENV_FILE}")"
 
-    if [[ -f "${ENV_FILE}" ]] && grep -q '^KEY=.\+' "${ENV_FILE}" 2>/dev/null; then
+    if beszel_key_configured "${ENV_FILE}"; then
         log_ok "Agent environment already configured: ${ENV_FILE}"
         return 0
     fi
@@ -133,6 +139,8 @@ install_service() {
 [Unit]
 Description=Beszel Agent - System Resource Metrics Collector
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -146,17 +154,21 @@ WantedBy=default.target
 EOF
     fi
 
+    # Enable only once a KEY is configured. Enabling it without one lets
+    # WantedBy=default.target start a guaranteed-failing agent on the next
+    # boot, which Restart=always then crash-loops indefinitely.
     systemctl --user daemon-reload
-    systemctl --user enable beszel-agent
 
-    if grep -q '^KEY=.\+' "${ENV_FILE}" 2>/dev/null; then
-        systemctl --user start beszel-agent
+    if beszel_key_configured "${ENV_FILE}"; then
+        systemctl --user enable --now beszel-agent
         log_ok "Beszel Agent running on port ${AGENT_PORT}"
     else
-        log_warn "Beszel Agent enabled but not started (KEY not configured)"
+        # Converge: undo a previous unconfigured enablement
+        systemctl --user disable --now beszel-agent 2>/dev/null || true
+        log_warn "Beszel Agent NOT enabled (KEY not configured)"
         echo ""
         echo "After configuring KEY in ${ENV_FILE}, run:"
-        echo "  systemctl --user start beszel-agent"
+        echo "  systemctl --user enable --now beszel-agent"
     fi
 }
 
