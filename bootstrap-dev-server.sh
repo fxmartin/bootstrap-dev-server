@@ -360,6 +360,9 @@ clone_bootstrap_repo() {
 
         # Pull latest changes
         log_info "Pulling latest changes..."
+        # Repair a truncated sparse checkout before pulling, so lib/ and
+        # config/ are present for the rest of this run.
+        converge_sparse_checkout "${REPO_CLONE_DIR}" "${BOOTSTRAP_SUBDIR}" || true
         if (cd "${REPO_CLONE_DIR}" && git pull --quiet); then
             log_ok "Repository updated"
             # Update submodules (Claude Code configs from nix-install)
@@ -375,27 +378,56 @@ clone_bootstrap_repo() {
     # Create parent directory
     mkdir -p "$(dirname "${REPO_CLONE_DIR}")"
 
-    # Clone with sparse checkout (only bootstrap-dev-server folder)
-    log_info "Using sparse checkout for ${BOOTSTRAP_SUBDIR} folder only..."
+    if [[ "${BOOTSTRAP_SUBDIR}" == "." ]]; then
+        log_info "Cloning the full repository..."
+        git clone --filter=blob:none --depth 1 \
+            "https://github.com/${GITHUB_REPO}.git" "${REPO_CLONE_DIR}"
+    else
+        log_info "Using sparse checkout for ${BOOTSTRAP_SUBDIR} folder only..."
+        git clone --filter=blob:none --no-checkout --depth 1 --sparse \
+            "https://github.com/${GITHUB_REPO}.git" "${REPO_CLONE_DIR}"
+    fi
 
-    # Initialize empty repository
-    git clone --filter=blob:none --no-checkout --depth 1 --sparse \
-        "https://github.com/${GITHUB_REPO}.git" "${REPO_CLONE_DIR}"
-
-    # Configure sparse checkout
+    converge_sparse_checkout "${REPO_CLONE_DIR}" "${BOOTSTRAP_SUBDIR}"
     cd "${REPO_CLONE_DIR}"
-    git sparse-checkout set "${BOOTSTRAP_SUBDIR}"
-
-    # Checkout the files
-    git checkout
 
     # Initialize submodules (Claude Code configs from nix-install)
     log_info "Initializing Git submodules..."
     git submodule update --init --recursive
     log_ok "Submodules initialized"
 
-    log_ok "Repository cloned (sparse) at ${REPO_CLONE_DIR}"
-    log_info "Only ${BOOTSTRAP_SUBDIR}/ folder downloaded"
+    log_ok "Repository cloned at ${REPO_CLONE_DIR}"
+}
+
+#===============================================================================
+# Sparse Checkout Convergence
+#===============================================================================
+# `git sparse-checkout set .` materialises ONLY root-level files - lib/,
+# scripts/, config/, profiles/ and tests/ are silently omitted while
+# `git status` still reports a clean tree. That was harmless when this project
+# lived inside nix-install as a subfolder; standalone it means the bootstrap
+# script cannot source lib/, and config/ and tests/ never reach the server.
+#
+# Converges both fresh and existing clones, so servers already carrying the
+# truncated checkout are repaired on the next run.
+converge_sparse_checkout() {
+    local repo_dir="$1"
+    local subdir="${2:-.}"
+
+    [[ -e "${repo_dir}/.git" ]] || return 1
+
+    if [[ "${subdir}" == "." ]]; then
+        # Whole repository wanted: sparse checkout must be off entirely.
+        if [[ "$(git -C "${repo_dir}" config --get core.sparseCheckout 2>/dev/null)" == "true" ]]; then
+            log_info "Disabling sparse checkout (whole repository required)"
+            git -C "${repo_dir}" sparse-checkout disable
+        fi
+    else
+        git -C "${repo_dir}" sparse-checkout set "${subdir}"
+    fi
+
+    # Materialise the working tree for clones made with --no-checkout
+    git -C "${repo_dir}" checkout --quiet 2>/dev/null || true
 }
 
 #===============================================================================
