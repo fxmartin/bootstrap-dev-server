@@ -463,7 +463,8 @@ if command -v tailscale &>/dev/null; then
         if [[ "${EXPIRY_EPOCH}" -eq 0 ]]; then
             info "Tailscale node key expires: ${TS_EXPIRY}"
         else
-            DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+            SECONDS_LEFT=$((EXPIRY_EPOCH - NOW_EPOCH))
+            DAYS_LEFT=$((SECONDS_LEFT / 86400))
             if [[ "${DAYS_LEFT}" -lt 0 ]]; then
                 fail "Tailscale node key EXPIRED ${DAYS_LEFT#-} days ago (${TS_EXPIRY})"
             elif [[ "${DAYS_LEFT}" -lt 30 ]]; then
