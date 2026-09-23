@@ -718,6 +718,18 @@ install_beszel_agent() {
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local service_src="${script_dir}/config/beszel-agent.service"
 
+    # Shared KEY predicate. Fail closed when unavailable (curl|bash run with no
+    # repo on disk): an unconfigured agent must never be enabled.
+    local beszel_lib="${script_dir}/lib/beszel.sh"
+    if [[ -f "${beszel_lib}" ]]; then
+        # shellcheck disable=SC1091  # Path is dynamically built from vars
+        # shellcheck source=lib/beszel.sh
+        source "${beszel_lib}"
+    else
+        log_warn "lib/beszel.sh not found - treating Beszel KEY as unconfigured"
+        beszel_key_configured() { return 1; }
+    fi
+
     if [[ -f "${service_src}" ]]; then
         cp "${service_src}" "${service_dir}/beszel-agent.service"
     else
@@ -725,6 +737,8 @@ install_beszel_agent() {
 [Unit]
 Description=Beszel Agent - System Resource Metrics Collector
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -750,15 +764,19 @@ ENVEOF
         log_warn "Beszel agent env created at ${env_file} (KEY needs configuration)"
     fi
 
-    # Enable service (don't start until KEY is configured)
+    # Enable the service only once a KEY is configured. Enabling it without one
+    # lets WantedBy=default.target start a guaranteed-failing agent on the next
+    # boot, which Restart=always then crash-loops indefinitely.
     systemctl --user daemon-reload
-    systemctl --user enable beszel-agent
 
-    if grep -q '^KEY=.\+' "${env_file}" 2>/dev/null; then
-        systemctl --user start beszel-agent
+    if beszel_key_configured "${env_file}"; then
+        systemctl --user enable --now beszel-agent
         log_ok "Beszel agent running on port ${agent_port}"
     else
-        log_warn "Beszel agent enabled (configure KEY in ${env_file} then: systemctl --user start beszel-agent)"
+        # Converge: undo a previous unconfigured enablement
+        systemctl --user disable --now beszel-agent 2>/dev/null || true
+        log_warn "Beszel agent NOT enabled - no KEY in ${env_file}"
+        log_warn "Add the Hub key, then: systemctl --user enable --now beszel-agent"
     fi
 }
 
