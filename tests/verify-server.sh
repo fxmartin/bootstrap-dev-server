@@ -446,7 +446,7 @@ if command -v tailscale &>/dev/null; then
             info "Tailscale IP: ${TS_IP}"
             ;;
         NeedsLogin)
-            fail "Tailscale is NOT authenticated (BackendState=NeedsLogin) - run: sudo tailscale up --ssh --advertise-tags=tag:server"
+            fail "Tailscale is NOT authenticated (BackendState=NeedsLogin) - run: sudo tailscale up --advertise-tags=tag:server"
             ;;
         Stopped)
             fail "Tailscale is stopped (BackendState=Stopped) - run: sudo tailscale up"
@@ -459,9 +459,11 @@ if command -v tailscale &>/dev/null; then
     # Test 13.2: Node key expiry.
     # A tagged node reports no expiry; an untagged one expires after 180 days
     # and drops off the tailnet silently.
-    # Scope to the Self object: peers carry their own KeyExpiry values.
-    # jq is not on the server outside the dev shell, hence the sed range.
-    TS_SELF_JSON="$(tailscale status --json 2>/dev/null | sed -n '/"Self":/,/"Peer":/p' || true)"
+    # Scope to Self: peers carry their own KeyExpiry values. jq is not on the
+    # server outside the dev shell, and truncating on the "Peer" key works
+    # whether the JSON is pretty-printed or compact.
+    TS_STATUS_JSON="$(tailscale status --json 2>/dev/null || true)"
+    TS_SELF_JSON="${TS_STATUS_JSON%%\"Peer\":*}"
     TS_EXPIRY="$(echo "${TS_SELF_JSON}" | grep -o '"KeyExpiry": *"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
     if [[ -z "${TS_EXPIRY}" || "${TS_EXPIRY}" == "null" ]]; then
         pass "Tailscale node key does not expire (tagged node or expiry disabled)"
