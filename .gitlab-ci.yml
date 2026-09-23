@@ -41,7 +41,7 @@ shellcheck:
   image: 127.0.0.1:5001/local/omarchy-install-ci@sha256:25270c64da5e4448abe6975c2ca908a4bba21f0a9bd64ef6f503e70280891ff1
   script:
     - shellcheck --version
-    - shellcheck --severity=warning bootstrap-dev-server.sh hcloud-provision.sh lib/*.sh scripts/*.sh profiles/*.sh tests/verify-server.sh tests/e2e/e2e-runner.sh
+    - shellcheck --severity=warning bootstrap-dev-server.sh hcloud-provision.sh lib/*.sh scripts/*.sh profiles/*.sh config/*.sh tests/verify-server.sh tests/e2e/e2e-runner.sh
 
 # The suite sandboxes HOME under a temp dir, mocks sudo/apt-get/systemctl/ssh,
 # and mostly greps the scripts it covers, so it touches nothing on the runner

@@ -16,7 +16,7 @@
 #  11. CLAUDE.md           - Template file created
 #  12. Herdr               - Available, and no stale MCP entries remain
 #  13. Tailscale           - Authenticated, node key not expiring soon
-#  14. Monitoring          - Beszel agent configured and actually running
+#  14. Monitoring          - node_exporter active, tailnet-only bind, /metrics served
 #
 # Usage:
 #   ssh dev-server 'bash -s' < tests/verify-server.sh
@@ -488,46 +488,61 @@ else
     warn "Tailscale is not installed"
 fi
 
-header "14. Monitoring (Beszel) Tests"
+header "14. Monitoring (node_exporter) Tests"
 
-BESZEL_ENV="${HOME}/.config/beszel-agent.env"
-BESZEL_UNIT="${HOME}/.config/systemd/user/beszel-agent.service"
+NODE_EXPORTER_UNIT="/etc/systemd/system/node-exporter.service"
 
-if [[ -f "${BESZEL_UNIT}" ]]; then
-    pass "Beszel agent unit is installed"
+if [[ -f "${NODE_EXPORTER_UNIT}" ]]; then
+    pass "node-exporter unit is installed"
 
-    # Test 14.1: KEY is configured
-    BESZEL_KEY="$(sed -n 's/^[[:space:]]*KEY=//p' "${BESZEL_ENV}" 2>/dev/null | tail -n 1 | tr -d '"'"'"'[:space:]')"
-    BESZEL_ENABLED=no
-    systemctl --user is-enabled --quiet beszel-agent 2>/dev/null && BESZEL_ENABLED=yes
-
-    if [[ -n "${BESZEL_KEY}" ]]; then
-        pass "Beszel agent KEY is configured"
-    elif [[ "${BESZEL_ENABLED}" == "yes" ]]; then
-        fail "Beszel agent is ENABLED with an empty KEY in ${BESZEL_ENV} - it will crash-loop on every boot"
-    else
-        warn "Beszel agent KEY is not configured (unit correctly left disabled)"
-    fi
-
-    # Test 14.2: If enabled, it must actually be running.
+    # Test 14.1: enabled and actually running.
     # A crash-looping unit reports 'activating' (auto-restart), which is
     # neither 'active' nor 'failed' - so `is-active` alone would miss it.
-    if [[ "${BESZEL_ENABLED}" == "yes" ]]; then
-        BESZEL_STATE="$(systemctl --user is-active beszel-agent 2>/dev/null || true)"
-        case "${BESZEL_STATE}" in
-            active)
-                pass "Beszel agent is running"
-                ;;
-            activating)
-                fail "Beszel agent is crash-looping (state=activating) - check: journalctl --user -u beszel-agent"
-                ;;
-            *)
-                fail "Beszel agent is enabled but not running (state=${BESZEL_STATE:-unknown})"
-                ;;
-        esac
+    if systemctl is-enabled --quiet node-exporter 2>/dev/null; then
+        pass "node-exporter is enabled at boot"
+    else
+        fail "node-exporter is not enabled - it will not survive a reboot"
+    fi
+
+    NE_STATE="$(systemctl is-active node-exporter 2>/dev/null || true)"
+    case "${NE_STATE}" in
+        active)
+            pass "node-exporter is running"
+            ;;
+        activating)
+            fail "node-exporter is crash-looping (state=activating) - check: journalctl -u node-exporter"
+            ;;
+        *)
+            fail "node-exporter is not running (state=${NE_STATE:-unknown}) - check: journalctl -u node-exporter"
+            ;;
+    esac
+
+    # Test 14.2: /metrics is served on the Tailscale IP.
+    NE_TS_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${NE_TS_IP}" ]]; then
+        fail "Cannot resolve the Tailscale IP - node_exporter has nothing safe to bind to"
+    elif curl -fsS --max-time 5 "http://${NE_TS_IP}:9100/metrics" 2>/dev/null | grep -q 'node_exporter_build_info'; then
+        pass "node_exporter serves /metrics on ${NE_TS_IP}:9100"
+    else
+        fail "No node_exporter_build_info from http://${NE_TS_IP}:9100/metrics"
+    fi
+
+    # Test 14.3: nothing listens on 9100 publicly. node_exporter has no auth;
+    # a 0.0.0.0 or [::] bind on a public Hetzner box exposes every metric.
+    if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE '^(0\.0\.0\.0|\*|\[::\]):9100$'; then
+        fail "Port 9100 is bound on all interfaces (0.0.0.0:9100) - node_exporter must bind to the Tailscale IP only"
+    else
+        pass "Port 9100 is not bound on 0.0.0.0"
+    fi
+
+    # Test 14.4: firewall rule is scoped to tailscale0
+    if sudo ufw status 2>/dev/null | grep -E '9100' | grep -q 'tailscale0'; then
+        pass "UFW allows 9100 on tailscale0 only"
+    else
+        warn "No tailscale0-scoped UFW rule for 9100 - Prometheus on the NAS cannot scrape"
     fi
 else
-    warn "Beszel agent is not installed"
+    warn "node_exporter is not installed"
 fi
 
 # ============================================================================
