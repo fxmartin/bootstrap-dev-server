@@ -518,10 +518,18 @@ if [[ -f "${NODE_EXPORTER_UNIT}" ]]; then
     esac
 
     # Test 14.2: /metrics is served on the Tailscale IP.
+    # The body is captured first: piping curl into `grep -q` closes the pipe
+    # on the first match, curl then fails with a write error, and under
+    # pipefail a healthy exporter reads as broken (it also logs a
+    # "connection reset by peer" for every check).
     NE_TS_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+    NE_METRICS=""
+    if [[ -n "${NE_TS_IP}" ]]; then
+        NE_METRICS="$(curl -fsS --max-time 5 "http://${NE_TS_IP}:9100/metrics" 2>/dev/null || true)"
+    fi
     if [[ -z "${NE_TS_IP}" ]]; then
         fail "Cannot resolve the Tailscale IP - node_exporter has nothing safe to bind to"
-    elif curl -fsS --max-time 5 "http://${NE_TS_IP}:9100/metrics" 2>/dev/null | grep -q 'node_exporter_build_info'; then
+    elif grep -q 'node_exporter_build_info' <<< "${NE_METRICS}"; then
         pass "node_exporter serves /metrics on ${NE_TS_IP}:9100"
     else
         fail "No node_exporter_build_info from http://${NE_TS_IP}:9100/metrics"
