@@ -67,6 +67,10 @@ GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocki
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
 
 # Tailscale configuration
+# Restrict SSH and Mosh to the tailnet interface, closing them on the public
+# internet. Off by default: a fresh server has no tailnet yet, and enabling
+# this before Tailscale is up would lock the operator out immediately.
+SSH_TAILNET_ONLY="${SSH_TAILNET_ONLY:-false}"
 # Tagged nodes are owned by the tailnet, not a user, so their node keys never
 # expire. An untagged `tailscale up` expires after 180 days and silently drops
 # the server off the tailnet.
@@ -532,6 +536,46 @@ configure_firewall() {
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
 
+    local tailnet_only=false
+
+    if [[ "${SSH_TAILNET_ONLY}" == "true" ]]; then
+        # Closing public SSH is only safe while the tailnet is guaranteed
+        # reachable. An untagged node key expires after 180 days, and if that
+        # happens once public SSH is shut, the Hetzner web console is the only
+        # way back in.
+        local ts_lib="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/lib/tailscale.sh"
+        if [[ -f "${ts_lib}" ]]; then
+            # shellcheck disable=SC1091  # Path is dynamically built from vars
+            # shellcheck source=lib/tailscale.sh
+            source "${ts_lib}"
+        else
+            log_warn "lib/tailscale.sh not found - treating the node key as expiring"
+            tailscale_key_never_expires() { return 1; }
+        fi
+
+        if tailscale_key_never_expires; then
+            tailnet_only=true
+            log_info "Tailnet-only access: node key never expires, SSH will be closed publicly"
+        else
+            log_error "SSH_TAILNET_ONLY=true but this node's Tailscale key can still expire"
+            log_error "refusing to close public SSH - you would be locked out when it expires"
+            log_error "Fix: sudo tailscale up --advertise-tags=${TAILSCALE_TAGS}"
+            log_error "     (or disable key expiry for this machine in the admin console)"
+        fi
+    fi
+
+    if [[ "${tailnet_only}" == "true" ]]; then
+        # SSH and Mosh on the tailnet interface only. Mosh follows SSH because
+        # a mosh session is bootstrapped over SSH.
+        sudo ufw allow in on tailscale0 to any port "${SSH_PORT}" proto tcp comment 'SSH (tailnet only)'
+        sudo ufw allow in on tailscale0 to any port "${MOSH_PORT_START}:${MOSH_PORT_END}" proto udp comment 'Mosh (tailnet only)'
+        sudo ufw --force enable
+        log_ok "Firewall configured - SSH/Mosh reachable on the tailnet only"
+        log_warn "Public SSH is CLOSED. Break-glass access is the Hetzner web console;"
+        log_warn "make sure you can log in there before you need it."
+        return 0
+    fi
+
     # SSH with optional rate limiting (blocks after 6 connections in 30 seconds from same IP)
     if [[ "${UFW_RATE_LIMIT:-true}" == "true" ]]; then
         sudo ufw limit "${SSH_PORT}"/tcp comment 'SSH with rate limiting'
@@ -679,9 +723,13 @@ install_tailscale() {
     log_warn "╔════════════════════════════════════════════════════════════════════╗"
     log_warn "║  Authenticate after bootstrap:                                     ║"
     log_warn "║                                                                    ║"
-    log_warn "║    sudo tailscale up --ssh --advertise-tags=${TAILSCALE_TAGS}"
+    log_warn "║    sudo tailscale up --advertise-tags=${TAILSCALE_TAGS}"
     log_warn "║                                                                    ║"
-    log_warn "║  --ssh enables Tailscale SSH for keyless tailnet access.           ║"
+    log_warn "║  Do NOT pass --ssh: Tailscale SSH intercepts port 22 on the        ║"
+    log_warn "║  tailnet and demands an interactive browser check, which breaks    ║"
+    log_warn "║  headless and scripted access. Plain sshd over the tailnet IP      ║"
+    log_warn "║  keeps working with your existing key.                             ║"
+    log_warn "║                                                                    ║"
     log_warn "║  --advertise-tags makes the node tailnet-owned so its key never    ║"
     log_warn "║  expires. Without a tag the key expires after 180 days and the     ║"
     log_warn "║  server drops off the tailnet with no warning.                     ║"

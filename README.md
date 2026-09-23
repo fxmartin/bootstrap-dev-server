@@ -408,10 +408,21 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up --ssh --advertise-tags=tag:server
+sudo tailscale up --advertise-tags=tag:server
 ```
 
-This displays a URL to authenticate with your Tailscale account. The `--ssh` flag enables Tailscale SSH, allowing you to connect without SSH keys from any device on your Tailnet.
+This displays a URL to authenticate with your Tailscale account.
+
+**Do not pass `--ssh`.** Tailscale SSH intercepts port 22 on the tailnet interface and
+demands an interactive browser check on connect:
+
+```
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/...
+```
+
+That breaks headless and scripted access. Without `--ssh`, port 22 on the tailnet reaches
+normal `sshd` and your existing key works as it always has.
 
 **`--advertise-tags` is not optional for an always-on server.** A node authenticated as a
 user gets a node key that expires after **180 days**; when it does, the server silently
@@ -434,6 +445,30 @@ Check where you stand at any time:
 ```bash
 tailscale status --json | jq '.Self.KeyExpiry'   # null on a tagged node
 ```
+
+### Restricting SSH to the Tailnet
+
+Once Tailscale is working, SSH and Mosh can be closed on the public internet entirely:
+
+```bash
+SSH_TAILNET_ONLY=true ./bootstrap-dev-server.sh
+```
+
+UFW then allows port 22 and the Mosh range only on `tailscale0`. Mosh follows SSH because
+a mosh session is bootstrapped over SSH.
+
+**This is gated on a precondition, deliberately.** The script refuses to close public SSH
+unless this node's Tailscale key can never expire — that is, the node is tagged, or key
+expiry is disabled for it in the admin console:
+
+```
+[ERROR] SSH_TAILNET_ONLY=true but this node's Tailscale key can still expire
+[ERROR] refusing to close public SSH - you would be locked out when it expires
+```
+
+The reason is concrete: an untagged node key expires after 180 days. If that happens while
+public SSH is closed, the Hetzner web console is your only way back in. **Confirm you can
+log into the Hetzner console before enabling this.**
 
 Once connected, you can access your server via Tailscale IP which bypasses GeoIP restrictions:
 
