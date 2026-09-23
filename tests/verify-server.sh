@@ -14,7 +14,7 @@
 #   9. Git Configuration   - user.name, user.email set
 #  10. Repository Clone    - bootstrap-dev-server repo cloned
 #  11. CLAUDE.md           - Template file created
-#  12. MCP Servers         - mcp-servers-nix in flake inputs
+#  12. Herdr               - Available, and no stale MCP entries remain
 #  13. Tailscale           - Authenticated, node key not expiring soon
 #  14. Monitoring          - Beszel agent configured and actually running
 #
@@ -405,21 +405,29 @@ else
     warn "CLAUDE.md template not found"
 fi
 
-header "12. MCP Servers Tests"
+header "12. Herdr Tests"
 
-# Test 12.1: Check if mcp-servers-nix is in flake inputs
-if [[ -f "${DEV_FLAKE_PATH}/flake.lock" ]]; then
-    if grep -q "mcp-servers-nix" "${DEV_FLAKE_PATH}/flake.lock"; then
-        pass "mcp-servers-nix is in flake inputs"
+# Test 12.1: herdr is on PATH inside the dev shell
+if command -v herdr &>/dev/null; then
+    pass "herdr is available"
+    HERDR_VERSION="$(herdr --version 2>/dev/null || echo "unknown")"
+    info "herdr version: ${HERDR_VERSION}"
+else
+    warn "herdr not found (only present inside the dev shell)"
+fi
 
-        # Get the repo URL from flake.lock
-        MCP_REPO=$(grep -A5 '"mcp-servers-nix"' "${DEV_FLAKE_PATH}/flake.lock" | grep -o 'github:[^"]*' | head -1 || echo "unknown")
-        info "MCP servers source: ${MCP_REPO}"
+# Test 12.2: no stale MCP entries left behind in ~/.claude.json.
+# Their /nix/store paths get garbage-collected, so Claude Code would fail to
+# start those servers on every launch.
+CLAUDE_JSON="${HOME}/.claude.json"
+if [[ -f "${CLAUDE_JSON}" ]]; then
+    if grep -q '"context7"\|"sequential-thinking"' "${CLAUDE_JSON}" 2>/dev/null; then
+        fail "Stale MCP entries remain in ${CLAUDE_JSON} - re-enter the dev shell to prune them"
     else
-        warn "mcp-servers-nix not found in flake.lock"
+        pass "No stale MCP entries in ~/.claude.json"
     fi
 else
-    warn "Cannot check MCP servers - flake.lock missing"
+    info "No ~/.claude.json yet"
 fi
 
 header "13. Tailscale Tests"

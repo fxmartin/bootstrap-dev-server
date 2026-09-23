@@ -216,30 +216,6 @@ teardown() {
 }
 
 # =============================================================================
-# MCP Server Check Tests
-# =============================================================================
-
-@test "checks MCP config file" {
-    run grep "config.json" "${PROJECT_ROOT}/scripts/health-check.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "checks Context7 MCP server" {
-    run grep "context7" "${PROJECT_ROOT}/scripts/health-check.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "checks GitHub MCP server" {
-    run grep '"github"' "${PROJECT_ROOT}/scripts/health-check.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "checks Sequential Thinking MCP server" {
-    run grep "sequential-thinking" "${PROJECT_ROOT}/scripts/health-check.sh"
-    [ "$status" -eq 0 ]
-}
-
-# =============================================================================
 # Dev Tools Check Tests
 # =============================================================================
 

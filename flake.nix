@@ -1,5 +1,5 @@
 # ABOUTME: Nix flake for Bootstrap Dev Server Environment
-# ABOUTME: Provides development shells with Claude Code, MCP servers, Python, Node.js, and CLI tools
+# ABOUTME: Provides development shells with Claude Code, herdr, Python, Node.js, and CLI tools
 {
   description = "Bootstrap Dev Server Environment";
 
@@ -12,30 +12,15 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # MCP servers for Claude Code (Context7, Sequential Thinking)
-    # NOTE: nixpkgs.follows means mcp-servers-nix uses our nixpkgs version.
-    # If nixpkgs upgrades Node.js beyond v22, MCP server builds may fail because
-    # upstream requires Node.js 22 (see natsukium/mcp-servers-nix#285, fix: #276).
-    mcp-servers-nix = {
-      url = "github:natsukium/mcp-servers-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, claude-code-nix, mcp-servers-nix }:
+  outputs = { self, nixpkgs, flake-utils, claude-code-nix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
         };
-
-        # MCP servers:
-        # - context7: from mcp-servers-nix (referenced directly in shellHook)
-        # - sequential-thinking: from mcp-servers-nix (issue #285 fixed)
-        # Note: GitHub MCP removed — use `gh` CLI instead (faster, no token config needed)
-        sequentialThinkingMcp = mcp-servers-nix.packages.${system}.mcp-server-sequential-thinking;
       in
       {
         # Default dev shell
@@ -45,6 +30,9 @@
           buildInputs = [
             # Claude Code
             claude-code-nix.packages.${system}.claude-code
+
+            # Agent multiplexer - keeps coding agents in persistent panes
+            pkgs.herdr
 
             # Core CLI tools
             pkgs.git
@@ -108,7 +96,7 @@
             pkgs.python3Packages.rich          # Pretty terminal output
             pkgs.pre-commit                      # Git hooks for code quality
 
-            # Node.js (pinned to v22 - MCP servers require it, see mcp-servers-nix#285)
+            # Node.js (pinned to v22 deliberately; the MCP constraint that forced it is gone)
             pkgs.nodejs_22
 
             # React/Frontend Development
@@ -196,39 +184,16 @@
             export EDITOR=nvim
             export VISUAL=nvim
 
-            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
-            # Each server is checked individually - missing ones are added without overwriting existing config
-            # Note: GitHub operations use `gh` CLI (already in PATH) — no MCP server needed
+            # Prune MCP servers dropped from this flake.
+            # Their /nix/store paths get garbage-collected, so a leftover entry
+            # makes Claude Code fail to start that server on every launch.
             CLAUDE_JSON="$HOME/.claude.json"
-            MCP_UPDATED=false
-
-            # Create file if it doesn't exist
-            if [ ! -f "$CLAUDE_JSON" ]; then
-              echo '{}' > "$CLAUDE_JSON"
-            fi
-
-            # Add context7 if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
-                "type": "stdio",
-                "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added context7 MCP server"
-              MCP_UPDATED=true
-            fi
-
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
-              MCP_UPDATED=true
+            if [ -f "$CLAUDE_JSON" ]; then
+              if ${pkgs.jq}/bin/jq -e '.mcpServers.context7 // .mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
+                ${pkgs.jq}/bin/jq 'del(.mcpServers.context7) | del(.mcpServers["sequential-thinking"])' \
+                  "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+                echo "✓ Pruned stale MCP server entries from ~/.claude.json"
+              fi
             fi
 
             # Set up Claude Code agents and commands
@@ -450,7 +415,6 @@ MSMTPEOF
               echo "   Claude: $(claude --version 2>/dev/null || echo 'run: claude')"
               echo "   Python: $(python3 --version)"
               echo "   Node:   $(node --version)"
-              echo "   MCP:    Context7, Sequential Thinking"
               echo ""
               export __NIX_DEV_ZSH_LAUNCHED=1
               exec zsh
@@ -478,35 +442,16 @@ MSMTPEOF
               export TERM=xterm-256color
             fi
 
-            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
-            # Each server is checked individually - missing ones are added without overwriting existing config
+            # Prune MCP servers dropped from this flake.
+            # Their /nix/store paths get garbage-collected, so a leftover entry
+            # makes Claude Code fail to start that server on every launch.
             CLAUDE_JSON="$HOME/.claude.json"
-
-            # Create file if it doesn't exist
-            if [ ! -f "$CLAUDE_JSON" ]; then
-              echo '{}' > "$CLAUDE_JSON"
-            fi
-
-            # Add context7 if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
-                "type": "stdio",
-                "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added context7 MCP server"
-            fi
-
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
+            if [ -f "$CLAUDE_JSON" ]; then
+              if ${pkgs.jq}/bin/jq -e '.mcpServers.context7 // .mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
+                ${pkgs.jq}/bin/jq 'del(.mcpServers.context7) | del(.mcpServers["sequential-thinking"])' \
+                  "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+                echo "✓ Pruned stale MCP server entries from ~/.claude.json"
+              fi
             fi
           '';
         };
@@ -540,35 +485,16 @@ MSMTPEOF
               export TERM=xterm-256color
             fi
 
-            # Set up Claude Code MCP servers in ~/.claude.json (user scope)
-            # Each server is checked individually - missing ones are added without overwriting existing config
+            # Prune MCP servers dropped from this flake.
+            # Their /nix/store paths get garbage-collected, so a leftover entry
+            # makes Claude Code fail to start that server on every launch.
             CLAUDE_JSON="$HOME/.claude.json"
-
-            # Create file if it doesn't exist
-            if [ ! -f "$CLAUDE_JSON" ]; then
-              echo '{}' > "$CLAUDE_JSON"
-            fi
-
-            # Add context7 if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers.context7' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
-                "type": "stdio",
-                "command": "${mcp-servers-nix.packages.${system}.context7-mcp}/bin/context7-mcp",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added context7 MCP server"
-            fi
-
-            # Add sequential-thinking if missing
-            if ! ${pkgs.jq}/bin/jq -e '.mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-              ${pkgs.jq}/bin/jq '.mcpServers["sequential-thinking"] = {
-                "type": "stdio",
-                "command": "${sequentialThinkingMcp}/bin/mcp-server-sequential-thinking",
-                "args": [],
-                "env": {}
-              }' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-              echo "✓ Added sequential-thinking MCP server"
+            if [ -f "$CLAUDE_JSON" ]; then
+              if ${pkgs.jq}/bin/jq -e '.mcpServers.context7 // .mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
+                ${pkgs.jq}/bin/jq 'del(.mcpServers.context7) | del(.mcpServers["sequential-thinking"])' \
+                  "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+                echo "✓ Pruned stale MCP server entries from ~/.claude.json"
+              fi
             fi
           '';
         };
