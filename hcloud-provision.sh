@@ -654,6 +654,9 @@ REMOTE_SCRIPT
     # Configure git identity if provided (needed before any git operations)
     if [[ -n "${GIT_USER_NAME}" && -n "${GIT_USER_EMAIL}" ]]; then
         log_info "Configuring git identity..."
+        # The heredoc expands on the client on purpose: the identity values live
+        # here, not on the fresh server.
+        # shellcheck disable=SC2087
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY_PATH}" "root@${SERVER_IP}" <<GIT_SCRIPT
 set -e
 sudo -u ${SSH_USER} git config --global user.name "${GIT_USER_NAME}"
@@ -793,7 +796,8 @@ update_ssh_config() {
         port_line="    Port ${BOOTSTRAP_SSH_PORT}
 "
     fi
-    local entry="# Dev Server: ${SERVER_NAME} (provisioned $(date +%Y-%m-%d))
+    local entry
+    entry="# Dev Server: ${SERVER_NAME} (provisioned $(date +%Y-%m-%d))
 Host ${SERVER_NAME}
     HostName ${SERVER_IP}
 ${port_line}    User ${SSH_USER}

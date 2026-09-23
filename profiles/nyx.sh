@@ -132,7 +132,7 @@ setup_workspace() {
     # Create default workspace files
     log_step "Creating workspace files"
     
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/AGENTS.md" << 'AGENTSEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/AGENTS.md" > /dev/null << 'AGENTSEOF'
 # AGENTS.md - Your Workspace
 
 This folder is home. Treat it that way.
@@ -160,7 +160,7 @@ Capture what matters. Skip secrets unless asked.
 - When in doubt, ask
 AGENTSEOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/SOUL.md" << 'SOULEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/SOUL.md" > /dev/null << 'SOULEOF'
 # SOUL.md - Who You Are
 
 **Be genuinely helpful, not performatively helpful.** Skip the filler.
@@ -178,7 +178,7 @@ AGENTSEOF
 Concise when needed, thorough when it matters. Not a corporate drone.
 SOULEOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/USER.md" << 'USEREOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/USER.md" > /dev/null << 'USEREOF'
 # USER.md - About Your Human
 
 - **Name:** (to be configured)
@@ -187,7 +187,7 @@ SOULEOF
 The more I know, the better I can help.
 USEREOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/IDENTITY.md" << 'IDENTITYEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/IDENTITY.md" > /dev/null << 'IDENTITYEOF'
 # IDENTITY.md - Who Am I?
 
 - **Name:** Nyx
@@ -198,7 +198,7 @@ USEREOF
 Named after the Greek primordial goddess of night.
 IDENTITYEOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/TOOLS.md" << 'TOOLSEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/TOOLS.md" > /dev/null << 'TOOLSEOF'
 # TOOLS.md - Local Notes
 
 ## CLI Tools Available
@@ -219,14 +219,14 @@ IDENTITYEOF
 Add environment-specific notes here.
 TOOLSEOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/MEMORY.md" << 'MEMORYEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/MEMORY.md" > /dev/null << 'MEMORYEOF'
 # MEMORY.md - Long-Term Memory
 
 This file contains curated memories and important context.
 Update as you learn significant things.
 MEMORYEOF
 
-    sudo -u "${NYX_USER}" cat > "${NYX_WORKSPACE}/HEARTBEAT.md" << 'HEARTBEATEOF'
+    sudo -u "${NYX_USER}" tee "${NYX_WORKSPACE}/HEARTBEAT.md" > /dev/null << 'HEARTBEATEOF'
 # HEARTBEAT.md
 
 # Keep this file empty (or with only comments) to skip heartbeat tasks.
