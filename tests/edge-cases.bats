@@ -92,6 +92,9 @@ Line2"
 }
 
 @test "SSH key generation fails on read-only directory" {
+    # chmod-based fault injection silently no-ops for root, and CI jobs run
+    # as root: the write succeeds and the assertion inverts. Guard, don't bypass.
+    [ "$(id -u)" -ne 0 ] || skip "permission checks do not apply to root"
     local readonly_dir="${TEST_TEMP_DIR}/readonly"
     mkdir -p "${readonly_dir}"
     chmod 555 "${readonly_dir}"
