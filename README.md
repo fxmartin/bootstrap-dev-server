@@ -446,6 +446,19 @@ Check where you stand at any time:
 tailscale status --json | jq '.Self.KeyExpiry'   # null on a tagged node
 ```
 
+### Repairing a truncated checkout
+
+Servers provisioned before this fix have a sparse checkout scoped to `.`, which
+materialises only root-level files — `lib/`, `scripts/`, `config/`, `profiles/` and
+`tests/` are missing, while `git status` still reports clean. Re-running the bootstrap
+script repairs it automatically. To check by hand:
+
+```bash
+cd ~/.local/share/bootstrap-dev-server
+git config --get core.sparseCheckout   # "true" means truncated
+git sparse-checkout disable            # repair
+```
+
 ### Restricting SSH to the Tailnet
 
 Once Tailscale is working, SSH and Mosh can be closed on the public internet entirely:
