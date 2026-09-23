@@ -21,6 +21,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `flake.nix` | Nix dev shell definition with all tools |
 | `lib/logging.sh` | Shared logging library with timestamps and log files |
 | `lib/beszel.sh` | Beszel KEY predicate gating systemd enablement |
+| `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `tests/verify-server.sh` | Post-install verification script |
 | `scripts/secure-ssh-key.sh` | Add passphrase to SSH key helper |
 
@@ -38,7 +39,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Beszel agent (ships system metrics to Beszel Hub on Nyx via Tailscale, port 45876)
 
 **Development Environment:**
-- Claude Code with MCP servers (Context7, Sequential Thinking) + `gh` CLI for GitHub
+- Claude Code + herdr (agent multiplexer) + `gh` CLI for GitHub
 - Python 3.12 + uv + ruff + pytest stack
 - Node.js 22 + bun + pnpm + TypeScript
 - Nix development tools (nil, nixfmt-rfc-style)
@@ -157,6 +158,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `MOSH_PORT_START` | 60000 | Mosh UDP range start |
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
+| `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
 | `LOG_LEVEL` | INFO | Minimum log level |
 | `LOG_FILE` | (auto) | Path to log file |
 

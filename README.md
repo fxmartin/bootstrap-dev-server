@@ -248,7 +248,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 ### Development Environment
 - **Claude Code** with auto-updates
-- **MCP Servers**: Context7, Sequential Thinking (GitHub via `gh` CLI)
+- **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
 
@@ -408,10 +408,21 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up --ssh --advertise-tags=tag:server
+sudo tailscale up --advertise-tags=tag:server
 ```
 
-This displays a URL to authenticate with your Tailscale account. The `--ssh` flag enables Tailscale SSH, allowing you to connect without SSH keys from any device on your Tailnet.
+This displays a URL to authenticate with your Tailscale account.
+
+**Do not pass `--ssh`.** Tailscale SSH intercepts port 22 on the tailnet interface and
+demands an interactive browser check on connect:
+
+```
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/...
+```
+
+That breaks headless and scripted access. Without `--ssh`, port 22 on the tailnet reaches
+normal `sshd` and your existing key works as it always has.
 
 **`--advertise-tags` is not optional for an always-on server.** A node authenticated as a
 user gets a node key that expires after **180 days**; when it does, the server silently
@@ -434,6 +445,30 @@ Check where you stand at any time:
 ```bash
 tailscale status --json | jq '.Self.KeyExpiry'   # null on a tagged node
 ```
+
+### Restricting SSH to the Tailnet
+
+Once Tailscale is working, SSH and Mosh can be closed on the public internet entirely:
+
+```bash
+SSH_TAILNET_ONLY=true ./bootstrap-dev-server.sh
+```
+
+UFW then allows port 22 and the Mosh range only on `tailscale0`. Mosh follows SSH because
+a mosh session is bootstrapped over SSH.
+
+**This is gated on a precondition, deliberately.** The script refuses to close public SSH
+unless this node's Tailscale key can never expire — that is, the node is tagged, or key
+expiry is disabled for it in the admin console:
+
+```
+[ERROR] SSH_TAILNET_ONLY=true but this node's Tailscale key can still expire
+[ERROR] refusing to close public SSH - you would be locked out when it expires
+```
+
+The reason is concrete: an untagged node key expires after 180 days. If that happens while
+public SSH is closed, the Hetzner web console is your only way back in. **Confirm you can
+log into the Hetzner console before enabling this.**
 
 Once connected, you can access your server via Tailscale IP which bypasses GeoIP restrictions:
 
@@ -577,14 +612,24 @@ See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detaile
 
 ## Post-Installation
 
-### MCP Server Configuration
+### Herdr
 
-Claude Code MCP servers are automatically configured:
+[Herdr](https://herdr.dev) is an agent multiplexer: it keeps coding agents in persistent
+terminal panes and shows at a glance which are running, waiting, or idle. It ships in the
+default dev shell — just run `herdr`.
 
-- **Context7**: Documentation lookup (no auth required)
-- **Sequential Thinking**: Enhanced reasoning (no auth required)
+Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
+multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
+its own tmux window, or skipping tmux when you use it.
 
-GitHub operations use the `gh` CLI (included in the dev shell) instead of an MCP server. Authenticate with:
+### GitHub Authentication
+
+MCP servers were removed from this flake — Context7 and Sequential Thinking pulled in a
+`mcp-servers-nix` input that pinned Node.js to v22 and blocked nixpkgs upgrades. Entering
+the dev shell now prunes any leftover entries from `~/.claude.json`, since their
+`/nix/store` paths are garbage-collected and Claude Code would fail to start them.
+
+GitHub operations use the `gh` CLI (included in the dev shell). Authenticate with:
 
 ```bash
 gh auth login
@@ -898,7 +943,7 @@ After installation:
 
 ```
 ~
-├── .claude.json               # Claude Code config (includes MCP servers)
+├── .claude.json               # Claude Code config
 ├── .claude/
 │   ├── agents/                # Custom agent definitions (symlinked)
 │   └── commands/              # Custom slash commands (symlinked)
@@ -1266,7 +1311,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - [Determinate Systems](https://determinate.systems/) for the Nix installer
 - [sadjow/claude-code-nix](https://github.com/sadjow/claude-code-nix) for Claude Code packaging
-- [natsukium/mcp-servers-nix](https://github.com/natsukium/mcp-servers-nix) for MCP server Nix packaging
+- [herdrdev/herdr](https://github.com/herdrdev/herdr) for the agent multiplexer
 - [Anthropic](https://anthropic.com) for Claude Code
 - [Hetzner Cloud](https://www.hetzner.com/cloud) for affordable, reliable VPS hosting
 - [Blink Shell](https://blink.sh/) for the best iOS SSH/Mosh client

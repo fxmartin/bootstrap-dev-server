@@ -15,8 +15,7 @@
 #   6. Nix Store - Size, generation count
 #   7. Dev Caches - uv, npm, pnpm cache sizes
 #   8. Claude Code - Availability in PATH
-#   9. MCP Servers - Configuration file exists
-#  10. Dev Tools - gh, rg, fd, bat, fzf, lazygit
+#   9. Dev Tools - gh, rg, fd, bat, fzf, lazygit
 
 set -euo pipefail
 
@@ -336,36 +335,7 @@ else
 fi
 
 # =============================================================================
-# CHECK 9: MCP Servers
-# =============================================================================
-
-echo ""
-echo "Checking MCP servers..."
-
-MCP_CONFIG="$HOME/.config/claude/config.json"
-
-if [[ -f "${MCP_CONFIG}" ]]; then
-    print_status "ok" "MCP config exists: ${MCP_CONFIG}"
-
-    # Check for specific servers in config
-    if grep -q "context7" "${MCP_CONFIG}" 2>/dev/null; then
-        print_status "ok" "Context7 MCP server configured"
-    else
-        print_status "warn" "Context7 MCP server not found in config"
-    fi
-
-    if grep -q "sequential-thinking" "${MCP_CONFIG}" 2>/dev/null; then
-        print_status "ok" "Sequential Thinking MCP server configured"
-    else
-        print_status "warn" "Sequential Thinking MCP server not found in config"
-    fi
-else
-    print_status "warn" "MCP config not found: ${MCP_CONFIG}"
-    echo "    → Enter dev shell to generate: dev"
-fi
-
-# =============================================================================
-# CHECK 10: Dev Tools
+# CHECK 9: Dev Tools
 # =============================================================================
 
 echo ""

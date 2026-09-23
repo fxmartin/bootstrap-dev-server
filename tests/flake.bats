@@ -288,3 +288,69 @@ teardown() {
         skip "nix not available"
     fi
 }
+
+# =============================================================================
+# Herdr Tests
+# =============================================================================
+
+@test "flake provides herdr in the default shell" {
+    run grep -q 'pkgs.herdr' "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -eq 0 ]
+}
+
+@test "herdr resolves from the locked nixpkgs for the server arch" {
+    # The January pin predated the package entirely; the lock must have moved.
+    command -v nix &>/dev/null || skip "nix not available"
+    run nix eval --raw "${PROJECT_ROOT}#nixpkgs-unused" --apply "_: 1" 2>/dev/null
+    run nix eval --raw --impure --expr \
+        "(builtins.getFlake \"${PROJECT_ROOT}\").inputs.nixpkgs.legacyPackages.x86_64-linux.herdr.version"
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+}
+
+# =============================================================================
+# MCP Removal Tests
+# =============================================================================
+# MCP servers were dropped: Context7 and Sequential Thinking added a
+# mcp-servers-nix input that pinned Node.js to v22 and blocked nixpkgs
+# upgrades (see mcp-servers-nix#285). GitHub operations already use `gh`.
+
+@test "flake has no mcp-servers-nix input" {
+    run grep -q 'mcp-servers-nix' "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -ne 0 ]
+}
+
+@test "flake shell hooks reference no MCP package outputs" {
+    run grep -q 'context7-mcp\|mcp-server-sequential-thinking\|sequentialThinkingMcp' "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -ne 0 ]
+}
+
+@test "flake never adds an MCP server" {
+    # Only the prune path may mention mcpServers now.
+    run bash -c "grep -n 'mcpServers' '${PROJECT_ROOT}/flake.nix' | grep -v 'del(' | grep -v 'jq -e' || true"
+    [ -z "$output" ]
+}
+
+@test "flake.lock has no mcp-servers-nix node" {
+    run grep -q 'mcp-servers-nix' "${PROJECT_ROOT}/flake.lock"
+    [ "$status" -ne 0 ]
+}
+
+@test "shell hook prunes stale MCP entries from ~/.claude.json" {
+    # Entries left behind point at /nix/store paths that get garbage-collected,
+    # so Claude Code would fail to start those servers on every launch.
+    run grep -q 'prune_stale_mcp\|del(.mcpServers' "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -eq 0 ]
+}
+
+@test "health-check.sh no longer checks MCP servers" {
+    run grep -qi 'mcp' "${PROJECT_ROOT}/scripts/health-check.sh"
+    [ "$status" -ne 0 ]
+}
+
+@test "verify-server.sh checks for stale MCP entries instead of configuring them" {
+    run grep -q 'mcp-servers-nix' "${PROJECT_ROOT}/tests/verify-server.sh"
+    [ "$status" -ne 0 ]
+    run grep -q 'Stale MCP entries' "${PROJECT_ROOT}/tests/verify-server.sh"
+    [ "$status" -eq 0 ]
+}
