@@ -51,8 +51,8 @@ teardown() {
 # =============================================================================
 # verify-server.sh Coverage Tests
 # =============================================================================
-# The server sat off the tailnet for 34 days and Beszel crash-looped for
-# months; neither was in the verification script's remit.
+# The server sat off the tailnet for 34 days and the monitoring agent
+# crash-looped for months; neither was in the verification script's remit.
 
 @test "verify-server checks tailscale backend state" {
     run grep -q 'BackendState\|tailscale status' "${VERIFY}"
@@ -69,8 +69,8 @@ teardown() {
     [ "${status}" -eq 0 ]
 }
 
-@test "verify-server checks the beszel agent unit" {
-    run grep -q 'beszel-agent' "${VERIFY}"
+@test "verify-server checks the node-exporter unit" {
+    run grep -q 'node-exporter' "${VERIFY}"
     [ "${status}" -eq 0 ]
 }
 

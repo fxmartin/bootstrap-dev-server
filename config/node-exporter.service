@@ -1,0 +1,33 @@
+[Unit]
+Description=Prometheus node_exporter (bound to the Tailscale address only)
+Documentation=https://github.com/prometheus/node_exporter
+# The start wrapper needs tailscaled's IPv4. Ordering after it avoids burning
+# retries on every boot; Wants= rather than Requires= so a stopped tailscaled
+# turns into the wrapper's bounded retry loop instead of a dependency failure.
+After=network-online.target tailscaled.service
+Wants=network-online.target
+# node_exporter has NO authentication. Security model: the wrapper binds to the
+# Tailscale IP only and refuses to start without one, UFW opens 9100 on
+# tailscale0 only, and the Tailscale ACL decides which node may scrape.
+#
+# The wrapper already waits 12 x 10 s for the tailnet. StartLimit caps the
+# restart loop on top of that, so a permanently-down tailnet ends in a failed
+# unit instead of an endless crash-loop.
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=node_exporter
+Group=node_exporter
+ExecStart=/usr/local/bin/node-exporter-start
+Restart=on-failure
+RestartSec=10
+# The exporter only reads /proc, /sys, the systemd bus and the textfile dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
