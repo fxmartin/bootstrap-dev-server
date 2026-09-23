@@ -66,6 +66,12 @@ UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting fo
 GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
 
+# Tailscale configuration
+# Tagged nodes are owned by the tailnet, not a user, so their node keys never
+# expire. An untagged `tailscale up` expires after 180 days and silently drops
+# the server off the tailnet.
+TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:server}"     # Tags to advertise on `tailscale up`
+
 # GitHub authentication
 SKIP_GITHUB_AUTH="${SKIP_GITHUB_AUTH:-false}"      # Skip GitHub CLI authentication (for testing)
 
@@ -671,8 +677,18 @@ install_tailscale() {
 
     log_ok "Tailscale installed"
     log_warn "╔════════════════════════════════════════════════════════════════════╗"
-    log_warn "║  Run 'sudo tailscale up --ssh' after bootstrap to authenticate.    ║"
-    log_warn "║  This enables Tailscale SSH for keyless access from your Tailnet.  ║"
+    log_warn "║  Authenticate after bootstrap:                                     ║"
+    log_warn "║                                                                    ║"
+    log_warn "║    sudo tailscale up --ssh --advertise-tags=${TAILSCALE_TAGS}"
+    log_warn "║                                                                    ║"
+    log_warn "║  --ssh enables Tailscale SSH for keyless tailnet access.           ║"
+    log_warn "║  --advertise-tags makes the node tailnet-owned so its key never    ║"
+    log_warn "║  expires. Without a tag the key expires after 180 days and the     ║"
+    log_warn "║  server drops off the tailnet with no warning.                     ║"
+    log_warn "║                                                                    ║"
+    log_warn "║  The tag must first exist in the tailnet ACL (tagOwners). If you   ║"
+    log_warn "║  authenticate untagged, disable key expiry for this machine in     ║"
+    log_warn "║  the admin console instead.                                        ║"
     log_warn "╚════════════════════════════════════════════════════════════════════╝"
 }
 
