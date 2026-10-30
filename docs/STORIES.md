@@ -39,7 +39,7 @@ graph LR
 
 ## Critical Path
 1. 01.1-001 (everything depends on the default profile).
-2. 01.2-001 once FX has chosen the fleet herdr version (0.9.3 or 0.9.5), then 01.2-002.
+2. 01.2-001 (herdr pinned to the fleet's 0.9.3, FX 2026-10-30), then 01.2-002.
 3. 01.1-002 and 01.3-002 in parallel with 01.2.
 4. 01.3-001 after 01.2-001; 01.3-003 last.
 
