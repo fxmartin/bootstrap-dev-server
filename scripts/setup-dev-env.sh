@@ -230,13 +230,20 @@ eval "$(fzf --zsh)"
 alias sendmail='msmtp'
 alias mail='msmtp'
 
-# Auto-launch tmux on SSH connection
-# - Attaches to existing 'main' session or creates new one
-# - Only runs on SSH connections (not local terminals)
-# - Skips if already inside tmux
-if [[ ( -n "$SSH_CONNECTION" || -n "$MOSH_CONNECTION" ) && -z "$TMUX" ]]; then
-  tmux attach-session -t main 2>/dev/null || tmux new-session -s main
-fi
+# Attach to the herdr server on an interactive ssh login
+# - SSH_TTY set and no SSH_ORIGINAL_COMMAND: a login, not `ssh dev '<cmd>'`, scp or a probe
+# - Skipped inside herdr (HERDR_ENV) so a pane never nests a second client
+# - Skipped with NO_HERDR=1, e.g. `ssh -o SetEnv=NO_HERDR=1 dev` (sshd AcceptEnv NO_HERDR)
+# - Not exec'd: quitting herdr returns to this plain login shell
+herdr_login_attach() {
+  [[ -n "${SSH_TTY:-}" && -z "${SSH_ORIGINAL_COMMAND:-}" ]] || return 0
+  [[ -z "${HERDR_ENV:-}" ]] || return 0
+  [[ -z "${NO_HERDR:-}" || "${NO_HERDR}" == "0" ]] || return 0
+  command -v herdr >/dev/null 2>&1 || return 0
+  herdr
+  return 0
+}
+herdr_login_attach
 # <<< nix-dev-env zsh config <<<
 ZSHEOF
         log_ok "Wrote dev environment config to ~/.zshrc"

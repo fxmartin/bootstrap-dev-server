@@ -459,6 +459,12 @@ harden_ssh() {
         log_info "SSH port changing from ${current_port} to ${SSH_PORT}"
     fi
 
+    # A file from before the NO_HERDR escape hatch gets rewritten to carry it
+    if [[ -f "${SSH_HARDENING_FILE}" ]] && ! grep -qx "AcceptEnv NO_HERDR" "${SSH_HARDENING_FILE}"; then
+        FORCE_SSH_UPDATE=true
+        log_info "Adding AcceptEnv NO_HERDR to the SSH hardening config"
+    fi
+
     # Only create if doesn't exist or force update
     if [[ ! -f "${SSH_HARDENING_FILE}" ]] || [[ "${FORCE_SSH_UPDATE:-}" == "true" ]]; then
         sudo tee "${SSH_HARDENING_FILE}" >/dev/null <<SSHEOF
@@ -504,6 +510,9 @@ PrintLastLog yes
 # Idle timeout (optional - 10 min)
 ClientAliveInterval 300
 ClientAliveCountMax 2
+
+# Escape hatch from the herdr attach on login: ssh -o SetEnv=NO_HERDR=1 dev
+AcceptEnv NO_HERDR
 SSHEOF
 
         # Validate SSH config (restart deferred to end of bootstrap to avoid killing connection)
@@ -2162,64 +2171,34 @@ TIMEREOF
 }
 
 #===============================================================================
-# Configure tmux
+# Remove the tmux configuration
 #===============================================================================
-configure_tmux() {
-    log_info "Configuring tmux..."
+# An ssh login attaches to herdr now (see herdr_login_attach in setup-dev-env.sh).
+# Earlier runs wrote a marked block to ~/.tmux.conf; take that block out and
+# leave everything around it alone. The old tmux auto-launch lived inside the
+# zshrc block that setup_dev_env rewrites on drift, so it goes with that rewrite.
+remove_tmux_config() {
+    local tmux_conf="${HOME}/.tmux.conf"
+    local begin="# >>> nix-dev-env tmux >>>"
+    local end="# <<< nix-dev-env tmux <<<"
+    local first last tmp
 
-    local TMUX_CONF="${HOME}/.tmux.conf"
-    local MARKER="# >>> nix-dev-env tmux >>>"
+    [[ -f "${tmux_conf}" ]] || return 0
+    first="$(grep -nxF -- "${begin}" "${tmux_conf}" | head -n 1 | cut -d: -f1 || true)"
+    [[ -n "${first}" ]] || return 0
+    last="$(grep -nxF -- "${end}" "${tmux_conf}" | tail -n 1 | cut -d: -f1 || true)"
 
-    # Check if already configured
-    if grep -q "${MARKER}" "${TMUX_CONF}" 2>/dev/null; then
-        log_ok "tmux already configured"
+    # Deleting up to a closing marker that is not there would eat the rest of the file.
+    if [[ -z "${last}" || "${last}" -lt "${first}" ]]; then
+        log_warn "${tmux_conf}: '${begin}' has no closing marker - leaving the file as it is"
         return 0
     fi
 
-    cat >>"${TMUX_CONF}" <<'TMUXEOF'
-
-# >>> nix-dev-env tmux >>>
-# Use zsh as default shell (installed via apt in base packages)
-set-option -g default-shell /usr/bin/zsh
-
-# Enable mouse support (scrolling, pane selection)
-set -g mouse on
-
-# Increase scrollback buffer
-set -g history-limit 50000
-
-# Start windows and panes at 1, not 0
-set -g base-index 1
-setw -g pane-base-index 1
-
-# Faster key repetition
-set -s escape-time 0
-
-# Better colors
-set -g default-terminal "tmux-256color"
-set -ag terminal-overrides ",xterm-256color:RGB"
-
-# Status bar styling
-set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
-set -g status-left '[#S] '
-set -g status-right '%H:%M '
-
-# Easy reload config
-bind r source-file ~/.tmux.conf \; display "Config reloaded!"
-
-# Split panes with | and -
-bind | split-window -h -c "#{pane_current_path}"
-bind - split-window -v -c "#{pane_current_path}"
-
-# Vim-style pane navigation
-bind h select-pane -L
-bind j select-pane -D
-bind k select-pane -U
-bind l select-pane -R
-# <<< nix-dev-env tmux <<<
-TMUXEOF
-
-    log_ok "tmux configured with zsh as default shell"
+    tmp="$(mktemp)"
+    sed "${first},${last}d" "${tmux_conf}" >"${tmp}"
+    cat "${tmp}" >"${tmux_conf}"
+    rm -f "${tmp}"
+    log_ok "Removed the nix-dev-env block from ${tmux_conf}"
 }
 
 #===============================================================================
@@ -2544,7 +2523,7 @@ main() {
     setup_dev_env
     setup_nix_update_timer
     setup_nix_gc_timer
-    configure_tmux
+    remove_tmux_config
     create_claude_md
     configure_podman
     log_timer_start "nix_cache_warmup" 2>/dev/null || true
