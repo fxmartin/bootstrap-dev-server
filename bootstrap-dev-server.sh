@@ -1744,6 +1744,9 @@ Environment="PATH=%h/.nix-profile/bin:%h/.local/bin:/nix/var/nix/profiles/defaul
 ExecStart=%h/.nix-profile/bin/herdr server
 Restart=on-failure
 RestartSec=2
+# systemd's default OOMPolicy=stop takes the whole service down when the kernel
+# OOM-kills one pane, ending every agent; continue keeps the other panes alive.
+OOMPolicy=continue
 
 [Install]
 WantedBy=default.target

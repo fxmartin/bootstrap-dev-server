@@ -179,6 +179,11 @@ foreign_alive() {
     assert_contains "${output}" "WantedBy=default.target"
 }
 
+@test "unit survives one pane being OOM-killed (OOMPolicy=continue, not systemd's stop)" {
+    run herdr_unit_content
+    assert_contains "${output}" "OOMPolicy=continue"
+}
+
 @test "unit keeps herdr's default socket, so acmd and 'herdr machine add' find it" {
     run herdr_unit_content
     assert_not_contains "${output}" "sock"
