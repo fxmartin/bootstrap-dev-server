@@ -25,7 +25,7 @@ Decided with FX on 2026-10-30:
 - herdr replaces tmux. The `tmux` package stays one more cycle as a fallback; its auto-launch and `configure_tmux` go now.
 - acmd comes from the agentic-coding-monitor flake (its `packages.acm`), not from `acm peers deploy`, so the aggregator reports the install as `nix` and deploy refuses to touch it.
 
-Open decision (blocks Story 01.2-001 only): the fleet's herdr version. The XPS and both Macs are pinned to 0.9.3; this flake's nixpkgs ships 0.9.5. Remote jump and `herdr machine add` need the same version on both ends. FX picks one; the story pins it.
+Decided by FX on 2026-10-30: herdr is aligned with the rest of the fleet at **0.9.3** (the XPS runs the upstream binary from a local pacman package, both Macs the upstream binary through a nix-install overlay). This flake's nixpkgs ships 0.9.5, so Story 01.2-001 pins 0.9.3. Remote jump and `herdr machine add` need the same version on both ends.
 
 ## Constraints (from CLAUDE.md)
 - Claude never runs `bootstrap-dev-server.sh`, `hcloud-provision.sh` or anything that changes a live system. FX runs the bootstrap on the server and validates.
@@ -93,11 +93,11 @@ Open decision (blocks Story 01.2-001 only): the fleet's herdr version. The XPS a
 **Story Points**: 3
 
 **Acceptance Criteria**:
-- **Given** the flake **Then** herdr is pinned to the fleet version FX chooses (open decision: 0.9.3 or 0.9.5). If nixpkgs carries another version, an overlay or a pinned input provides the chosen one. The env and the service use the same derivation.
+- **Given** the flake **Then** herdr is **0.9.3**, the fleet version, through an overlay on nixpkgs' `herdr`, as nix-install does on the Macs (`darwin/configuration.nix`): upstream's own release binary, fetched and pinned by hash, no source build. On x86_64-linux the source is `https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64` with hash `sha256-GKjcZfHC+khYhDRDVt6hz9kRxvBs9G+njhk/QIf026c=` (the same file and SHA-256 as the XPS's pacman package, `18a8dc65…f4dba7`). Other systems keep `prev.herdr`. The env (`devPackages`), `devShells.default` and the service all use this one derivation; `herdr --version` in the env prints `herdr 0.9.3`. A comment says to drop the overlay once the fleet moves to a version nixpkgs ships.
 - **Given** the bootstrap **Then** it writes `~/.config/systemd/user/herdr.service`, rewritten only on content drift. `ExecStart` is `herdr server` from `~/.nix-profile/bin` (or the store path from the env), with `PATH` set to the profile so every pane gets the toolset. `Restart=on-failure` and `WantedBy=default.target`. Then `daemon-reload`, `enable --now`, and `loginctl enable-linger` when linger is off.
 - **Given** a herdr server already running outside the unit (today: PID from `~/.nix-profile/bin/herdr server` 0.9.1) **Then** the bootstrap stops it **only after warning** that stopping a server ends its sessions, and only when `--restart-herdr` (or an env equivalent) is passed. Without the flag it logs the conflict and leaves the old server running.
 - **Given** the socket **Then** it stays at `~/.config/herdr/herdr.sock`, the path acmd and `herdr machine add` expect.
-- **Given** `tests/` **Then** a bats test checks the unit's content (ExecStart, PATH, Restart, WantedBy), the linger step, and that the stop path requires the flag.
+- **Given** `tests/` **Then** a bats test checks the unit's content (ExecStart, PATH, Restart, WantedBy), the linger step, that the stop path requires the flag, and that `flake.nix` pins herdr `0.9.3` with the hash above.
 
 **Technical Notes**:
 - Remote jump from the XPS (`herdr --remote`) and `herdr machine add` need equal versions on both ends.
@@ -107,7 +107,7 @@ Open decision (blocks Story 01.2-001 only): the fleet's herdr version. The XPS a
 - [ ] Tests written and passing
 - [ ] User-facing docs updated in the same commit for behavior-changing diffs (README/docs/usage/help; CHANGELOG excluded)
 
-**Dependencies**: 01.1-001; FX's decision on the fleet herdr version
+**Dependencies**: 01.1-001
 **Risk Level**: Medium
 
 ##### Story 01.2-002: An ssh login attaches to herdr, not tmux
