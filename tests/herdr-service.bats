@@ -311,6 +311,42 @@ foreign_alive() {
     assert_not_contains "${output}" "ends its sessions"
 }
 
+@test "--restart-herdr escalates to SIGKILL when the server ignores SIGTERM" {
+    bash -c 'trap "" TERM; while :; do sleep 1; done' &
+    FOREIGN_PID=$!
+    echo "${FOREIGN_PID}" >"${TEST_TEMP_DIR}/procs"
+    RESTART_HERDR=true run setup_herdr_service
+    [ "${status}" -eq 0 ]
+    assert_contains "${output}" "SIGKILL"
+    ! foreign_alive
+    grep -q 'systemctl --user enable --now herdr.service' "${STUB_LOG}"
+}
+
+@test "--restart-herdr fails without enabling the unit when the server cannot be stopped" {
+    start_foreign_server
+    stop_unmanaged_herdr() { return 1; }
+    RESTART_HERDR=true run setup_herdr_service
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "Could not stop the herdr server"
+    run grep -E 'enable' "${STUB_LOG}"
+    [ "${status}" -ne 0 ]
+}
+
+@test "a failing 'enable --now' is reported and fails the setup" {
+    cat >"${STUB_DIR}/systemctl" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+    "--user show-environment") exit 0 ;;
+    "--user is-active --quiet herdr.service") exit 1 ;;
+    *"enable --now"*) exit 1 ;;
+    *) exit 0 ;;
+esac
+EOF
+    run setup_herdr_service
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "journalctl --user -u herdr"
+}
+
 # =============================================================================
 # Wiring into the bootstrap
 # =============================================================================
