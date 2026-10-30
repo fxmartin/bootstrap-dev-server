@@ -1654,6 +1654,22 @@ claude-quick() {
         nix run "${FLAKE_DIR}#minimal" -- claude "\$@"
     fi
 }
+
+# Attach to the herdr server on an interactive ssh login
+# - Lives here because bash is the login shell on a provisioned server (nothing runs
+#   chsh) and ~/.profile sources this file. Same guard as the ~/.zshrc block, see there
+# - The \$- check is for \`ssh -t dev <cmd>\`: it has an SSH_TTY, and sshd's bash reads this
+#   file even though it is not interactive
+herdr_login_attach() {
+    [[ -n "\${SSH_TTY:-}" && -z "\${SSH_ORIGINAL_COMMAND:-}" ]] || return 0
+    [[ -z "\${HERDR_ENV:-}" && -z "\${TMUX:-}" ]] || return 0
+    [[ -z "\${NO_HERDR:-}" || "\${NO_HERDR}" == "0" ]] || return 0
+    command -v herdr >/dev/null 2>&1 || return 0
+    export NO_HERDR=1
+    herdr
+    return 0
+}
+case \$- in *i*) herdr_login_attach ;; esac
 # <<< nix-dev-env <<<
 SHELLEOF
         log_ok "Shell integration already configured"

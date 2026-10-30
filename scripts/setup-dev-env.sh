@@ -231,15 +231,22 @@ alias sendmail='msmtp'
 alias mail='msmtp'
 
 # Attach to the herdr server on an interactive ssh login
-# - SSH_TTY set and no SSH_ORIGINAL_COMMAND: a login, not `ssh dev '<cmd>'`, scp or a probe
-# - Skipped inside herdr (HERDR_ENV) so a pane never nests a second client
+# - Same guard as the ~/.bashrc block, which is what a provisioned server's bash login
+#   reads; this copy covers a login shell changed to zsh by hand
+# - SSH_TTY set: `ssh dev '<cmd>'`, scp and probes have none. `ssh -t dev <cmd>` has one,
+#   but runs a non-interactive shell that never reads this file
+# - SSH_ORIGINAL_COMMAND: sshd sets it only for a forced command (authorized_keys command=)
+# - Skipped inside herdr (HERDR_ENV) or tmux (TMUX) so a pane never nests a client
 # - Skipped with NO_HERDR=1, e.g. `ssh -o SetEnv=NO_HERDR=1 dev` (sshd AcceptEnv NO_HERDR)
+# - Exports NO_HERDR before the client, however it ends: zsh, exec zsh and `dev` run from
+#   this login inherit SSH_TTY and read this file, and must stay plain shells
 # - Not exec'd: quitting herdr returns to this plain login shell
 herdr_login_attach() {
   [[ -n "${SSH_TTY:-}" && -z "${SSH_ORIGINAL_COMMAND:-}" ]] || return 0
-  [[ -z "${HERDR_ENV:-}" ]] || return 0
+  [[ -z "${HERDR_ENV:-}" && -z "${TMUX:-}" ]] || return 0
   [[ -z "${NO_HERDR:-}" || "${NO_HERDR}" == "0" ]] || return 0
   command -v herdr >/dev/null 2>&1 || return 0
+  export NO_HERDR=1
   herdr
   return 0
 }

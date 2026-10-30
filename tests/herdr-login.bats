@@ -30,14 +30,15 @@ EOF2
     chmod +x "${STUB_DIR}/herdr"
     export PATH="${STUB_DIR}:${PATH}"
 
-    # The suite may itself run from an ssh session or a herdr pane.
-    unset SSH_TTY SSH_ORIGINAL_COMMAND NO_HERDR HERDR_ENV HERDR_STUB_EXIT
+    # The suite may itself run from an ssh session, a herdr pane or tmux.
+    unset SSH_TTY SSH_ORIGINAL_COMMAND NO_HERDR HERDR_ENV HERDR_STUB_EXIT TMUX
 
     # Generate the real zshrc block, then lift the guard out of it.
     run bash "${SETUP_SCRIPT}"
     [ "$status" -eq 0 ]
     sed -n '/^herdr_login_attach() {$/,/^}$/p' "${ZSHRC}" >"${TEST_TEMP_DIR}/guard.sh"
     [ -s "${TEST_TEMP_DIR}/guard.sh" ]
+    export GUARD="source '${TEST_TEMP_DIR}/guard.sh'; herdr_login_attach"
 }
 
 teardown() {
@@ -51,6 +52,35 @@ run_guard() {
 
 herdr_call_count() {
     wc -l <"${HERDR_CALLS}" | tr -d ' '
+}
+
+# A provisioned server logs in with bash: hcloud-provision's adduser gives /bin/bash and
+# nothing runs chsh. So ~/.bashrc, not ~/.zshrc, is what a real `ssh dev` reads.
+generate_bashrc() {
+    log_info() { :; }
+    log_ok() { :; }
+    log_warn() { :; }
+    export REPO_CLONE_DIR="${PROJECT_ROOT}" BOOTSTRAP_SUBDIR="."
+    # shellcheck disable=SC1090
+    source <(sed -n '/^setup_shell_integration() {/,/^# Install the Dev Toolset/p' "${BOOTSTRAP}")
+    setup_shell_integration
+}
+
+# Ubuntu's stock ~/.profile stanza is how a login bash reaches ~/.bashrc. The stub goes
+# back on PATH first because /etc/profile may reset it, as Alpine's does.
+write_stock_profile() {
+    cat >"${HOME}/.profile" <<EOF2
+export PATH="${STUB_DIR}:\${PATH}"
+if [ -n "\${BASH_VERSION}" ]; then
+    if [ -f "\${HOME}/.bashrc" ]; then
+        . "\${HOME}/.bashrc"
+    fi
+fi
+EOF2
+}
+
+guard_text() {
+    sed -n '/^herdr_login_attach() {$/,/^}$/p' "$1" | sed 's/^ *//'
 }
 
 # =============================================================================
@@ -84,7 +114,7 @@ herdr_call_count() {
     [ "$(herdr_call_count)" = "0" ]
 }
 
-@test "ssh command forced with a tty (ssh -t dev cmd) does not attach" {
+@test "a forced command (authorized_keys command=) with a tty does not attach" {
     export SSH_TTY=/dev/pts/7 SSH_ORIGINAL_COMMAND="acm peers"
     run --separate-stderr bash -c "source '${TEST_TEMP_DIR}/guard.sh'; herdr_login_attach"
     [ "$status" -eq 0 ]
@@ -114,6 +144,36 @@ herdr_call_count() {
     [ "$(herdr_call_count)" = "0" ]
 }
 
+@test "a tmux pane does not attach, so herdr never nests inside the fallback" {
+    export SSH_TTY=/dev/pts/7 TMUX=/tmp/tmux-1000/default,1234,0
+    run_guard
+    [ "$status" -eq 0 ]
+    [ "$(herdr_call_count)" = "0" ]
+}
+
+@test "shells opened after leaving herdr stay plain: zsh, exec zsh, the dev shellHook" {
+    export SSH_TTY=/dev/pts/7
+    run bash -c "${GUARD}; bash -c \"${GUARD}\"; exec bash -c \"${GUARD}\""
+    [ "$status" -eq 0 ]
+    [ "$(herdr_call_count)" = "1" ]
+}
+
+@test "a client that failed still leaves later shells plain" {
+    export SSH_TTY=/dev/pts/7 HERDR_STUB_EXIT=1
+    run bash -c "${GUARD}; bash -c \"${GUARD}\""
+    [ "$(herdr_call_count)" = "1" ]
+}
+
+@test "the login is marked before the client runs, so a killed client cannot leave it unmarked" {
+    export SSH_TTY=/dev/pts/7
+    cat >"${STUB_DIR}/herdr" <<EOF2
+#!/usr/bin/env bash
+echo "\${NO_HERDR:-unset}" >"${TEST_TEMP_DIR}/client.no_herdr"
+EOF2
+    run_guard
+    [ "$(cat "${TEST_TEMP_DIR}/client.no_herdr")" = "1" ]
+}
+
 @test "a missing herdr binary is skipped silently" {
     export SSH_TTY=/dev/pts/7
     mkdir "${TEST_TEMP_DIR}/empty"
@@ -122,6 +182,47 @@ herdr_call_count() {
     [ -z "${output}" ]
     [ -z "${stderr}" ]
     [ "$(herdr_call_count)" = "0" ]
+}
+
+@test "a bash login attaches: bash is the login shell on a provisioned server" {
+    generate_bashrc
+    write_stock_profile
+    export SSH_TTY=/dev/pts/7
+    run setsid bash --login -i -c 'echo login-reached-prompt'
+    [ "$status" -eq 0 ]
+    [[ "${output}" == *"login-reached-prompt"* ]]
+    [ "$(herdr_call_count)" = "1" ]
+}
+
+@test "ssh -t dev cmd: sshd's bash reads ~/.bashrc non-interactively and must not attach" {
+    generate_bashrc
+    export SSH_TTY=/dev/pts/7
+    run --separate-stderr bash -c "source '${HOME}/.bashrc'; echo cmd-output"
+    [ "$status" -eq 0 ]
+    [ "${output}" = "cmd-output" ]
+    [ -z "${stderr}" ]
+    [ "$(herdr_call_count)" = "0" ]
+}
+
+@test "~/.bashrc and ~/.zshrc carry the same guard" {
+    generate_bashrc
+    [ -n "$(guard_text "${HOME}/.bashrc")" ]
+    [ "$(guard_text "${HOME}/.bashrc")" = "$(guard_text "${ZSHRC}")" ]
+}
+
+@test "a ~/.bashrc block from before the guard gains it on the next run, user lines kept" {
+    cat >"${HOME}/.bashrc" <<'RC'
+# mine, above
+# >>> nix-dev-env >>>
+alias old='true'
+# <<< nix-dev-env <<<
+# mine, below
+RC
+    generate_bashrc
+    grep -q '^herdr_login_attach() {$' "${HOME}/.bashrc"
+    run ! grep -q "alias old" "${HOME}/.bashrc"
+    grep -qx '# mine, above' "${HOME}/.bashrc"
+    grep -qx '# mine, below' "${HOME}/.bashrc"
 }
 
 @test "the guard is valid zsh too, when zsh is available" {
@@ -136,8 +237,11 @@ herdr_call_count() {
 # tmux is gone
 # =============================================================================
 
-@test "the generated zshrc has no tmux auto-launch" {
-    run ! grep -qi 'tmux' "${ZSHRC}"
+# The guard checks TMUX, so the word stays in the rc files; what must go is the launch.
+@test "the generated rc files have no tmux auto-launch" {
+    generate_bashrc
+    run ! grep -Eq 'tmux (attach|new)' "${ZSHRC}"
+    run ! grep -Eq 'tmux (attach|new)' "${HOME}/.bashrc"
 }
 
 @test "the bootstrap no longer configures tmux" {
@@ -158,7 +262,7 @@ fi
 RC
     run bash "${SETUP_SCRIPT}"
     [ "$status" -eq 0 ]
-    run ! grep -qi 'tmux' "${ZSHRC}"
+    run ! grep -Eq 'tmux (attach|new)' "${ZSHRC}"
     grep -qx '# mine, above' "${ZSHRC}"
     grep -qx '# mine, below' "${ZSHRC}"
     grep -qx 'herdr_login_attach' "${ZSHRC}"
@@ -212,9 +316,36 @@ CONF
     grep -qx 'AcceptEnv NO_HERDR' <(sed -n '/^harden_ssh()/,/^SSHEOF$/p' "${BOOTSTRAP}")
 }
 
-@test "an existing hardening file without AcceptEnv NO_HERDR is rewritten" {
-    run grep -n 'AcceptEnv NO_HERDR' "${BOOTSTRAP}"
-    [ "$status" -eq 0 ]
-    # one in the heredoc, one in the drift check
-    [ "$(echo "${output}" | wc -l)" -ge 2 ]
+# harden_ssh hard-codes the /etc path, so it is pointed into the sandbox. sudo only has
+# to run tee and pass `sshd -t`.
+load_harden_ssh() {
+    export HARDENING="${TEST_TEMP_DIR}/99-hardening.conf"
+    log_info() { :; }
+    log_ok() { :; }
+    log_error() { :; }
+    sudo() {
+        [[ "$1" == "sshd" ]] || "$@"
+    }
+    SSH_PORT=22
+    SSH_RESTART_NEEDED=false
+    # shellcheck disable=SC1090
+    source <(sed -n '/^harden_ssh() {/,/^}$/p' "${BOOTSTRAP}" |
+        sed "s|/etc/ssh/sshd_config.d/99-hardening.conf|${HARDENING}|")
+}
+
+@test "a hardening file without AcceptEnv NO_HERDR is rewritten once and flags the reload" {
+    load_harden_ssh
+    printf 'Port 22\nPermitRootLogin no\n' >"${HARDENING}"
+    harden_ssh
+    grep -qx 'AcceptEnv NO_HERDR' "${HARDENING}"
+    [ "${SSH_RESTART_NEEDED}" = "true" ]
+
+    # The next bootstrap is a new process: nothing forced, nothing to do
+    unset FORCE_SSH_UPDATE
+    SSH_RESTART_NEEDED=false
+    touch -d '2020-01-01' "${HARDENING}"
+    before="$(stat -c '%Y' "${HARDENING}")"
+    harden_ssh
+    [ "${SSH_RESTART_NEEDED}" = "false" ]
+    [ "$(stat -c '%Y' "${HARDENING}")" = "${before}" ]
 }

@@ -654,19 +654,25 @@ Check the service with `systemctl --user status herdr`.
 
 #### Logging in: attaching to herdr
 
-The zsh config the bootstrap writes to `~/.zshrc` (inside the `# >>> nix-dev-env zsh config >>>` block,
-rewritten on every bootstrap run when its content drifts) attaches the herdr client on an interactive
-ssh login, so `ssh dev` resumes your agents straight away. Leaving herdr returns to the plain login shell.
+An interactive `ssh dev` attaches the herdr client, so you resume your agents straight away. Leaving herdr
+returns to the plain login shell. The attach lives in the `# >>> nix-dev-env >>>` block of `~/.bashrc`, because
+bash is the login shell on a provisioned server. The `# >>> nix-dev-env zsh config >>>` block of `~/.zshrc`
+carries the same guard for a login shell changed to zsh. The bootstrap rewrites both when their content drifts.
 
 | Login | Attaches? |
 |-------|-----------|
-| Interactive (`ssh dev`: `SSH_TTY` set, no `SSH_ORIGINAL_COMMAND`) | yes |
-| `ssh dev '<cmd>'`, scp, acmd forwards, `acm peers` probes | no, and nothing is printed |
+| Interactive (`ssh dev`: `SSH_TTY` set, no forced command) | yes |
+| `mosh dev` | yes, its default `ssh -tt` leaves `SSH_TTY` set. `mosh --no-ssh-pty` gets a plain shell |
+| A shell named on the command line (`ssh -t dev bash`) | yes, add `-o SetEnv=NO_HERDR=1` for a plain one |
+| `ssh dev '<cmd>'`, `ssh -t dev '<cmd>'`, scp, acmd forwards, `acm peers` probes | no, and the login adds nothing to the output |
 | Already inside herdr (`HERDR_ENV` set) | no, so herdr never nests |
+| Inside tmux (`TMUX` set) | no, so herdr never nests in the fallback |
+| A shell opened after leaving herdr (`zsh`, `exec zsh`, `dev`) | no, the login exports `NO_HERDR=1` before it attaches |
 | `NO_HERDR=1` in the environment | no |
 
 Escape hatch: `ssh -o SetEnv=NO_HERDR=1 dev` gets a plain shell. The hardened sshd config carries
-`AcceptEnv NO_HERDR` for this; the bootstrap adds it to a hardening file that predates it.
+`AcceptEnv NO_HERDR` for this. A hardening file that predates it is regenerated whole from the template on the
+next bootstrap run, with no backup, so check `/etc/ssh/sshd_config.d/99-hardening.conf` for hand edits first.
 
 tmux is no longer launched on login. The bootstrap removes the marked block it used to write to
 `~/.tmux.conf` and leaves any lines outside the markers untouched. The `tmux` package stays in the
