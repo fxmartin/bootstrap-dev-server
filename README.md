@@ -674,7 +674,9 @@ of acm's `homeManagerModules.acmd` (`ExecStart=~/.nix-profile/bin/acmd`, `Restar
 herdr's socket. The unit is rewritten only when its content drifts, followed by `daemon-reload` and
 `enable --now`. The state directory `~/.local/state/acm` is created with mode `0700`. A previous push
 install (`acm peers deploy`, `make install`: `~/.local/bin/acmd`, `acm` and their `.prev`/`.new`
-copies) is removed, and its unit replaced, so only the Nix-managed daemon runs.
+copies) is removed, and its unit replaced, so only the Nix-managed daemon runs. That happens only
+once the profile holds `acmd`: until then the push install keeps running untouched. acmd needs
+linger to outlive your SSH session and start at boot, so the step enables it, as herdr's does.
 
 The input is private (the GitHub mirror `fxmartin/agentic-coding-monitor` of the GitLab project), so
 nix fetches it with a **read-only token** in your `~/.config/nix/nix.conf`:
@@ -692,9 +694,24 @@ ACM_NIX_ACCESS_TOKEN=<token> ./bootstrap-dev-server.sh
 
 The token is never logged and never written anywhere else, the repo clone included. Without it the
 bootstrap logs an error naming `access-tokens` in `nix.conf`, cannot fetch or upgrade the `dev-env`
-profile (it carries acm) and skips the acmd service, but carries on with the rest, so the SSH
-hardening is still applied; add the token and re-run. A service that cannot be set up is logged the
-same way. Check it with `systemctl --user status acmd`.
+profile (it carries acm), skips the acmd service and the Nix cache warm-up, but carries on with the
+rest, so the SSH hardening is still applied; add the token and re-run. A service that cannot be set
+up is logged the same way. Check it with `systemctl --user status acmd`.
+
+Everything that builds the default toolset needs the same token: `dev`, `dev-update` and
+the weekly timer all fail without the token, so a server that lacks it keeps its previous profile and
+its Sunday run reports `failed` until the token is in `nix.conf`. `dev minimal` and `dev python` do
+not use acm.
+
+`hcloud-provision.sh` does not forward the token, because that would put it on the remote command
+line, so its default run takes the missing-token path. Either add the token and re-run the bootstrap
+afterwards, or skip the provisioner's bootstrap and pass the token yourself:
+
+```bash
+./hcloud-provision.sh --no-bootstrap
+ssh dev-server
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | ACM_NIX_ACCESS_TOKEN=<token> bash
+```
 
 ### sdlc and GitLab
 
@@ -825,6 +842,8 @@ git checkout -b chore/update-lock
 just update-lock          # nix flake update, then nix flake check
 git commit -am "chore: update flake.lock"
 ```
+
+`just update-lock` also moves the `agentic-coding-monitor` pin, so the machine running it needs the read token in its own `nix.conf` (see [acmd](#acmd-agentic-coding-monitor)).
 
 Open a merge request with the new `flake.lock`. Once it is merged, the next Sunday run (or `dev-update`) picks it up, and reverting the merge reverts the packages.
 
@@ -1363,6 +1382,8 @@ E2E tests validate the full bootstrap process in isolated Ubuntu 24.04 container
 # Keep container for debugging
 ./tests/e2e/e2e-runner.sh --profile dev --keep-containers
 ```
+
+Export `ACM_NIX_ACCESS_TOKEN` first for the run to install the `dev-env` profile; without it the bootstrap takes the [missing-token path](#acmd-agentic-coding-monitor).
 
 **What E2E Tests Validate:**
 - ✅ Phase 1: Preflight and base packages

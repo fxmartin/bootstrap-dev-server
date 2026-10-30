@@ -1784,6 +1784,21 @@ stop_unmanaged_herdr() {
     return 1
 }
 
+# Without linger the user manager, and so the service named in $1, only lives
+# while an SSH session is open.
+ensure_linger() {
+    local service="$1"
+    if [[ "$(loginctl show-user "${DEV_USER}" --property=Linger --value 2>/dev/null || true)" != "yes" ]]; then
+        sudo loginctl enable-linger "${DEV_USER}" || {
+            log_error "loginctl enable-linger ${DEV_USER} failed - ${service} will not start at boot"
+            return 1
+        }
+        log_ok "Enabled linger for ${DEV_USER}: ${service} starts at boot"
+    else
+        log_ok "Linger already enabled for ${DEV_USER}"
+    fi
+}
+
 setup_herdr_service() {
     log_info "Setting up the herdr server user service..."
 
@@ -1864,17 +1879,7 @@ setup_herdr_service() {
         log_ok "herdr.service enabled (not started: an outside server owns the socket)"
     fi
 
-    # Without linger the user manager, and so the server, only lives while an
-    # SSH session is open.
-    if [[ "$(loginctl show-user "${DEV_USER}" --property=Linger --value 2>/dev/null || true)" != "yes" ]]; then
-        sudo loginctl enable-linger "${DEV_USER}" || {
-            log_error "loginctl enable-linger ${DEV_USER} failed - herdr will not start at boot"
-            return 1
-        }
-        log_ok "Enabled linger for ${DEV_USER}: herdr starts at boot"
-    else
-        log_ok "Linger already enabled for ${DEV_USER}"
-    fi
+    ensure_linger herdr
 }
 
 #===============================================================================
@@ -2007,6 +2012,13 @@ setup_acmd_service() {
     local unit_file="${unit_dir}/acmd.service"
     local unit_changed=false tmp
 
+    # First: everything below replaces a push install, so without the binary that
+    # replaces it the working daemon, its CLI and its unit must stay as they are.
+    if [[ ! -x "${HOME}/.nix-profile/bin/acmd" ]]; then
+        log_warn "${HOME}/.nix-profile/bin/acmd not found - leaving the acmd service as it is (the dev-env profile step must succeed first, which needs the acm read token: access-tokens in nix.conf)"
+        return 0
+    fi
+
     remove_acm_push_install
 
     # acmd keeps its socket and notification state here; it is private to the user.
@@ -2022,11 +2034,6 @@ setup_acmd_service() {
         log_ok "Wrote ${unit_file}"
     fi
     rm -f "${tmp}"
-
-    if [[ ! -x "${HOME}/.nix-profile/bin/acmd" ]]; then
-        log_warn "${HOME}/.nix-profile/bin/acmd not found - not enabling the acmd service (the dev-env profile step must succeed first, which needs the acm read token: access-tokens in nix.conf)"
-        return 0
-    fi
 
     # No login session behind this shell: no user manager to talk to. The unit
     # is on disk, so re-running from an SSH login finishes the job.
@@ -2061,6 +2068,9 @@ setup_acmd_service() {
         log_info "acmd restarted onto the current unit and binary"
     fi
     log_ok "acmd running as a user service"
+
+    # herdr's setup enables this too, but returns before it when herdr fails.
+    ensure_linger acmd
 }
 
 #===============================================================================
@@ -2743,7 +2753,14 @@ main() {
     create_claude_md
     configure_podman
     log_timer_start "nix_cache_warmup" 2>/dev/null || true
-    warm_nix_cache
+    # The default shell carries acm too, so without the token this build cannot fetch
+    # it, and dying here would strand the SSH reload below: a re-run does not redo it.
+    # Skipped rather than `warm_nix_cache || ...`, which would switch set -e off inside.
+    if [[ "${ACM_TOKEN_MISSING}" == "true" ]]; then
+        log_warn "Nix cache not warmed without the acm read token - add it, then re-run the bootstrap"
+    else
+        warm_nix_cache
+    fi
     log_timer_end "nix_cache_warmup" 2>/dev/null || true
     log_timer_end "nix_setup" 2>/dev/null || true
 

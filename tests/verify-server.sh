@@ -14,7 +14,7 @@
 #   9. Git Configuration   - user.name, user.email set
 #  10. Repository Clone    - bootstrap-dev-server repo cloned
 #  11. CLAUDE.md           - Template file created
-#  12. Herdr               - Available, and no stale MCP entries remain
+#  12. Herdr & acmd        - Available, user services active, no stale MCP entries remain
 #  13. Tailscale           - Authenticated, node key not expiring soon
 #  14. Monitoring          - node_exporter active, tailnet-only bind, /metrics served
 #  15. sdlc & GitLab       - sdlc/glab installed, uv-managed Python, gitlab.test resolves and answers
@@ -422,6 +422,20 @@ if systemctl --user is-active --quiet herdr.service 2>/dev/null; then
     pass "herdr.service is active"
 else
     warn "herdr.service is not active (re-run the bootstrap; --restart-herdr if an outside server holds the socket)"
+fi
+
+# Test 12.1c: acmd comes from the same profile, and is what the XPS overlay reads
+if command -v acmd &>/dev/null; then
+    pass "acmd is available"
+else
+    warn "acmd not found (expected from the dev-env Nix profile; needs the acm read token)"
+fi
+
+# Test 12.1d: acmd runs as a systemd user service
+if systemctl --user is-active --quiet acmd.service 2>/dev/null; then
+    pass "acmd.service is active"
+else
+    warn "acmd.service is not active (add the acm read token to access-tokens in nix.conf and re-run the bootstrap; see: journalctl --user -u acmd)"
 fi
 
 # Test 12.2: no stale MCP entries left behind in ~/.claude.json.

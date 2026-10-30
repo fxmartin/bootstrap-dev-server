@@ -22,7 +22,8 @@ setup() {
     export NIX_CONF="${MOCK_HOME}/.config/nix/nix.conf"
     unset XDG_CONFIG_HOME ACM_NIX_ACCESS_TOKEN ACM_TOKEN_MISSING
 
-    # systemctl is the seam: it records its argv, and state files steer the answers.
+    # systemctl, loginctl and sudo are the seams: each records its argv, and state
+    # files steer the answers.
     export STUB_DIR="${TEST_TEMP_DIR}/stubs"
     export STUB_LOG="${TEST_TEMP_DIR}/stub.log"
     mkdir -p "${STUB_DIR}"
@@ -37,7 +38,20 @@ case "\$*" in
     *) exit 0 ;;
 esac
 EOF
-    chmod +x "${STUB_DIR}/systemctl"
+    cat >"${STUB_DIR}/loginctl" <<EOF
+#!/usr/bin/env bash
+echo "loginctl \$*" >>"${STUB_LOG}"
+if [[ "\${1:-}" == "show-user" ]]; then
+    [[ -f "${TEST_TEMP_DIR}/linger-on" ]] && echo yes || echo no
+fi
+exit 0
+EOF
+    cat >"${STUB_DIR}/sudo" <<'EOF'
+#!/usr/bin/env bash
+while [[ "${1:-}" == -* ]]; do shift; done
+exec "$@"
+EOF
+    chmod +x "${STUB_DIR}/systemctl" "${STUB_DIR}/loginctl" "${STUB_DIR}/sudo"
     export PATH="${STUB_DIR}:${PATH}"
 
     # The profile holds acmd, as it does once install_dev_profile has run.
@@ -51,7 +65,7 @@ EOF
     log_error() { echo "ERROR: $1" >&2; }
     local fn
     for fn in acmd_unit_content acm_token_configured configure_acm_access_token \
-        remove_acm_push_install acmd_running_stale setup_acmd_service; do
+        remove_acm_push_install acmd_running_stale ensure_linger setup_acmd_service; do
         # shellcheck disable=SC1090
         source <(sed -n "/^${fn}()/,/^}\$/p" "${BOOTSTRAP}")
     done
@@ -62,6 +76,35 @@ teardown() {
 }
 
 mode_of() { stat -c %a "$1"; }
+
+# Runs a copy of bash ($1) that waits in a builtin, so /proc/<pid>/exe stays that
+# copy (`-c 'sleep N'` would exec sleep over it), and returns once the exec has
+# happened: until then the link is still this shell. fd 3 is closed so bats cannot
+# hang on the background process.
+start_exe_copy() {
+    "$1" -c 'read -r -t 60 _ <>"$1"' _ "${TEST_TEMP_DIR}/hold" 3>&- &
+    EXE_COPY_PID=$!
+    local i wanted
+    wanted="$(readlink -f "$1")"
+    for ((i = 0; i < 1000; i++)); do
+        [[ "$(readlink -f "/proc/${EXE_COPY_PID}/exe" 2>/dev/null)" == "${wanted}" ]] && return 0
+        sleep 0.01
+    done
+    return 1
+}
+
+# main as the script runs it, set -e included, with every step stubbed: only main is
+# lifted out of the script, so each step lands in the not-found handler, which
+# records it. $1 holds the definitions a test wants instead.
+run_main_with_stubs() {
+    run bash -c "set -euo pipefail
+command_not_found_handle() { echo \"step: \$*\"; }
+SERVER_PROFILE=dev SKIP_GITHUB_AUTH=false SKIP_SECURITY_HARDENING=false
+ACM_TOKEN_MISSING=false BLUE= NC=
+$(sed -n '/^main() {/,/^}$/p' "${BOOTSTRAP}")
+${1:-}
+main"
+}
 
 # =============================================================================
 # Flake: the acm input, pinned, in the dev-env profile
@@ -293,14 +336,17 @@ mode_of() { stat -c %a "$1"; }
 @test "acmd_running_stale compares the running binary with the profile's resolved acmd" {
     local real="${TEST_TEMP_DIR}/store/acm-1/bin/acmd" other="${TEST_TEMP_DIR}/store/acm-0/bin/acmd"
     mkdir -p "$(dirname "${real}")" "$(dirname "${other}")"
-    cp /bin/sleep "${real}"
-    cp /bin/sleep "${other}"
+    # bash, not /bin/sleep: that is busybox on the job image, which refuses to run
+    # under any other name. The image guarantees bash as a real ELF.
+    cp "$(command -v bash)" "${real}"
+    cp "$(command -v bash)" "${other}"
     ln -sf "${real}" "${MOCK_HOME}/.nix-profile/bin/acmd"
+    mkfifo "${TEST_TEMP_DIR}/hold"
 
-    "${real}" 300 &
-    local on_new=$!
-    "${other}" 300 &
-    local on_old=$!
+    start_exe_copy "${real}"
+    local on_new="${EXE_COPY_PID}"
+    start_exe_copy "${other}"
+    local on_old="${EXE_COPY_PID}"
 
     echo "${on_new}" >"${TEST_TEMP_DIR}/main-pid"
     run acmd_running_stale
@@ -313,20 +359,43 @@ mode_of() { stat -c %a "$1"; }
     [ "${old_status}" -eq 0 ]
 }
 
-@test "linger is not this step's business: herdr's setup owns it" {
+@test "linger is enabled when it is off: a herdr setup that failed early never reached it" {
     run setup_acmd_service
-    run grep -c 'loginctl' "${STUB_LOG}"
-    [ "${output}" -eq 0 ]
+    [ "${status}" -eq 0 ]
+    grep -q 'loginctl enable-linger testuser' "${STUB_LOG}"
 }
 
-@test "without acmd in the profile the unit is written but nothing is enabled" {
+@test "linger is left alone when it is already on" {
+    touch "${TEST_TEMP_DIR}/linger-on"
+    run setup_acmd_service
+    [ "${status}" -eq 0 ]
+    run grep 'enable-linger' "${STUB_LOG}"
+    [ "${status}" -ne 0 ]
+}
+
+@test "a failing enable-linger is reported naming acmd, and fails the setup" {
+    cat >"${STUB_DIR}/loginctl" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "show-user" ]]; then
+    echo no
+    exit 0
+fi
+exit 1
+EOF
+    run setup_acmd_service
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "enable-linger"
+    assert_contains "${output}" "acmd will not start at boot"
+}
+
+@test "without acmd in the profile nothing is written and nothing is enabled" {
     rm "${MOCK_HOME}/.nix-profile/bin/acmd"
     run setup_acmd_service
     [ "${status}" -eq 0 ]
-    [ -f "${UNIT_FILE}" ]
+    [ ! -e "${UNIT_FILE}" ]
     assert_contains "${output}" ".nix-profile/bin/acmd"
-    run grep -E 'enable|daemon-reload' "${STUB_LOG}"
-    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "access-tokens"
+    [ ! -s "${STUB_LOG}" ]
 }
 
 @test "without a user manager the unit is written but nothing is enabled" {
@@ -382,6 +451,25 @@ EOF
     run grep -F '.local/bin/acmd' "${UNIT_FILE}"
     [ "${status}" -ne 0 ]
     grep -qF 'ExecStart=%h/.nix-profile/bin/acmd' "${UNIT_FILE}"
+}
+
+@test "without acmd in the profile a push install, its unit and its daemon are left alone" {
+    rm "${MOCK_HOME}/.nix-profile/bin/acmd"
+    mkdir -p "$(dirname "${UNIT_FILE}")" "${MOCK_HOME}/.local/bin"
+    local f
+    for f in acmd acm acmd.prev acm.prev; do
+        echo x >"${MOCK_HOME}/.local/bin/${f}"
+    done
+    printf '[Service]\nExecStart=%%h/.local/bin/acmd\n' >"${UNIT_FILE}"
+    cp "${UNIT_FILE}" "${TEST_TEMP_DIR}/unit-before"
+
+    run setup_acmd_service
+    [ "${status}" -eq 0 ]
+    for f in acmd acm acmd.prev acm.prev; do
+        [ -f "${MOCK_HOME}/.local/bin/${f}" ]
+    done
+    cmp -s "${TEST_TEMP_DIR}/unit-before" "${UNIT_FILE}"
+    [ ! -s "${STUB_LOG}" ]
 }
 
 @test "the removal is logged only when something was there" {
@@ -471,6 +559,62 @@ echo reached-restart_ssh_final"
     [ "${status}" -eq 0 ]
     assert_contains "${output}" "reached-restart_ssh_final"
     assert_contains "${output}" "re-run"
+}
+
+@test "a missing token walks main through the monitoring phase to the final SSH reload" {
+    run_main_with_stubs '
+configure_acm_access_token() { ACM_TOKEN_MISSING=true; return 1; }
+install_dev_profile() { return 1; }
+warm_nix_cache() { return 1; }'
+    [ "${status}" -eq 0 ]
+    assert_contains "${output}" "step: install_node_exporter"
+    assert_contains "${output}" "step: restart_ssh_final"
+    assert_contains "${output}" "step: print_summary"
+    assert_contains "${output}" "Nix cache not warmed without the acm read token"
+}
+
+@test "with a token a failed cache build still aborts main, set -e reaching inside warm_nix_cache" {
+    mkdir -p "${MOCK_HOME}/.config/nix-dev-env"
+    run_main_with_stubs "$(sed -n '/^warm_nix_cache()/,/^}$/p' "${BOOTSTRAP}")
+nix() { [[ \"\$1\" != build ]]; }"
+    [ "${status}" -ne 0 ]
+    assert_not_contains "${output}" "Nix environment built and cached"
+    assert_not_contains "${output}" "step: restart_ssh_final"
+}
+
+@test "with a token main warms the cache and reaches the final SSH reload" {
+    run_main_with_stubs
+    [ "${status}" -eq 0 ]
+    assert_contains "${output}" "step: warm_nix_cache"
+    assert_contains "${output}" "step: restart_ssh_final"
+    assert_not_contains "${output}" "Nix cache not warmed"
+}
+
+# =============================================================================
+# Beyond the bootstrap: verification, e2e and the docs
+# =============================================================================
+
+@test "verify-server.sh checks acmd is on PATH and its user service is active" {
+    local verify="${PROJECT_ROOT}/tests/verify-server.sh"
+    grep -q 'command -v acmd' "${verify}"
+    grep -q 'systemctl --user is-active --quiet acmd.service' "${verify}"
+    grep -q 'acmd.service is not active.*access-tokens' "${verify}"
+}
+
+@test "the e2e runner forwards the token by name, so its value stays off the command line" {
+    local runner="${PROJECT_ROOT}/tests/e2e/e2e-runner.sh"
+    grep -qF '${ACM_NIX_ACCESS_TOKEN:+-e ACM_NIX_ACCESS_TOKEN}' "${runner}"
+    grep -qF 'sudo --preserve-env=ACM_NIX_ACCESS_TOKEN -u fx ./bootstrap-dev-server.sh' "${runner}"
+    run grep -F 'ACM_NIX_ACCESS_TOKEN=' "${runner}"
+    [ "${status}" -ne 0 ]
+}
+
+@test "README says what else needs the token, and how to provision with it" {
+    local readme="${PROJECT_ROOT}/README.md"
+    grep -q 'the weekly timer.*fail without the token' "${readme}"
+    grep -q 'hcloud-provision.sh.*does not forward the token' "${readme}"
+    grep -qF 'ACM_NIX_ACCESS_TOKEN=<token> bash' "${readme}"
+    grep -q 'just update-lock.*moves the `agentic-coding-monitor` pin' "${readme}"
 }
 
 @test "the acmd functions pass shellcheck" {
