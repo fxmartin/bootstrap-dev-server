@@ -837,6 +837,33 @@ run_dev_update() {
     [ ! -s "${NIX_LOG}" ]
 }
 
+@test "dev-update without a checkout fails before touching nix" {
+    define_nix_stub
+    local home="${TEST_TEMP_DIR}/empty-home"
+    mkdir -p "${home}"
+    local fn
+    fn="$(setup_dev_env_function_text)"
+    HOME="${home}" run bash -c "${fn}"$'\n'"dev-update"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No checkout"* ]]
+    [ ! -s "${NIX_LOG}" ]
+}
+
+@test "dev-update with a failed profile upgrade fails and does not report success" {
+    make_checkout_behind_origin
+    # shellcheck disable=SC2329
+    nix() {
+        echo "$*" >> "${NIX_LOG}"
+        [[ "$1" == "profile" ]] && return 1
+        return 0
+    }
+    export -f nix
+
+    run_dev_update
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"Dev environment updated to"* ]]
+}
+
 @test "the repo ships an update-lock recipe that updates the lock, then runs nix flake check" {
     [ -f "${PROJECT_ROOT}/justfile" ]
     run sed -n '/^update-lock/,/^$/p' "${PROJECT_ROOT}/justfile"
