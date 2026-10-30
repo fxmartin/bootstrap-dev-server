@@ -23,6 +23,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `scripts/install-node-exporter.sh` | node_exporter installer: pinned release, sha256-verified, dedicated user, UFW on tailscale0 |
 | `config/node-exporter-start.sh` | Unit wrapper: binds node_exporter to the Tailscale IP only, bounded wait for the tailnet |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
+| `scripts/setup-dev-env.sh` | Per-user setup the dev shell's shellHook used to do: Claude config symlinks, MCP pruning, zshrc/msmtprc templates |
 | `tests/verify-server.sh` | Post-install verification script |
 | `scripts/secure-ssh-key.sh` | Add passphrase to SSH key helper |
 
@@ -40,6 +41,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Prometheus node_exporter on the Tailscale IP only (port 9100), scraped by Prometheus on the TerraMaster NAS over the tailnet (nix-install Epic-15 "Fleet Cockpit")
 
 **Development Environment:**
+- Toolset installed as the user's default Nix profile (`packages.<system>.dev-env`, same `devPackages` list as the default dev shell), on PATH for login, `ssh dev '<cmd>'` and systemd user services
 - Claude Code + herdr (agent multiplexer) + `gh` CLI for GitHub
 - Python 3.12 + uv + ruff + pytest stack
 - Node.js 22 + bun + pnpm + TypeScript
@@ -104,7 +106,8 @@ bootstrap-dev-server/
 │   └── logging.sh            # Shared logging library
 ├── scripts/
 │   ├── secure-ssh-key.sh     # SSH key passphrase helper
-│   └── install-node-exporter.sh  # node_exporter installer (tailnet-only)
+│   ├── install-node-exporter.sh  # node_exporter installer (tailnet-only)
+│   └── setup-dev-env.sh      # Per-user setup formerly in the dev shell's shellHook
 ├── tests/
 │   └── verify-server.sh      # Post-install verification
 ├── config/

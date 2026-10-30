@@ -66,8 +66,8 @@ The script will:
 
 ```bash
 ssh myserver          # Uses the SSH config created by provisioning
-dev                   # Enter the Nix dev environment
-claude                # Start Claude Code
+claude                # Start Claude Code - the toolset is already on PATH
+dev                   # Optional: enter the Nix dev shell
 ```
 
 That's it. You're coding in the cloud.
@@ -247,6 +247,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **node_exporter**: Prometheus metrics on the Tailscale IP only (port 9100), scraped by Prometheus on the NAS - see [Monitoring](#monitoring-node_exporter)
 
 ### Development Environment
+- **Default Nix profile**: the whole toolset (`packages.<system>.dev-env` in `flake.nix`) is installed into `~/.nix-profile`, so it is on PATH in logins, `ssh dev '<cmd>'`, systemd user services and herdr panes - no need to type `dev` first. The bootstrap installs it the first time, upgrades it on re-runs (a no-op when the flake is unchanged) and removes any hand-installed stray entries, logging each one
 - **Claude Code** with auto-updates
 - **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
@@ -303,7 +304,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 
 | Command | Description |
 |---------|-------------|
-| `dev` | Enter full dev environment |
+| `dev` | Enter full dev shell (same toolset as the profile) |
 | `dm` | Minimal environment (Claude + basics) |
 | `dp` | Python-focused environment |
 | `dev-update` | Pull latest from repo + update Nix packages |
@@ -629,7 +630,7 @@ See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detaile
 
 [Herdr](https://herdr.dev) is an agent multiplexer: it keeps coding agents in persistent
 terminal panes and shows at a glance which are running, waiting, or idle. It ships in the
-default dev shell — just run `herdr`.
+default Nix profile (and the dev shell) — just run `herdr`.
 
 Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
 multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
@@ -639,7 +640,7 @@ its own tmux window, or skipping tmux when you use it.
 
 MCP servers were removed from this flake — Context7 and Sequential Thinking pulled in a
 `mcp-servers-nix` input that pinned Node.js to v22 and blocked nixpkgs upgrades. Entering
-the dev shell now prunes any leftover entries from `~/.claude.json`, since their
+the bootstrap (`scripts/setup-dev-env.sh`) now prunes any leftover entries from `~/.claude.json`, since their
 `/nix/store` paths are garbage-collected and Claude Code would fail to start them.
 
 GitHub operations use the `gh` CLI (included in the dev shell). Authenticate with:
