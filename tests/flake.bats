@@ -590,3 +590,33 @@ run_setup_dev_env() {
     run shellcheck -x -P SCRIPTDIR -S warning "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
     [ "$status" -eq 0 ]
 }
+
+@test "setup-dev-env.sh leaves ~/.claude.json untouched when no MCP entry is stale" {
+    command -v jq &>/dev/null || skip "jq not available"
+    echo '{"mcpServers":{"keep":{}}}' >"${MOCK_HOME}/.claude.json"
+    before="$(cat "${MOCK_HOME}/.claude.json")"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [[ "${output}" != *"Pruned"* ]]
+    [ "$(cat "${MOCK_HOME}/.claude.json")" = "${before}" ]
+}
+
+@test "setup-dev-env.sh skips Claude linking when the repo config dir is absent" {
+    export HOME="${MOCK_HOME}"
+    export REPO_CLAUDE_DIR="${TEST_TEMP_DIR}/does-not-exist"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    [ ! -e "${HOME}/.claude/agents" ]
+}
+
+@test "setup-dev-env.sh repairs a wrong symlink and keeps zshrc idempotent" {
+    mkdir -p "${MOCK_HOME}/.claude"
+    ln -s /nonexistent "${MOCK_HOME}/.claude/agents"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [ "$(readlink "${HOME}/.claude/agents")" = "${REPO_CLAUDE_DIR}/agents" ]
+    count_before="$(grep -c "nix-dev-env" "${HOME}/.zshrc")"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "nix-dev-env" "${HOME}/.zshrc")" = "${count_before}" ]
+}
