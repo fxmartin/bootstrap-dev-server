@@ -207,7 +207,7 @@ Decided by FX on 2026-10-30: herdr is aligned with the rest of the fleet at **0.
 
 ## Epic Progress
 - [x] 01.1-001 · [x] 01.1-002
-- [x] 01.2-001 · [ ] 01.2-002
-- [ ] 01.3-001 · [x] 01.3-002 · [ ] 01.3-003
+- [x] 01.2-001 · [x] 01.2-002
+- [x] 01.3-001 · [x] 01.3-002 · [x] 01.3-003
 
-**Completed points**: 14 / 22 (built 2026-10-30: 01.1-001 MR !5, 01.1-002 MR !6, 01.3-002 MR !7, 01.2-001 MR !11 with OOMPolicy=continue added after review; reinstall guard #1 MR !10. Not yet run on the server.)
+**Completed points**: 22 / 22 (built 2026-10-30: 01.1-001 MR !5, 01.1-002 MR !6, 01.3-002 MR !7, 01.2-001 MR !11 with OOMPolicy=continue added after review, 01.2-002 MR !13, 01.3-001 MR !14, 01.3-003 MR !15 with the runbook's herdr-login steps fixed after review; reinstall guard #1 MR !10. Not yet run on the server.)
