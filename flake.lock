@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "agentic-coding-monitor": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793381365,
+        "narHash": "sha256-fkbYKkOD+SBNcla0nQz9idWMK+/JvaAkQ+4U1PKTJfw=",
+        "owner": "fxmartin",
+        "repo": "agentic-coding-monitor",
+        "rev": "b5ca9b02cd4b6ff6e4648ae6ecd9b2ea7b6d2250",
+        "type": "github"
+      },
+      "original": {
+        "owner": "fxmartin",
+        "repo": "agentic-coding-monitor",
+        "type": "github"
+      }
+    },
     "claude-code-nix": {
       "inputs": {
         "nixpkgs": [
@@ -57,6 +77,7 @@
     },
     "root": {
       "inputs": {
+        "agentic-coding-monitor": "agentic-coding-monitor",
         "claude-code-nix": "claude-code-nix",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"

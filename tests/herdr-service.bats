@@ -61,7 +61,7 @@ EOF
     log_warn() { echo "WARN: $1" >&2; }
     log_error() { echo "ERROR: $1" >&2; }
     local fn
-    for fn in herdr_unit_content herdr_server_pids stop_unmanaged_herdr setup_herdr_service; do
+    for fn in herdr_unit_content herdr_server_pids stop_unmanaged_herdr ensure_linger setup_herdr_service; do
         # shellcheck disable=SC1090
         source <(sed -n "/^${fn}()/,/^}\$/p" "${BOOTSTRAP}")
     done
