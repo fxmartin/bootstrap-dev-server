@@ -133,6 +133,7 @@
 
           # Development utilities
           pkgs.gh  # GitHub CLI
+          pkgs.glab  # GitLab CLI (local-ci-cd GitLab, via GITLAB_HOST)
           pkgs.hcloud  # Hetzner Cloud CLI
           pkgs.lazygit
           pkgs.delta  # Git diff viewer

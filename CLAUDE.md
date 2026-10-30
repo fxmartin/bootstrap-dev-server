@@ -22,6 +22,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `lib/logging.sh` | Shared logging library with timestamps and log files |
 | `scripts/install-node-exporter.sh` | node_exporter installer: pinned release, sha256-verified, dedicated user, UFW on tailscale0 |
 | `config/node-exporter-start.sh` | Unit wrapper: binds node_exporter to the Tailscale IP only, bounded wait for the tailnet |
+| `scripts/install-sdlc-controller.sh` | sdlc controller installer: `uv tool install` from the tag pinned in `config/versions.env`, uv-managed Python, idempotent |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `scripts/setup-dev-env.sh` | Per-user setup the dev shell's shellHook used to do: Claude config symlinks, MCP pruning, zshrc/msmtprc templates |
 | `tests/verify-server.sh` | Post-install verification script |
