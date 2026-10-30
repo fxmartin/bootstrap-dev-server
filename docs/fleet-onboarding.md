@@ -7,7 +7,8 @@ secrets, interactive logins and the aggregator peer). Nothing here is hand-edite
 
 Prerequisites: your SSH alias for the server is `dev-server`, and your tailnet ACL defines
 `tag:server` and lets it reach the GitLab host on port 80 (see [sdlc and GitLab](../README.md#sdlc-and-gitlab)).
-Run the server-side steps over `ssh dev-server`, inside a herdr pane where noted.
+Run the server-side steps over `ssh dev-server`: an interactive login lands in a herdr pane (see
+[Logging in](../README.md#logging-in-attaching-to-herdr)).
 
 ## 1. Bootstrap
 
@@ -26,7 +27,7 @@ installs Tailscale, the toolset profile, `herdr` (as a user service), `acmd` (as
 the `sdlc` controller.
 
 The bootstrap is idempotent: re-run it after a dropped connection or after fixing anything below,
-from the clone it leaves on the server, in a shell outside herdr:
+from the clone it leaves on the server:
 
 ```bash
 cd ~/.local/share/bootstrap-dev-server
@@ -115,7 +116,8 @@ On the server, `~/.local/share/bootstrap-dev-server/tests/verify-server.sh` chec
 
 End to end: an `sdlc` run started on the server must appear in the XPS overlay.
 
-1. On the server, open a herdr pane (`herdr`, or `herdr --remote dev-server` from the XPS).
+1. Run `ssh dev-server`: the login lands in a herdr pane on the server. From the XPS herdr,
+   `herdr --remote dev-server` jumps into the same server.
 2. Pick a small, low-risk open issue in a GitLab project you can push to. `sdlc fix` runs unattended
    through to the merge, so choose a fix you accept landing without reviewing it. In the pane:
 

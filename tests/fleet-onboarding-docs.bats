@@ -123,6 +123,23 @@ section() {
     [[ "${smoke}" == *"overlay"* ]]
 }
 
+@test "runbook smoke test lands in the pane ssh opens, never a nested herdr" {
+    local smoke
+    smoke="$(section "## 5. Smoke test")"
+    # 01.2-002: an interactive ssh login attaches to herdr, and herdr refuses to nest
+    [[ "${smoke}" == *"ssh dev-server"*"herdr pane"* ]]
+    run grep -E '\(`herdr`[,)]' <<< "${smoke}"
+    [ "${status}" -ne 0 ]
+    [[ "${smoke}" == *"herdr --remote dev-server"* ]]
+}
+
+@test "runbook re-runs the bootstrap without asking to leave herdr first" {
+    # Inside a pane the bootstrap refuses only --restart-herdr, which the re-run does not pass
+    run grep -niE 'outside herdr' "${RUNBOOK}"
+    [ "${status}" -ne 0 ]
+    grep -qF "../README.md#logging-in-attaching-to-herdr" "${RUNBOOK}"
+}
+
 @test "runbook warns that the smoke test merges unattended" {
     [[ "$(section "## 5. Smoke test")" == *"unattended"*"merge"* ]]
 }
