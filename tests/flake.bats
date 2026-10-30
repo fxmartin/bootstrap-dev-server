@@ -563,7 +563,7 @@ STUB
 }
 
 @test "bootstrap wires the profile steps into Phase 4 in order" {
-    run bash -c "sed -n '/^main()/,\$p' '${PROJECT_ROOT}/bootstrap-dev-server.sh' | grep -E '^ +(install_dev_profile|configure_profile_path|setup_dev_env)\$' | tr -d ' ' | tr '\n' ' '"
+    run bash -c "sed -n '/^main()/,\$p' '${PROJECT_ROOT}/bootstrap-dev-server.sh' | grep -E '^ +(install_dev_profile|configure_profile_path|setup_dev_env)( |\$)' | awk '{print \$1}' | tr '\n' ' '"
     [ "$output" = "install_dev_profile configure_profile_path setup_dev_env " ]
 }
 

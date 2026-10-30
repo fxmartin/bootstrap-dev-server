@@ -45,6 +45,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 **Development Environment:**
 - Toolset installed as the user's default Nix profile (`packages.<system>.dev-env`, same `devPackages` list as the default dev shell), on PATH for login, `ssh dev '<cmd>'` and systemd user services
 - Claude Code + herdr (agent multiplexer, pinned to the fleet's 0.9.3 on x86_64-linux, run as a systemd user service) + `gh` CLI for GitHub
+- acmd + acm from the pinned `agentic-coding-monitor` flake input (private: read token in the user's `nix.conf` `access-tokens`), acmd run as a systemd user service
 - Python 3.12 + uv + ruff + pytest stack
 - Node.js 22 + bun + pnpm + TypeScript
 - Nix development tools (nil, nixfmt-rfc-style)
@@ -173,6 +174,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `MOSH_PORT_START` | 60000 | Mosh UDP range start |
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
+| `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input, stored in the user's `nix.conf` `access-tokens` (mode 0600), never logged or committed |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
 | `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |

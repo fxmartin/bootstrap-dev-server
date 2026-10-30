@@ -114,9 +114,11 @@ run_profile_test() {
     echo "Container started successfully"
 
     # Run bootstrap (with flags for headless container testing)
+    # Without ACM_NIX_ACCESS_TOKEN the run takes the missing-token path and installs
+    # no dev-env. Forwarded by name, which keeps its value off the command line.
     echo "Running bootstrap-dev-server.sh..."
-    ${RUNTIME} exec "${container_name}" \
-        bash -c "cd /bootstrap && sudo -u fx ./bootstrap-dev-server.sh --skip-github-auth --skip-security-hardening"
+    ${RUNTIME} exec ${ACM_NIX_ACCESS_TOKEN:+-e ACM_NIX_ACCESS_TOKEN} "${container_name}" \
+        bash -c "cd /bootstrap && sudo --preserve-env=ACM_NIX_ACCESS_TOKEN -u fx ./bootstrap-dev-server.sh --skip-github-auth --skip-security-hardening"
 
     # Run profile if not dev
     if [[ "${profile}" != "dev" ]]; then
