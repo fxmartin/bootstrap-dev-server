@@ -1815,13 +1815,20 @@ setup_herdr_service() {
         outside_pids="$(herdr_server_pids)"
     fi
     if [[ -n "${outside_pids}" ]]; then
-        if [[ "${RESTART_HERDR:-false}" == "true" ]]; then
+        if [[ "${RESTART_HERDR:-false}" == "true" && "${HERDR_ENV:-}" != "1" ]]; then
             if ! stop_unmanaged_herdr "${outside_pids}"; then
                 log_error "Could not stop the herdr server (PID ${outside_pids//$'\n'/ })"
                 return 1
             fi
             # The old server cannot clean up after itself once killed.
             rm -f "${socket}"
+        elif [[ "${RESTART_HERDR:-false}" == "true" ]]; then
+            # Stopping a server hangs up its panes, children included, so a
+            # bootstrap run from one dies here (trapping SIGHUP does not save
+            # it), with the unit not started and the later steps not run.
+            log_error "--restart-herdr inside a herdr pane: refusing to stop the server (PID ${outside_pids//$'\n'/ }) - this bootstrap would die with its pane"
+            log_error "Fix: re-run it from a shell outside herdr"
+            start_now=false
         else
             log_warn "A herdr server is already running outside the unit (PID ${outside_pids//$'\n'/ }) - leaving it running."
             log_warn "Stopping it ends its sessions. Re-run with --restart-herdr (or RESTART_HERDR=true) to hand over to the unit; it starts at next boot either way."

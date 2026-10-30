@@ -4,6 +4,8 @@
 
 load 'test_helper'
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     common_setup
     setup_mock_environment
@@ -51,7 +53,8 @@ EOF
     printf '#!/usr/bin/env bash\necho "herdr 0.9.3"\n' >"${MOCK_HOME}/.nix-profile/bin/herdr"
     chmod +x "${MOCK_HOME}/.nix-profile/bin/herdr"
 
-    unset RESTART_HERDR
+    # HERDR_ENV too: the suite may itself run from a herdr pane.
+    unset RESTART_HERDR HERDR_ENV
 
     log_info() { :; }
     log_ok() { :; }
@@ -282,8 +285,8 @@ foreign_alive() {
     touch "${SOCKET}"
     RESTART_HERDR=true run setup_herdr_service
     [ "${status}" -eq 0 ]
-    ! foreign_alive
     assert_contains "${output}" "ends its sessions"
+    run ! foreign_alive
     # stale socket from the old server is gone, so the unit's server can bind
     [ ! -e "${SOCKET}" ]
     grep -q 'systemctl --user enable --now herdr.service' "${STUB_LOG}"
@@ -318,8 +321,29 @@ foreign_alive() {
     RESTART_HERDR=true run setup_herdr_service
     [ "${status}" -eq 0 ]
     assert_contains "${output}" "SIGKILL"
-    ! foreign_alive
+    run ! foreign_alive
     grep -q 'systemctl --user enable --now herdr.service' "${STUB_LOG}"
+}
+
+@test "--restart-herdr from inside a herdr pane refuses, and the bootstrap carries on" {
+    start_foreign_server
+    HERDR_ENV=1 RESTART_HERDR=true run setup_herdr_service
+    [ "${status}" -eq 0 ]
+    foreign_alive
+    assert_contains "${output}" "refusing to stop"
+    assert_contains "${output}" "outside herdr"
+    assert_not_contains "${output}" "ends its sessions"
+    # enabled for the next boot, but not started on top of the running server
+    grep -q 'systemctl --user enable herdr.service' "${STUB_LOG}"
+    run grep -- '--now' "${STUB_LOG}"
+    [ "${status}" -ne 0 ]
+}
+
+@test "inside a pane of the unit's own server --restart-herdr has nothing to refuse" {
+    touch "${TEST_TEMP_DIR}/unit-active"
+    HERDR_ENV=1 RESTART_HERDR=true run setup_herdr_service
+    [ "${status}" -eq 0 ]
+    assert_not_contains "${output}" "refusing"
 }
 
 @test "--restart-herdr fails without enabling the unit when the server cannot be stopped" {
@@ -367,6 +391,6 @@ EOF
 
 @test "the herdr functions pass shellcheck" {
     command -v shellcheck &>/dev/null || skip "shellcheck not available"
-    run shellcheck -s bash "${BOOTSTRAP}"
+    run shellcheck -s bash -S warning "${BOOTSTRAP}"
     [ "${status}" -eq 0 ]
 }
