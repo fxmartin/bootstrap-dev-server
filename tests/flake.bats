@@ -4,6 +4,8 @@
 
 load 'test_helper'
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     common_setup
     export NO_COLOR=1
@@ -176,7 +178,8 @@ teardown() {
 }
 
 @test "flake default devShell (dev-server) uses pkgs.python3 as its interpreter" {
-    run bash -c "sed -n '/name = \"dev-server\"/,/devShells\.minimal/p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\.python3\$'"
+    # The package list is shared with dev-env, so the interpreter lives in devPackages.
+    run bash -c "sed -n '/devPackages = \\[/,/^        \\];/p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\.python3\$'"
     [ "$status" -eq 0 ]
 }
 
@@ -325,10 +328,8 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
-@test "flake never adds an MCP server" {
-    # Only the prune path may mention mcpServers now.
-    run bash -c "grep -n 'mcpServers' '${PROJECT_ROOT}/flake.nix' | grep -v 'del(' | grep -v 'jq -e' || true"
-    [ -z "$output" ]
+@test "flake never mentions mcpServers: no dev shell adds or prunes them" {
+    run ! grep -q 'mcpServers' "${PROJECT_ROOT}/flake.nix"
 }
 
 @test "flake.lock has no mcp-servers-nix node" {
@@ -336,10 +337,10 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
-@test "shell hook prunes stale MCP entries from ~/.claude.json" {
+@test "setup-dev-env.sh prunes stale MCP entries from ~/.claude.json" {
     # Entries left behind point at /nix/store paths that get garbage-collected,
     # so Claude Code would fail to start those servers on every launch.
-    run grep -q 'prune_stale_mcp\|del(.mcpServers' "${PROJECT_ROOT}/flake.nix"
+    run grep -q 'del(.mcpServers' "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -353,4 +354,308 @@ teardown() {
     [ "$status" -ne 0 ]
     run grep -q 'Stale MCP entries' "${PROJECT_ROOT}/tests/verify-server.sh"
     [ "$status" -eq 0 ]
+}
+
+@test "verify-server.sh points stale MCP entries at the script that prunes them" {
+    run grep -q 'Stale MCP entries.*setup-dev-env\.sh' "${PROJECT_ROOT}/tests/verify-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+# =============================================================================
+# dev-env Profile Tests
+# =============================================================================
+# The toolset is installed as the user's default Nix profile so it is on PATH in
+# every context. These tests never touch a real Nix: `nix` is a stub that logs
+# its argv, and every path lives under the temp HOME.
+
+setup_profile_stubs() {
+    export HOME="${MOCK_HOME}"
+    export STUB_DIR="${TEST_TEMP_DIR}/stubs"
+    export NIX_LOG="${TEST_TEMP_DIR}/nix.log"
+    export PROFILE_JSON="${TEST_TEMP_DIR}/profile.json"
+    mkdir -p "${STUB_DIR}"
+    : >"${NIX_LOG}"
+    echo '{"elements":{},"version":3}' >"${PROFILE_JSON}"
+    cat >"${STUB_DIR}/nix" <<STUB
+#!/usr/bin/env bash
+echo "nix \$*" >>"${NIX_LOG}"
+if [[ "\${1:-}" == "profile" && "\${2:-}" == "list" ]]; then cat "${PROFILE_JSON}"; fi
+STUB
+    cat >"${STUB_DIR}/sudo" <<'STUB'
+#!/usr/bin/env bash
+while [[ "${1:-}" == -* ]]; do shift; done
+exec "$@"
+STUB
+    chmod +x "${STUB_DIR}/nix" "${STUB_DIR}/sudo"
+    export PATH="${STUB_DIR}:${PATH}"
+}
+
+load_profile_function() {
+    local fn="$1"
+    log_info() { :; }
+    log_ok() { :; }
+    log_warn() { echo "WARN: $1" >&2; }
+    log_error() { echo "ERROR: $1" >&2; }
+    # shellcheck disable=SC1090
+    source <(sed -n "/^${fn}()/,/^}\$/p" "${PROJECT_ROOT}/bootstrap-dev-server.sh")
+}
+
+# PATH holds only the stubs and what the function shells out to, so no jq is reachable.
+install_dev_profile_without_jq() {
+    local tool
+    for tool in bash cat grep; do
+        ln -sf "$(command -v "${tool}")" "${STUB_DIR}/${tool}"
+    done
+    local PATH="${STUB_DIR}"
+    install_dev_profile
+}
+
+@test "flake exposes packages.dev-env as a buildEnv" {
+    run grep -qE 'packages\.dev-env *= *pkgs\.buildEnv' "${PROJECT_ROOT}/flake.nix"
+    [ "$status" -eq 0 ]
+}
+
+@test "dev-env and the default devShell share one devPackages list" {
+    run grep -cE 'paths = devPackages;' "${PROJECT_ROOT}/flake.nix"
+    [ "$output" -eq 1 ]
+    run grep -cE 'buildInputs = devPackages;' "${PROJECT_ROOT}/flake.nix"
+    [ "$output" -eq 1 ]
+    # defined exactly once, as a let binding
+    run grep -cE '^ +devPackages = \[' "${PROJECT_ROOT}/flake.nix"
+    [ "$output" -eq 1 ]
+}
+
+@test "the default devShell no longer carries its own package list" {
+    run bash -c "sed -n '/devShells\.default = /,/shellHook/p' '${PROJECT_ROOT}/flake.nix' | grep -v 'pkgs\\.mkShell' | grep -c 'pkgs\\.' || true"
+    [ "$output" -eq 0 ]
+}
+
+@test "default shellHook no longer performs setup side effects" {
+    local hook
+    hook="$(sed -n '/devShells\.default = /,/devShells\.minimal/p' "${PROJECT_ROOT}/flake.nix")"
+    [[ "${hook}" != *"ensure_symlink"* ]]
+    [[ "${hook}" != *".msmtprc"* ]]
+    [[ "${hook}" != *"ZSHEOF"* ]]
+    [[ "${hook}" != *"mcpServers"* ]]
+}
+
+@test "dev shells still exist: default, minimal and python" {
+    for shell in default minimal python; do
+        run grep -qE "devShells\.${shell} = pkgs\.mkShell" "${PROJECT_ROOT}/flake.nix"
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "bootstrap installs the profile with the repo flake reference on first run" {
+    setup_profile_stubs
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile install ${HOME}/.config/nix-dev-env#dev-env" "${NIX_LOG}"
+    run ! grep -q "nix profile upgrade" "${NIX_LOG}"
+}
+
+@test "bootstrap upgrades instead of reinstalling when dev-env is already in the profile" {
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"dev-env":{"attrPath":"packages.x86_64-linux.dev-env","originalUrl":"path:/home/fx/.config/nix-dev-env","storePaths":["/nix/store/aaa-dev-env"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile upgrade dev-env" "${NIX_LOG}"
+    run ! grep -q "nix profile install" "${NIX_LOG}"
+    run ! grep -q "nix profile remove" "${NIX_LOG}"
+}
+
+@test "bootstrap removes stray profile entries, logs them, and keeps dev-env" {
+    command -v jq &>/dev/null || skip "jq not available"
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{
+ "herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","originalUrl":"flake:nixpkgs","storePaths":["/nix/store/bbb-herdr-0.9.1"]},
+ "dev-env":{"attrPath":"packages.x86_64-linux.dev-env","originalUrl":"path:/home/fx/.config/nix-dev-env","storePaths":["/nix/store/aaa-dev-env"]}
+},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run --separate-stderr install_dev_profile
+    [ "$status" -eq 0 ]
+    [[ "${stderr}" == *"Removing stray profile entry 'herdr'"* ]]
+    grep -qF "nix profile remove herdr" "${NIX_LOG}"
+    run ! grep -qF "nix profile remove dev-env" "${NIX_LOG}"
+}
+
+@test "strays are removed before the install so they cannot collide with dev-env" {
+    command -v jq &>/dev/null || skip "jq not available"
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    local remove_line install_line
+    remove_line="$(grep -n 'nix profile remove' "${NIX_LOG}" | cut -d: -f1)"
+    install_line="$(grep -n 'nix profile install' "${NIX_LOG}" | cut -d: -f1)"
+    [ "${remove_line}" -lt "${install_line}" ]
+}
+
+@test "the apt base packages provide jq for the stray check" {
+    # A profile that can hold a stray predates dev-env, so it has no jq of its own.
+    local base_packages
+    base_packages="$(sed -n '/^install_base_packages()/,/^}$/p' "${PROJECT_ROOT}/bootstrap-dev-server.sh")"
+    grep -qE '^ +jq \\$' <<<"${base_packages}"
+}
+
+@test "a profile with entries fails without jq rather than collide on install" {
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run --separate-stderr install_dev_profile_without_jq
+    [ "$status" -ne 0 ]
+    [[ "${stderr}" == *"ERROR: jq not found"* ]]
+    run ! grep -q "nix profile install" "${NIX_LOG}"
+}
+
+@test "an empty profile installs without jq: there is nothing to vet" {
+    setup_profile_stubs
+    load_profile_function install_dev_profile
+    run install_dev_profile_without_jq
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile install ${HOME}/.config/nix-dev-env#dev-env" "${NIX_LOG}"
+}
+
+@test "a failing nix profile install fails the bootstrap step" {
+    setup_profile_stubs
+    cat >"${STUB_DIR}/nix" <<STUB
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "profile" && "\${2:-}" == "list" ]]; then cat "${PROFILE_JSON}"; exit 0; fi
+exit 1
+STUB
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -ne 0 ]
+}
+
+@test "post-install instructions no longer make entering dev a required step" {
+    run ! grep -q 'Enter dev environment' "${PROJECT_ROOT}/bootstrap-dev-server.sh" "${PROJECT_ROOT}/hcloud-provision.sh"
+}
+
+@test "bootstrap wires the profile steps into Phase 4 in order" {
+    run bash -c "sed -n '/^main()/,\$p' '${PROJECT_ROOT}/bootstrap-dev-server.sh' | grep -E '^ +(install_dev_profile|configure_profile_path|setup_dev_env)\$' | tr -d ' ' | tr '\n' ' '"
+    [ "$output" = "install_dev_profile configure_profile_path setup_dev_env " ]
+}
+
+@test "configure_profile_path prepends the profile bin to /etc/environment PATH once" {
+    setup_profile_stubs
+    export ENVIRONMENT_FILE="${TEST_TEMP_DIR}/environment"
+    echo 'PATH="/usr/local/bin:/usr/bin:/bin"' >"${ENVIRONMENT_FILE}"
+    load_profile_function configure_profile_path
+    run configure_profile_path
+    [ "$status" -eq 0 ]
+    grep -qF "PATH=\"${HOME}/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin\"" "${ENVIRONMENT_FILE}"
+    run configure_profile_path
+    [ "$status" -eq 0 ]
+    [ "$(grep -cF "${HOME}/.nix-profile/bin" "${ENVIRONMENT_FILE}")" -eq 1 ]
+    [ "$(grep -cF '>>> nix-profile-path >>>' "${HOME}/.profile")" -eq 1 ]
+}
+
+@test "configure_profile_path creates a PATH entry when /etc/environment has none" {
+    setup_profile_stubs
+    export ENVIRONMENT_FILE="${TEST_TEMP_DIR}/environment"
+    : >"${ENVIRONMENT_FILE}"
+    load_profile_function configure_profile_path
+    run configure_profile_path
+    [ "$status" -eq 0 ]
+    grep -qE "^PATH=\"${HOME}/.nix-profile/bin:" "${ENVIRONMENT_FILE}"
+}
+
+# -----------------------------------------------------------------------------
+# setup-dev-env.sh: the shellHook side effects, now run by the bootstrap
+# -----------------------------------------------------------------------------
+
+run_setup_dev_env() {
+    export HOME="${MOCK_HOME}"
+    export REPO_CLAUDE_DIR="${TEST_TEMP_DIR}/repo-claude"
+    mkdir -p "${REPO_CLAUDE_DIR}/agents" "${REPO_CLAUDE_DIR}/commands"
+    echo "# claude" >"${REPO_CLAUDE_DIR}/CLAUDE.md"
+    echo '{}' >"${REPO_CLAUDE_DIR}/settings.json"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+}
+
+@test "setup-dev-env.sh symlinks the Claude config and is idempotent" {
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [ "$(readlink "${HOME}/.claude/agents")" = "${REPO_CLAUDE_DIR}/agents" ]
+    [ "$(readlink "${HOME}/.claude/CLAUDE.md")" = "${REPO_CLAUDE_DIR}/CLAUDE.md" ]
+    [ "$(readlink "${HOME}/.claude/settings.json")" = "${REPO_CLAUDE_DIR}/settings.json" ]
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    [[ "${output}" != *"Linked"* ]]
+}
+
+@test "setup-dev-env.sh backs up a real file before linking over it" {
+    mkdir -p "${MOCK_HOME}/.claude"
+    echo "mine" >"${MOCK_HOME}/.claude/CLAUDE.md"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [ "$(cat "${HOME}/.claude/CLAUDE.md.backup")" = "mine" ]
+}
+
+@test "setup-dev-env.sh writes the zshrc and msmtprc templates without clobbering" {
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    grep -q "nix-dev-env" "${HOME}/.zshrc"
+    [ "$(stat -c %a "${HOME}/.msmtprc")" = "600" ]
+    echo "# edited" >>"${HOME}/.msmtprc"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    grep -q "# edited" "${HOME}/.msmtprc"
+}
+
+@test "setup-dev-env.sh prunes stale MCP servers and keeps the rest" {
+    command -v jq &>/dev/null || skip "jq not available"
+    echo '{"mcpServers":{"context7":{},"sequential-thinking":{},"keep":{}}}' >"${MOCK_HOME}/.claude.json"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    run jq -c '.mcpServers | keys' "${MOCK_HOME}/.claude.json"
+    [ "$output" = '["keep"]' ]
+}
+
+@test "setup-dev-env.sh passes shellcheck" {
+    command -v shellcheck &>/dev/null || skip "shellcheck not available"
+    run shellcheck -x -P SCRIPTDIR -S warning "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup-dev-env.sh leaves ~/.claude.json untouched when no MCP entry is stale" {
+    command -v jq &>/dev/null || skip "jq not available"
+    echo '{"mcpServers":{"keep":{}}}' >"${MOCK_HOME}/.claude.json"
+    before="$(cat "${MOCK_HOME}/.claude.json")"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [[ "${output}" != *"Pruned"* ]]
+    [ "$(cat "${MOCK_HOME}/.claude.json")" = "${before}" ]
+}
+
+@test "setup-dev-env.sh skips Claude linking when the repo config dir is absent" {
+    export HOME="${MOCK_HOME}"
+    export REPO_CLAUDE_DIR="${TEST_TEMP_DIR}/does-not-exist"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    [ ! -e "${HOME}/.claude/agents" ]
+}
+
+@test "setup-dev-env.sh repairs a wrong symlink and keeps zshrc idempotent" {
+    mkdir -p "${MOCK_HOME}/.claude"
+    ln -s /nonexistent "${MOCK_HOME}/.claude/agents"
+    run_setup_dev_env
+    [ "$status" -eq 0 ]
+    [ "$(readlink "${HOME}/.claude/agents")" = "${REPO_CLAUDE_DIR}/agents" ]
+    count_before="$(grep -c "nix-dev-env" "${HOME}/.zshrc")"
+    run bash "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "nix-dev-env" "${HOME}/.zshrc")" = "${count_before}" ]
 }

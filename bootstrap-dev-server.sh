@@ -139,6 +139,7 @@ install_base_packages() {
         curl \
         wget \
         git \
+        jq \
         xz-utils \
         ufw \
         fail2ban \
@@ -1600,6 +1601,129 @@ SHELLEOF
 }
 
 #===============================================================================
+# Install the Dev Toolset as the User's Default Nix Profile
+#===============================================================================
+# flake.nix exposes packages.<system>.dev-env: a buildEnv of the exact package
+# list devShells.default uses. Installing it as the profile puts the toolset
+# on PATH in every context (login, `ssh dev '<cmd>'`, systemd user services,
+# herdr panes), not only inside `dev`.
+#
+# The profile must hold only what the flake declares. Strays installed by hand
+# (e.g. a herdr 0.9.1 package) are removed first - they would otherwise collide
+# with dev-env's own bin/ entries and fail the install.
+install_dev_profile() {
+    log_info "Installing the dev toolset as the default Nix profile..."
+
+    local FLAKE_DIR="${HOME}/.config/nix-dev-env"
+
+    # Source Nix if not already available
+    if ! command -v nix &>/dev/null; then
+        if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+            # shellcheck source=/dev/null
+            . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        fi
+    fi
+
+    local profile_json
+    if ! profile_json="$(nix profile list --json)"; then
+        log_error "Could not list the Nix profile"
+        return 1
+    fi
+
+    # Element keys are names on nix >= 2.20 (indices before); either is a valid
+    # `nix profile remove` argument. Anything not rooted at dev-env is a stray.
+    # jq comes from the apt list: a profile that can hold a stray predates dev-env,
+    # so it has no jq of its own. Installing past an unchecked stray would collide.
+    if command -v jq &>/dev/null; then
+        local stray_lines name origin
+        stray_lines="$(jq -r '
+            .elements | to_entries[]
+            | select((.value.attrPath // "") | test("^packages\\.[^.]+\\.dev-env$") | not)
+            | "\(.key)\t\(.value.attrPath // .value.originalUrl // (.value.storePaths // [] | first) // "unknown")"
+        ' <<<"${profile_json}")"
+        while IFS=$'\t' read -r name origin; do
+            [[ -n "${name}" ]] || continue
+            log_warn "Removing stray profile entry '${name}' (${origin})"
+            nix profile remove "${name}"
+        done <<<"${stray_lines}"
+    elif grep -q '"attrPath"\|"storePaths"' <<<"${profile_json}"; then
+        log_error "jq not found - cannot check the Nix profile for stray entries"
+        return 1
+    fi
+
+    # Install the first time, upgrade after: an unchanged flake is a no-op
+    if grep -Eq '"attrPath": *"packages\.[^"]+\.dev-env"' <<<"${profile_json}"; then
+        nix profile upgrade dev-env || {
+            log_error "nix profile upgrade dev-env failed"
+            return 1
+        }
+        log_ok "Dev toolset profile is up to date"
+    else
+        nix profile install "${FLAKE_DIR}#dev-env" || {
+            log_error "nix profile install ${FLAKE_DIR}#dev-env failed"
+            return 1
+        }
+        log_ok "Dev toolset installed as the default Nix profile"
+    fi
+}
+
+#===============================================================================
+# Put ~/.nix-profile/bin on PATH for Login and Non-Interactive Shells
+#===============================================================================
+# ~/.bashrc is not enough: Ubuntu's returns early for non-interactive shells,
+# so `ssh dev 'rg --version'` would never see it. /etc/environment is read by
+# pam_env for sshd sessions and by the systemd user manager (environment.d links
+# it as 99-environment.conf); ~/.profile covers login shells.
+configure_profile_path() {
+    log_info "Putting ~/.nix-profile/bin on PATH..."
+
+    local env_file="${ENVIRONMENT_FILE:-/etc/environment}"
+    local profile_bin="${HOME}/.nix-profile/bin"
+    local profile_rc="${HOME}/.profile"
+    local marker="# >>> nix-profile-path >>>"
+
+    if grep -qF "${profile_bin}" "${env_file}" 2>/dev/null; then
+        log_ok "${env_file} already puts ${profile_bin} on PATH"
+    elif grep -q '^PATH=' "${env_file}" 2>/dev/null; then
+        sudo sed -i "s|^PATH=\"\?|&${profile_bin}:|" "${env_file}"
+        log_ok "Prepended ${profile_bin} to PATH in ${env_file}"
+    else
+        echo "PATH=\"${profile_bin}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"" |
+            sudo tee -a "${env_file}" >/dev/null
+        log_ok "Added PATH with ${profile_bin} to ${env_file}"
+    fi
+
+    if grep -qF "${marker}" "${profile_rc}" 2>/dev/null; then
+        log_ok "Login shell PATH already configured"
+    else
+        cat >>"${profile_rc}" <<'PROFILEEOF'
+
+# >>> nix-profile-path >>>
+export PATH="$HOME/.nix-profile/bin:$PATH"
+# <<< nix-profile-path <<<
+PROFILEEOF
+        log_ok "Login shell PATH configured in ${profile_rc}"
+    fi
+}
+
+#===============================================================================
+# Per-user Setup Formerly Done by the Dev Shell's shellHook
+#===============================================================================
+# Claude config symlinks, stale MCP pruning, zshrc and msmtprc templates.
+setup_dev_env() {
+    log_info "Applying per-user dev environment setup..."
+
+    local setup_script="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/scripts/setup-dev-env.sh"
+    if [[ ! -f "${setup_script}" ]]; then
+        log_error "scripts/setup-dev-env.sh not found under ${REPO_CLONE_DIR}"
+        return 1
+    fi
+
+    bash "${setup_script}"
+    log_ok "Per-user dev environment setup applied"
+}
+
+#===============================================================================
 # Install a systemd unit from stdin only when its content differs from disk
 # Returns 0 when the unit was (re)written, 1 when it was already up to date
 #===============================================================================
@@ -1831,7 +1955,7 @@ create_claude_md() {
 - Editor: Neovim preferred
 
 ## Development Workflow
-1. Enter dev environment: `dev` or `nix develop`
+1. The toolset is already on PATH; `dev` or `nix develop` enters the optional dev shell
 2. Use `lazygit` for git operations
 3. Use `gh` for GitHub CLI operations
 
@@ -1963,8 +2087,7 @@ print_summary() {
     echo ""
     echo -e "  ${BLUE}Quick Start:${NC}"
     echo -e "    1. Reconnect or run: ${YELLOW}source ~/.bashrc${NC}"
-    echo -e "    2. Enter dev environment: ${YELLOW}dev${NC}"
-    echo -e "    3. Start Claude: ${YELLOW}claude${NC}"
+    echo -e "    2. Start Claude: ${YELLOW}claude${NC}"
     echo ""
     echo -e "  ${BLUE}Available Environments:${NC}"
     echo -e "    ${YELLOW}dev${NC}        - Full dev environment"
@@ -2109,6 +2232,9 @@ main() {
     install_nix
     create_dev_flake
     setup_shell_integration
+    install_dev_profile
+    configure_profile_path
+    setup_dev_env
     setup_nix_update_timer
     setup_nix_gc_timer
     configure_tmux

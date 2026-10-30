@@ -407,13 +407,13 @@ fi
 
 header "12. Herdr Tests"
 
-# Test 12.1: herdr is on PATH inside the dev shell
+# Test 12.1: herdr is on PATH from the dev-env Nix profile
 if command -v herdr &>/dev/null; then
     pass "herdr is available"
     HERDR_VERSION="$(herdr --version 2>/dev/null || echo "unknown")"
     info "herdr version: ${HERDR_VERSION}"
 else
-    warn "herdr not found (only present inside the dev shell)"
+    warn "herdr not found (expected from the dev-env Nix profile)"
 fi
 
 # Test 12.2: no stale MCP entries left behind in ~/.claude.json.
@@ -422,7 +422,7 @@ fi
 CLAUDE_JSON="${HOME}/.claude.json"
 if [[ -f "${CLAUDE_JSON}" ]]; then
     if grep -q '"context7"\|"sequential-thinking"' "${CLAUDE_JSON}" 2>/dev/null; then
-        fail "Stale MCP entries remain in ${CLAUDE_JSON} - re-enter the dev shell to prune them"
+        fail "Stale MCP entries remain in ${CLAUDE_JSON} - run scripts/setup-dev-env.sh to prune them"
     else
         pass "No stale MCP entries in ~/.claude.json"
     fi
