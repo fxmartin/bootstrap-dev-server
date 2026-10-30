@@ -252,7 +252,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **sdlc controller + glab**: `glab` ships in the Nix profile; the `sdlc` controller is installed with `uv tool install` from a pinned `claude-code-config` tag (`SDLC_CONTROLLER_TAG` in `config/versions.env`, bumped by merge request) on a uv-managed Python 3.12, never a `/nix/store` interpreter, so Nix garbage collection cannot break it. Re-running with the same tag changes nothing; a new tag upgrades. Login shells and `ssh dev '<cmd>'` export `GITLAB_HOST=gitlab.test` - see [sdlc and GitLab](#sdlc-and-gitlab)
 - **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
-- **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
+- **Weekly Nix updates**: Systemd timer applies `main` every Sunday at 3am - hard-resets the checkout to `origin/main`, builds `dev-env`, upgrades the profile (email summary). It never updates `flake.lock` itself, see [Updating Packages](#updating-packages-flakelock)
 
 #### Python/FastAPI Stack
 - Python 3.12, uv, pip, virtualenv
@@ -308,7 +308,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 | `dev` | Enter full dev shell (same toolset as the profile) |
 | `dm` | Minimal environment (Claude + basics) |
 | `dp` | Python-focused environment |
-| `dev-update` | Pull latest from repo + update Nix packages |
+| `dev-update` | Apply `origin/main` now: reset the checkout, build `dev-env`, upgrade the profile (prints the commit applied) |
 | `claude` | Start Claude Code |
 
 ### Modern CLI Tools Guide
@@ -742,6 +742,32 @@ nothing bound on `0.0.0.0:9100`), or by hand from a tailnet machine:
 curl -s http://$(ssh dev-server tailscale ip -4):9100/metrics | grep node_exporter_build_info
 ```
 
+## Updating Packages (`flake.lock`)
+
+The repository is the only source of `flake.lock`. The server never runs `nix flake update`: the weekly `nix-flake-update.timer` and the `dev-update` shell function both apply exactly what is on `main`:
+
+1. `git fetch` + `git reset --hard origin/main` on `~/.local/share/bootstrap-dev-server`, then `git submodule update --recursive`
+2. `nix build ~/.config/nix-dev-env#dev-env --no-update-lock-file`
+3. Only if the build succeeds, `nix profile upgrade dev-env`
+
+A failed fetch or build leaves the previous profile in place; the weekly service reports `failed` in its email. Because the reset is hard, local edits to tracked files in the checkout are discarded - the service and `dev-update` log the file list and short stat (and any local commits) before they go, so nothing vanishes silently. Put changes in a merge request instead.
+
+`--no-update-lock-file` means the box never locks anything itself: if a merged `flake.nix` needs a lock change nobody committed, the run fails instead of writing an unreviewed `flake.lock`. The bootstrap's profile step refuses the same way.
+
+`dev-update` lives in generated blocks in `~/.bashrc` and `~/.zshrc`. Re-running the bootstrap rewrites those blocks when their content drifts, keeps everything outside the markers, and saves the previous file as `.backup`. A box provisioned earlier keeps its old `dev-update`, which still runs `nix flake update`, until that re-run; open a new shell afterwards.
+
+**To get newer packages** (maintainer, on a dev machine):
+
+```bash
+git checkout -b chore/update-lock
+just update-lock          # nix flake update, then nix flake check
+git commit -am "chore: update flake.lock"
+```
+
+Open a merge request with the new `flake.lock`. Once it is merged, the next Sunday run (or `dev-update`) picks it up, and reverting the merge reverts the packages.
+
+---
+
 ## SSH Key Security
 
 This project uses a **dedicated SSH key** (`~/.ssh/id_devserver`) for dev server access, separate from your GitHub or other service keys.
@@ -878,7 +904,7 @@ Source the profile or reconnect:
 
 ### Nix store filling up the disk
 
-The weekly flake update (`nix-flake-update.timer`) builds a new closure every run, so old generations and unreferenced store paths must be reclaimed or the disk fills up. Bootstrap installs a weekly `nix-gc.timer` (Sundays at 4am) that runs `nix-collect-garbage --delete-older-than 30d` to handle this automatically.
+The weekly update (`nix-flake-update.timer`) builds a new closure whenever `main`'s `flake.lock` changed, so old generations and unreferenced store paths must be reclaimed or the disk fills up. Bootstrap installs a weekly `nix-gc.timer` (Sundays at 4am) that runs `nix-collect-garbage --delete-older-than 30d` to handle this automatically.
 
 Check it's enabled:
 ```bash
@@ -1031,12 +1057,14 @@ After installation:
 │   │   └── hcloud-provision-YYYYMMDD-HHMMSS.log
 │   └── share/bootstrap-dev-server/  # Clone of this repo
 │       ├── flake.nix          # Dev environment definition
-│       ├── flake.lock         # Locked package versions
+│       ├── flake.lock         # Locked package versions (updated via `just update-lock` + MR)
+│       ├── justfile           # Maintainer recipes (update-lock)
 │       ├── external/
 │       │   └── nix-install/   # Git submodule (Claude configs source)
 │       │       └── config/claude/
 │       ├── lib/
-│       │   └── logging.sh     # Shared logging library
+│       │   ├── logging.sh     # Shared logging library
+│       │   └── rc-block.sh    # Keeps generated rc blocks current
 │       ├── config/
 │       │   ├── node-exporter.service   # node_exporter system unit
 │       │   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
@@ -1069,7 +1097,7 @@ The `~/.claude/` directory contains symlinks to the submodule:
 
 **Updating Claude configs:**
 ```bash
-dev-update   # Pulls repo + syncs submodule automatically
+dev-update   # Resets to origin/main + syncs submodule automatically
 ```
 
 ---

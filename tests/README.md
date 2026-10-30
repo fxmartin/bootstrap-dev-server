@@ -30,6 +30,7 @@ bats tests/health-check.bats
 bats tests/secure-ssh-key.bats
 bats tests/node-exporter.bats
 bats tests/tailscale.bats
+bats tests/rc-block.bats
 
 # Run with verbose output
 bats --verbose-run tests/

@@ -468,6 +468,25 @@ JSON
     run ! grep -q "nix profile remove" "${NIX_LOG}"
 }
 
+@test "bootstrap's first install refuses lock updates: an uncovered flake.nix fails, never locks on the box" {
+    setup_profile_stubs
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile install ${HOME}/.config/nix-dev-env#dev-env --no-update-lock-file" "${NIX_LOG}"
+}
+
+@test "bootstrap's upgrade refuses lock updates: an uncovered flake.nix fails, never locks on the box" {
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"dev-env":{"attrPath":"packages.x86_64-linux.dev-env","originalUrl":"path:/home/fx/.config/nix-dev-env","storePaths":["/nix/store/aaa-dev-env"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile upgrade dev-env --no-update-lock-file" "${NIX_LOG}"
+}
+
 @test "bootstrap removes stray profile entries, logs them, and keeps dev-env" {
     command -v jq &>/dev/null || skip "jq not available"
     setup_profile_stubs
