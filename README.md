@@ -654,6 +654,10 @@ git -C ~/.local/share/bootstrap-dev-server pull
 bash ~/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh
 ```
 
+The installer skips the upgrade (warning with the PIDs, exit 0) while an `sdlc build|fix|resume|queue run`
+of your user is running, since replacing the venv crashes it. Re-run the bootstrap when it finishes, or set
+`SDLC_FORCE_REINSTALL=1` to override and accept that those runs will crash.
+
 **Concurrency**: on this server size (cx33: 4 vCPU / 8 GB) run 1-2 concurrent workers, or pass
 `--sequential`. Each worker runs a Claude Code session *and* the repo's test suite at the same time, so
 three or more workers exhaust the memory (the bootstrap configures no swap, so the kernel starts
