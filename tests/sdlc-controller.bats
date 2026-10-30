@@ -37,6 +37,8 @@ exec "$@"
 EOF2
     chmod +x "${STUB_DIR}/uv" "${STUB_DIR}/sudo"
     export PATH="${STUB_DIR}:${PATH}"
+    # No sdlc run is active unless a test says so (the real host may have one).
+    stub_pgrep ""
 
     export SDLC_STATE_FILE="${TEST_TEMP_DIR}/state/sdlc-controller.tag"
 }
@@ -124,6 +126,79 @@ load_bootstrap_function() {
     grep -qF '@v1.1.0#subdirectory=controller' "${UV_LOG}"
     grep -q -- '--force' "${UV_LOG}"
     [ "$(cat "${SDLC_STATE_FILE}")" = "v1.1.0" ]
+}
+
+# pgrep is the seam: the stub takes "PID command" lines and, like `pgrep -af
+# <pattern>`, matches the installer's pattern (its last argument) against the
+# command only.
+stub_pgrep() {
+    printf '%s\n' "$@" >"${TEST_TEMP_DIR}/procs"
+    cat >"${STUB_DIR}/pgrep" <<EOF2
+#!/usr/bin/env bash
+while read -r pid cmd; do
+    [[ -n "\${pid}" ]] && grep -qE -- "\${!#}" <<<"\${cmd}" && echo "\${pid} \${cmd}"
+done <"${TEST_TEMP_DIR}/procs"
+exit 0
+EOF2
+    chmod +x "${STUB_DIR}/pgrep"
+}
+
+bump_tag() {
+    cp "${VERSIONS}" "${TEST_TEMP_DIR}/versions.env"
+    export SDLC_VERSIONS_FILE="${TEST_TEMP_DIR}/versions.env"
+    sed -i 's/^SDLC_CONTROLLER_TAG=.*/SDLC_CONTROLLER_TAG=v1.0.0/' "${SDLC_VERSIONS_FILE}"
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    sed -i 's/^SDLC_CONTROLLER_TAG=.*/SDLC_CONTROLLER_TAG=v1.1.0/' "${SDLC_VERSIONS_FILE}"
+    : >"${UV_LOG}"
+}
+
+@test "a tag bump while sdlc build runs skips the install and warns with the PID" {
+    bump_tag
+    stub_pgrep "4242 /home/fx/.local/share/uv/tools/sdlc/bin/python /home/fx/.local/bin/sdlc build 01.1-002"
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    [ ! -s "${UV_LOG}" ]
+    [[ "$output" == *"4242"* ]]
+    [[ "$output" == *"sdlc build"* ]]
+    [[ "$output" == *"Re-run the bootstrap"* ]]
+    [ "$(cat "${SDLC_STATE_FILE}")" = "v1.0.0" ]
+}
+
+@test "a tag bump with no sdlc process installs" {
+    bump_tag
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    grep -q -- 'tool install' "${UV_LOG}"
+}
+
+@test "SDLC_FORCE_REINSTALL=1 installs over a running sdlc and warns" {
+    bump_tag
+    stub_pgrep "4242 sdlc fix 7"
+    SDLC_FORCE_REINSTALL=1 run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    grep -q -- 'tool install' "${UV_LOG}"
+    [[ "$output" == *"will crash"* ]]
+    [[ "$output" == *"4242"* ]]
+}
+
+@test "a process that merely mentions sdlc does not block the install" {
+    bump_tag
+    stub_pgrep "4300 vim sdlc-notes.md" "4301 less sdlc build-notes.txt"
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    grep -q -- 'tool install' "${UV_LOG}"
+}
+
+@test "sdlc queue run and resume also block the install" {
+    bump_tag
+    stub_pgrep "4400 sdlc queue run"
+    run bash "${INSTALLER}"
+    [ ! -s "${UV_LOG}" ]
+    [[ "$output" == *"4400"* ]]
+    stub_pgrep "4401 sdlc resume 48c748ba"
+    run bash "${INSTALLER}"
+    [ ! -s "${UV_LOG}" ]
 }
 
 @test "a failed uv install leaves no state, so the next run retries" {

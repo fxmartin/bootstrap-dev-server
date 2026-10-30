@@ -25,6 +25,8 @@ else
     log_ok() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') [OK]    ${1}"; }
     # shellcheck disable=SC2312
     log_error() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] ${1}" >&2; }
+    # shellcheck disable=SC2312
+    log_warn() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') [WARN]  ${1}" >&2; }
 fi
 
 VERSIONS_FILE="${SDLC_VERSIONS_FILE:-${REPO_DIR}/config/versions.env}"
@@ -64,6 +66,23 @@ installed_tag=""
 if [[ "${installed_tag}" == "${SDLC_CONTROLLER_TAG}" ]] && sdlc --version &>/dev/null; then
     log_ok "sdlc controller ${SDLC_CONTROLLER_TAG} already installed"
     exit 0
+fi
+
+# Replacing the venv under a live `sdlc build|fix|resume|queue run` crashes it
+# (lazy imports like sdlc.parsers vanish). Anchored on the command word, so
+# `vim sdlc-notes.md` or an editor open on a file named sdlc does not match.
+SDLC_RUN_PATTERN='^([^ ]*/)?(python[0-9.]* +)?([^ ]*/)?sdlc +(build|fix|resume|queue +run)( |$)'
+running="$(pgrep -u "$(id -u)" -af "${SDLC_RUN_PATTERN}" 2>/dev/null | grep -v "^$$ " || true)"
+if [[ -n "${running}" ]]; then
+    if [[ "${SDLC_FORCE_REINSTALL:-}" == "1" ]]; then
+        log_warn "SDLC_FORCE_REINSTALL=1: reinstalling while sdlc is running - these processes will crash:"
+        log_warn "${running}"
+    else
+        log_warn "sdlc is running, skipping the controller install to ${SDLC_CONTROLLER_TAG}:"
+        log_warn "${running}"
+        log_warn "Re-run the bootstrap when they finish (or set SDLC_FORCE_REINSTALL=1 to override)"
+        exit 0
+    fi
 fi
 
 log_info "Installing sdlc controller ${SDLC_CONTROLLER_TAG} on uv-managed Python ${SDLC_CONTROLLER_PYTHON}..."
