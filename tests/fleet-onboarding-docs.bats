@@ -19,6 +19,11 @@ line_of() {
     grep -nF -- "$1" "${RUNBOOK}" | head -n 1 | cut -d: -f1
 }
 
+# Text of one section: the lines after its heading, up to the next "## " heading.
+section() {
+    awk -v h="$1" 'index($0, h) == 1 { inside = 1; next } /^## / && inside { exit } inside { print }' "${RUNBOOK}"
+}
+
 @test "runbook exists" {
     [ -f "${RUNBOOK}" ]
 }
@@ -38,7 +43,52 @@ line_of() {
     for item in "claude" "gh auth login" "glab auth login" "codex login" "ACM_NIX_ACCESS_TOKEN"; do
         [ -n "$(line_of "${item}")" ] || { echo "missing: ${item}"; return 1; }
     done
-    grep -qF "GITLAB_HOST=gitlab.test glab auth login" "${RUNBOOK}"
+    # gitlab.test answers on HTTP only, and glab's protocols default to HTTPS
+    grep -qF "glab auth login --hostname gitlab.test --api-protocol http --git-protocol http" "${RUNBOOK}"
+}
+
+@test "runbook points Git at glab by name, with no flag the server's glab lacks" {
+    grep -qF "git config --global --replace-all credential.http://gitlab.test.helper '!glab auth git-credential'" "${RUNBOOK}"
+    # The nixpkgs pin ships glab 1.114.0: the flag came later, so the login would stop at "unknown flag"
+    run grep -F -- "--setup-git-credential-helper" "${RUNBOOK}"
+    [ "${status}" -ne 0 ]
+}
+
+@test "runbook says the bootstrap does not install codex" {
+    grep -qE '^\| Codex \|.*does not install' "${RUNBOOK}"
+}
+
+@test "runbook authenticates Tailscale after the bootstrap, before the logins" {
+    local bootstrap tailscale logins
+    bootstrap="$(line_of "bootstrap-dev-server.sh | ACM_NIX_ACCESS_TOKEN=")"
+    tailscale="$(line_of "sudo tailscale up --advertise-tags=tag:server --accept-dns")"
+    logins="$(line_of "## 2. Secrets and logins")"
+    [ -n "${bootstrap}" ] && [ -n "${tailscale}" ]
+    [ "${bootstrap}" -lt "${tailscale}" ]
+    [ "${tailscale}" -lt "${logins}" ]
+    # The bootstrap is what installs Tailscale, so the tailnet cannot be a prerequisite of it
+    run grep -E '^Prerequisites:.*on the tailnet' "${RUNBOOK}"
+    [ "${status}" -ne 0 ]
+    grep -qF "the Tailscale login" "${RUNBOOK}"
+}
+
+@test "runbook runs the first bootstrap from its URL, and re-runs from the clone" {
+    local first rerun
+    first="$(line_of "bootstrap-dev-server.sh | ACM_NIX_ACCESS_TOKEN=")"
+    rerun="$(line_of "cd ~/.local/share/bootstrap-dev-server")"
+    [ -n "${first}" ] && [ -n "${rerun}" ]
+    [ "${first}" -lt "${rerun}" ]
+    # A new SSH session starts in $HOME: a relative script path needs the cd right before it
+    run awk '/\.\/bootstrap-dev-server\.sh/ && prev != "cd ~/.local/share/bootstrap-dev-server" { bad = 1 }
+             { prev = $0 }
+             END { exit bad }' "${RUNBOOK}"
+    [ "${status}" -eq 0 ]
+}
+
+@test "runbook names the verify script by its clone path" {
+    grep -qF "~/.local/share/bootstrap-dev-server/tests/verify-server.sh" "${RUNBOOK}"
+    run grep -E '(^|[^/])tests/verify-server\.sh' "${RUNBOOK}"
+    [ "${status}" -ne 0 ]
 }
 
 @test "runbook lists the logins in the specified order" {
@@ -54,18 +104,27 @@ line_of() {
 @test "runbook gives the peers entry and its restart" {
     grep -qF "[[peers]]" "${RUNBOOK}"
     grep -qF 'label = "dev-server"' "${RUNBOOK}"
+    grep -qE '^ssh +=' "${RUNBOOK}"
     grep -qF "systemctl --user restart acmd" "${RUNBOOK}"
 }
 
 @test "runbook checks acm peers and the herdr machine" {
     grep -qF "acm peers" "${RUNBOOK}"
-    grep -q "connected" "${RUNBOOK}"
+    grep -qF 'connected` with install `nix`' "${RUNBOOK}"
+    grep -qF "SKIPPED (nix): managed by nix: bump the acm pin in nix-install" "${RUNBOOK}"
     grep -qF "herdr --machine dev-server workspace list" "${RUNBOOK}"
 }
 
 @test "runbook smoke test runs sdlc fix in a herdr pane" {
-    grep -qF "sdlc fix" "${RUNBOOK}"
-    grep -qi "overlay" "${RUNBOOK}"
+    local smoke
+    smoke="$(section "## 5. Smoke test")"
+    [[ "${smoke}" == *"sdlc fix <issue-number>"* ]]
+    [[ "${smoke}" == *"herdr pane"* ]]
+    [[ "${smoke}" == *"overlay"* ]]
+}
+
+@test "runbook warns that the smoke test merges unattended" {
+    [[ "$(section "## 5. Smoke test")" == *"unattended"*"merge"* ]]
 }
 
 @test "runbook attaches with --remote, never a --machine with no command" {
@@ -93,7 +152,9 @@ line_of() {
 }
 
 @test "runbook relative links point at existing files and README anchors" {
-    local link target anchor heading
+    local links link target anchor heading
+    links="$(grep -oE '\]\((\.\./[^)]+)\)' "${RUNBOOK}" | sed -E 's|^\]\(\.\./(.*)\)$|\1|')"
+    [ -n "${links}" ] || { echo "runbook has no relative links"; return 1; }
     while IFS= read -r link; do
         target="${link%%#*}"
         anchor=""
@@ -106,7 +167,7 @@ line_of() {
                 | sed -E 's/[^a-z0-9 _-]//g; s/ /-/g' | grep -Fx -- "${anchor}" || true)"
             [ -n "${heading}" ] || { echo "broken anchor: ${link}"; return 1; }
         fi
-    done < <(grep -oE '\]\((\.\./[^)]+)\)' "${RUNBOOK}" | sed -E 's|^\]\(\.\./(.*)\)$|\1|')
+    done <<< "${links}"
 }
 
 @test "runbook states the equal-herdr-version requirement" {

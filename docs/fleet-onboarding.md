@@ -2,26 +2,43 @@
 
 Join a freshly provisioned dev server to the agentic fleet: its agents and `sdlc` runs show in the
 XPS acm overlay as a `dev-server` column, and `herdr` on the XPS can jump into it. Everything is
-configured from this repository; the steps below are the only manual ones (secrets, interactive
-logins and the aggregator peer). Nothing here is hand-edited on the server.
+configured from this repository; the steps below are the only manual ones (the Tailscale login,
+secrets, interactive logins and the aggregator peer). Nothing here is hand-edited on the server.
 
-Prerequisites: the server is on the tailnet (see [Post-Bootstrap: Tailscale Authentication](../README.md#post-bootstrap-tailscale-authentication)),
-with split DNS accepted (`--accept-dns`) so `gitlab.test` resolves, and your SSH alias for it is
-`dev-server`. Run the server-side steps over `ssh dev-server`, inside a herdr pane where noted.
+Prerequisites: your SSH alias for the server is `dev-server`, and your tailnet ACL defines
+`tag:server` and lets it reach the GitLab host on port 80 (see [sdlc and GitLab](../README.md#sdlc-and-gitlab)).
+Run the server-side steps over `ssh dev-server`, inside a herdr pane where noted.
 
 ## 1. Bootstrap
 
-Run the bootstrap on the server with the acm read token (step 2 explains the token), from a shell
-outside herdr:
+A new server has no clone yet, so its first bootstrap runs from the URL, with the acm read token
+(step 2 explains the token). From a checkout of this repository on your machine, skipping the first
+line if the server already exists:
 
 ```bash
+./hcloud-provision.sh --no-bootstrap
+ssh dev-server
+curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/bootstrap-dev-server.sh | ACM_NIX_ACCESS_TOKEN=<read-only token> bash
+```
+
+It prompts for your Git identity, a GitHub device login and the daily report's SMTP details, then
+installs Tailscale, the toolset profile, `herdr` (as a user service), `acmd` (as a user service) and
+the `sdlc` controller.
+
+The bootstrap is idempotent: re-run it after a dropped connection or after fixing anything below,
+from the clone it leaves on the server, in a shell outside herdr:
+
+```bash
+cd ~/.local/share/bootstrap-dev-server
 ACM_NIX_ACCESS_TOKEN=<read-only token> ./bootstrap-dev-server.sh
 ```
 
-Or, for a new server, `./hcloud-provision.sh --no-bootstrap`, then `ssh dev-server` and the one-liner in
-[acmd](../README.md#acmd-agentic-coding-monitor). The bootstrap is idempotent: re-run it after fixing
-anything below. It installs the toolset profile, `herdr` (as a user service), `acmd` (as a user service)
-and the `sdlc` controller.
+Once the bootstrap has finished, join the tailnet, which it cannot do for you: this prints a URL to
+open in a browser. `--accept-dns` is what lets `gitlab.test` resolve (see [Post-Bootstrap: Tailscale Authentication](../README.md#post-bootstrap-tailscale-authentication)).
+
+```bash
+sudo tailscale up --advertise-tags=tag:server --accept-dns
+```
 
 ## 2. Secrets and logins
 
@@ -30,10 +47,22 @@ All interactive, all on the server. Credentials stay on the server and are never
 | Credential | Command | Notes |
 |------------|---------|-------|
 | Claude Code | `claude` | Subscription login; follow the printed URL |
-| GitHub | `gh auth login` | For repos still mastered on GitHub |
-| GitLab | `GITLAB_HOST=gitlab.test glab auth login` | Host `gitlab.test`; login shells already export `GITLAB_HOST` |
-| Codex | `codex login` | Only if you use Codex on this server |
-| acm read token | `ACM_NIX_ACCESS_TOKEN=<token> ./bootstrap-dev-server.sh` | Read-only GitHub token for the private `agentic-coding-monitor` flake input; stored in `~/.config/nix/nix.conf` `access-tokens` (mode 0600) |
+| GitHub | `gh auth login` | For repos still mastered on GitHub; only if you skipped the bootstrap's device login |
+| GitLab | `glab auth login --hostname gitlab.test --api-protocol http --git-protocol http` | Sign in with a token, then set the Git helper below |
+| Codex | `codex login` | Only if you use Codex on this server. The bootstrap does not install it: add `codex` to `devPackages` in `flake.nix` by merge request first |
+| acm read token | `ACM_NIX_ACCESS_TOKEN=<token>` on the bootstrap (step 1) | Read-only GitHub token for the private `agentic-coding-monitor` flake input; stored in `~/.config/nix/nix.conf` `access-tokens` (mode 0600). See [acmd](../README.md#acmd-agentic-coding-monitor) |
+
+`gitlab.test` answers on plain HTTP only, so the GitLab login names both protocols. For the same
+reason, create its token at `http://gitlab.test`, with the `api` and `write_repository` scopes: the
+`https://` link `glab` prints does not answer.
+
+Git needs that login too, because `sdlc` pushes with `git push`. Point Git at `glab` by name after
+logging in, whatever you answered at `glab`'s own Git prompt: that prompt records this build's
+`/nix/store` path, which the weekly garbage collection deletes after an upgrade.
+
+```bash
+git config --global --replace-all credential.http://gitlab.test.helper '!glab auth git-credential'
+```
 
 Without the acm token the bootstrap logs an error naming `access-tokens`, skips the `dev-env`
 profile and the `acmd` service, and carries on; add the token and re-run it (step 1). The token is
@@ -67,8 +96,9 @@ From the XPS:
 acm peers
 ```
 
-`dev-server` must show `connected` with install `nix`. (`acm peers deploy dev-server` refuses it,
-"managed by nix: bump the acm pin": upgrades are a merge request here.)
+`dev-server` must show `connected` with install `nix`. (`acm peers deploy dev-server` skips it with
+`SKIPPED (nix): managed by nix: bump the acm pin in nix-install`. For this server the pin is this
+repository's `flake.lock`, so upgrades are a merge request here.)
 
 ```bash
 herdr --machine dev-server workspace list
@@ -78,18 +108,20 @@ It must answer with the server's workspaces. If it errors with a version mismatc
 differ: the fleet runs **0.9.3**, which this flake pins on x86_64-linux (an aarch64 server keeps the nixpkgs
 version, so the remote jump may not work). Compare `herdr --version` on both ends.
 
-On the server, `tests/verify-server.sh` checks `sdlc`, `glab`, that `gitlab.test` resolves and
-answers, and the services (`systemctl --user status herdr acmd`).
+On the server, `~/.local/share/bootstrap-dev-server/tests/verify-server.sh` checks `sdlc`, `glab`, that
+`gitlab.test` resolves and answers, and the services (`systemctl --user status herdr acmd`).
 
 ## 5. Smoke test
 
 End to end: an `sdlc` run started on the server must appear in the XPS overlay.
 
 1. On the server, open a herdr pane (`herdr`, or `herdr --remote dev-server` from the XPS).
-2. Pick a small, low-risk open issue in a GitLab project you can push to. In that repository's
-   checkout in the pane, run:
+2. Pick a small, low-risk open issue in a GitLab project you can push to. `sdlc fix` runs unattended
+   through to the merge, so choose a fix you accept landing without reviewing it. In the pane:
 
    ```bash
+   git clone http://gitlab.test/root/<repo>.git
+   cd <repo>
    sdlc fix <issue-number>
    ```
 
@@ -100,4 +132,4 @@ The smoke test passes when the run finishes and was visible in the dev-server co
 cx33, keep to 1-2 concurrent workers (see [sdlc and GitLab](../README.md#sdlc-and-gitlab)).
 
 If it fails: no column means step 3 or `systemctl --user status acmd`; a `glab` or `sdlc` auth or
-network error means the `gitlab.test` login or the tailnet ACL (step 2, `tests/verify-server.sh`).
+network error means the `gitlab.test` login or the tailnet ACL (step 2, then the verify script in step 4).
