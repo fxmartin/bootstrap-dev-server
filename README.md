@@ -62,6 +62,9 @@ The script will:
 6. Run the full bootstrap script
 7. Print connection instructions
 
+To join the server to the agentic fleet (logins, the acm token, the aggregator peer and a smoke test),
+follow the [fleet onboarding runbook](docs/fleet-onboarding.md).
+
 ### Connect and Start Coding
 
 ```bash
@@ -652,6 +655,7 @@ running, because stopping it would end the pane and the bootstrap with it.
 If the service cannot be set up, the bootstrap logs the error and carries on, so the SSH hardening
 is still applied; fix the cause and re-run it.
 Check the service with `systemctl --user status herdr`.
+The remote-jump check and the rest of the fleet join steps are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
 
 #### Logging in: attaching to herdr
 
@@ -719,6 +723,7 @@ bootstrap logs an error naming `access-tokens` in `nix.conf`, cannot fetch or up
 profile (it carries acm), skips the acmd service and the Nix cache warm-up, but carries on with the
 rest, so the SSH hardening is still applied; add the token and re-run. A service that cannot be set
 up is logged the same way. Check it with `systemctl --user status acmd`.
+The `[[peers]]` entry to add on the XPS aggregator, and the checks that follow, are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
 
 Everything that builds the default toolset needs the same token: `dev`, `dev-update` and
 the weekly timer all fail without the token, so a server that lacks it keeps its previous profile and
@@ -740,6 +745,7 @@ curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/
 `sdlc fix` and `sdlc build` run on the server against the local-ci-cd GitLab at `http://gitlab.test`
 (`GITLAB_HOST=gitlab.test`). That needs Tailscale split DNS (`--accept-dns`, above) and a tailnet ACL that
 lets `tag:server` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
+The `glab auth login` step and an end-to-end `sdlc fix` smoke test are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
 
 To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, wait for the
 GitHub mirror to sync (up to five minutes), and re-run the bootstrap on the server, which pulls first.
