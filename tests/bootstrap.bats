@@ -1172,17 +1172,14 @@ load_create_claude_md() {
 }
 
 # =============================================================================
-# Tmux Configuration Tests
+# Tmux Removal Tests (login attach moved to herdr; see herdr-login.bats)
 # =============================================================================
 
-@test "tmux uses zsh as default shell" {
-    run grep "default-shell /usr/bin/zsh" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+@test "bootstrap removes its tmux block instead of writing one" {
+    run grep "remove_tmux_config" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
     [ "$status" -eq 0 ]
-}
-
-@test "tmux enables mouse support" {
     run grep "set -g mouse on" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
-    [ "$status" -eq 0 ]
+    [ "$status" -ne 0 ]
 }
 
 # =============================================================================
