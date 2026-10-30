@@ -139,6 +139,7 @@ install_base_packages() {
         curl \
         wget \
         git \
+        jq \
         xz-utils \
         ufw \
         fail2ban \
@@ -1623,11 +1624,6 @@ install_dev_profile() {
         fi
     fi
 
-    # jq is not an apt package here; on a re-run the profile already provides it
-    local jq_bin
-    jq_bin="$(command -v jq || true)"
-    [[ -n "${jq_bin}" ]] || jq_bin="${HOME}/.nix-profile/bin/jq"
-
     local profile_json
     if ! profile_json="$(nix profile list --json)"; then
         log_error "Could not list the Nix profile"
@@ -1636,9 +1632,11 @@ install_dev_profile() {
 
     # Element keys are names on nix >= 2.20 (indices before); either is a valid
     # `nix profile remove` argument. Anything not rooted at dev-env is a stray.
-    if [[ -x "${jq_bin}" ]]; then
+    # jq comes from the apt list: a profile that can hold a stray predates dev-env,
+    # so it has no jq of its own. Installing past an unchecked stray would collide.
+    if command -v jq &>/dev/null; then
         local stray_lines name origin
-        stray_lines="$("${jq_bin}" -r '
+        stray_lines="$(jq -r '
             .elements | to_entries[]
             | select((.value.attrPath // "") | test("^packages\\.[^.]+\\.dev-env$") | not)
             | "\(.key)\t\(.value.attrPath // .value.originalUrl // (.value.storePaths // [] | first) // "unknown")"
@@ -1649,7 +1647,8 @@ install_dev_profile() {
             nix profile remove "${name}"
         done <<<"${stray_lines}"
     elif grep -q '"attrPath"\|"storePaths"' <<<"${profile_json}"; then
-        log_warn "jq unavailable - cannot check the profile for stray entries"
+        log_error "jq not found - cannot check the Nix profile for stray entries"
+        return 1
     fi
 
     # Install the first time, upgrade after: an unchanged flake is a no-op
@@ -1673,8 +1672,8 @@ install_dev_profile() {
 #===============================================================================
 # ~/.bashrc is not enough: Ubuntu's returns early for non-interactive shells,
 # so `ssh dev 'rg --version'` would never see it. /etc/environment is read by
-# pam_env for sshd sessions and for the systemd user manager; ~/.profile covers
-# login shells.
+# pam_env for sshd sessions and by the systemd user manager (environment.d links
+# it as 99-environment.conf); ~/.profile covers login shells.
 configure_profile_path() {
     log_info "Putting ~/.nix-profile/bin on PATH..."
 
@@ -1956,7 +1955,7 @@ create_claude_md() {
 - Editor: Neovim preferred
 
 ## Development Workflow
-1. Enter dev environment: `dev` or `nix develop`
+1. The toolset is already on PATH; `dev` or `nix develop` enters the optional dev shell
 2. Use `lazygit` for git operations
 3. Use `gh` for GitHub CLI operations
 
@@ -2088,8 +2087,7 @@ print_summary() {
     echo ""
     echo -e "  ${BLUE}Quick Start:${NC}"
     echo -e "    1. Reconnect or run: ${YELLOW}source ~/.bashrc${NC}"
-    echo -e "    2. Enter dev environment: ${YELLOW}dev${NC}"
-    echo -e "    3. Start Claude: ${YELLOW}claude${NC}"
+    echo -e "    2. Start Claude: ${YELLOW}claude${NC}"
     echo ""
     echo -e "  ${BLUE}Available Environments:${NC}"
     echo -e "    ${YELLOW}dev${NC}        - Full dev environment"

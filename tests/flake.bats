@@ -328,10 +328,8 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
-@test "flake never adds an MCP server" {
-    # Only the prune path may mention mcpServers now.
-    run bash -c "grep -n 'mcpServers' '${PROJECT_ROOT}/flake.nix' | grep -v 'del(' | grep -v 'jq -e' || true"
-    [ -z "$output" ]
+@test "flake never mentions mcpServers: no dev shell adds or prunes them" {
+    run ! grep -q 'mcpServers' "${PROJECT_ROOT}/flake.nix"
 }
 
 @test "flake.lock has no mcp-servers-nix node" {
@@ -340,14 +338,9 @@ teardown() {
 }
 
 @test "setup-dev-env.sh prunes stale MCP entries from ~/.claude.json" {
-    run grep -q 'del(.mcpServers' "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "shell hook prunes stale MCP entries from ~/.claude.json" {
     # Entries left behind point at /nix/store paths that get garbage-collected,
     # so Claude Code would fail to start those servers on every launch.
-    run grep -q 'prune_stale_mcp\|del(.mcpServers' "${PROJECT_ROOT}/flake.nix"
+    run grep -q 'del(.mcpServers' "${PROJECT_ROOT}/scripts/setup-dev-env.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -360,6 +353,11 @@ teardown() {
     run grep -q 'mcp-servers-nix' "${PROJECT_ROOT}/tests/verify-server.sh"
     [ "$status" -ne 0 ]
     run grep -q 'Stale MCP entries' "${PROJECT_ROOT}/tests/verify-server.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "verify-server.sh points stale MCP entries at the script that prunes them" {
+    run grep -q 'Stale MCP entries.*setup-dev-env\.sh' "${PROJECT_ROOT}/tests/verify-server.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -400,6 +398,16 @@ load_profile_function() {
     log_error() { echo "ERROR: $1" >&2; }
     # shellcheck disable=SC1090
     source <(sed -n "/^${fn}()/,/^}\$/p" "${PROJECT_ROOT}/bootstrap-dev-server.sh")
+}
+
+# PATH holds only the stubs and what the function shells out to, so no jq is reachable.
+install_dev_profile_without_jq() {
+    local tool
+    for tool in bash cat grep; do
+        ln -sf "$(command -v "${tool}")" "${STUB_DIR}/${tool}"
+    done
+    local PATH="${STUB_DIR}"
+    install_dev_profile
 }
 
 @test "flake exposes packages.dev-env as a buildEnv" {
@@ -444,7 +452,7 @@ load_profile_function() {
     run install_dev_profile
     [ "$status" -eq 0 ]
     grep -qF "nix profile install ${HOME}/.config/nix-dev-env#dev-env" "${NIX_LOG}"
-    ! grep -q "nix profile upgrade" "${NIX_LOG}"
+    run ! grep -q "nix profile upgrade" "${NIX_LOG}"
 }
 
 @test "bootstrap upgrades instead of reinstalling when dev-env is already in the profile" {
@@ -456,8 +464,8 @@ JSON
     run install_dev_profile
     [ "$status" -eq 0 ]
     grep -qF "nix profile upgrade dev-env" "${NIX_LOG}"
-    ! grep -q "nix profile install" "${NIX_LOG}"
-    ! grep -q "nix profile remove" "${NIX_LOG}"
+    run ! grep -q "nix profile install" "${NIX_LOG}"
+    run ! grep -q "nix profile remove" "${NIX_LOG}"
 }
 
 @test "bootstrap removes stray profile entries, logs them, and keeps dev-env" {
@@ -472,9 +480,9 @@ JSON
     load_profile_function install_dev_profile
     run --separate-stderr install_dev_profile
     [ "$status" -eq 0 ]
-    grep -qF "nix profile remove herdr" "${NIX_LOG}"
-    ! grep -qF "nix profile remove dev-env" "${NIX_LOG}"
     [[ "${stderr}" == *"Removing stray profile entry 'herdr'"* ]]
+    grep -qF "nix profile remove herdr" "${NIX_LOG}"
+    run ! grep -qF "nix profile remove dev-env" "${NIX_LOG}"
 }
 
 @test "strays are removed before the install so they cannot collide with dev-env" {
@@ -492,6 +500,33 @@ JSON
     [ "${remove_line}" -lt "${install_line}" ]
 }
 
+@test "the apt base packages provide jq for the stray check" {
+    # A profile that can hold a stray predates dev-env, so it has no jq of its own.
+    local base_packages
+    base_packages="$(sed -n '/^install_base_packages()/,/^}$/p' "${PROJECT_ROOT}/bootstrap-dev-server.sh")"
+    grep -qE '^ +jq \\$' <<<"${base_packages}"
+}
+
+@test "a profile with entries fails without jq rather than collide on install" {
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run --separate-stderr install_dev_profile_without_jq
+    [ "$status" -ne 0 ]
+    [[ "${stderr}" == *"ERROR: jq not found"* ]]
+    run ! grep -q "nix profile install" "${NIX_LOG}"
+}
+
+@test "an empty profile installs without jq: there is nothing to vet" {
+    setup_profile_stubs
+    load_profile_function install_dev_profile
+    run install_dev_profile_without_jq
+    [ "$status" -eq 0 ]
+    grep -qF "nix profile install ${HOME}/.config/nix-dev-env#dev-env" "${NIX_LOG}"
+}
+
 @test "a failing nix profile install fails the bootstrap step" {
     setup_profile_stubs
     cat >"${STUB_DIR}/nix" <<STUB
@@ -502,6 +537,10 @@ STUB
     load_profile_function install_dev_profile
     run install_dev_profile
     [ "$status" -ne 0 ]
+}
+
+@test "post-install instructions no longer make entering dev a required step" {
+    run ! grep -q 'Enter dev environment' "${PROJECT_ROOT}/bootstrap-dev-server.sh" "${PROJECT_ROOT}/hcloud-provision.sh"
 }
 
 @test "bootstrap wires the profile steps into Phase 4 in order" {

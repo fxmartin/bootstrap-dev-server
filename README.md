@@ -639,8 +639,8 @@ its own tmux window, or skipping tmux when you use it.
 ### GitHub Authentication
 
 MCP servers were removed from this flake — Context7 and Sequential Thinking pulled in a
-`mcp-servers-nix` input that pinned Node.js to v22 and blocked nixpkgs upgrades. Entering
-the bootstrap (`scripts/setup-dev-env.sh`) now prunes any leftover entries from `~/.claude.json`, since their
+`mcp-servers-nix` input that pinned Node.js to v22 and blocked nixpkgs upgrades. The
+bootstrap (`scripts/setup-dev-env.sh`) now prunes any leftover entries from `~/.claude.json`, since their
 `/nix/store` paths are garbage-collected and Claude Code would fail to start them.
 
 GitHub operations use the `gh` CLI (included in the dev shell). Authenticate with:

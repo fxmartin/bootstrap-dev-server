@@ -233,18 +233,6 @@
             if [[ "$TERM" == "xterm-ghostty" ]] && ! infocmp xterm-ghostty &>/dev/null 2>&1; then
               export TERM=xterm-256color
             fi
-
-            # Prune MCP servers dropped from this flake.
-            # Their /nix/store paths get garbage-collected, so a leftover entry
-            # makes Claude Code fail to start that server on every launch.
-            CLAUDE_JSON="$HOME/.claude.json"
-            if [ -f "$CLAUDE_JSON" ]; then
-              if ${pkgs.jq}/bin/jq -e '.mcpServers.context7 // .mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-                ${pkgs.jq}/bin/jq 'del(.mcpServers.context7) | del(.mcpServers["sequential-thinking"])' \
-                  "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-                echo "✓ Pruned stale MCP server entries from ~/.claude.json"
-              fi
-            fi
           '';
         };
 
@@ -275,18 +263,6 @@
             # Handle Ghostty terminal - fallback if terminfo missing
             if [[ "$TERM" == "xterm-ghostty" ]] && ! infocmp xterm-ghostty &>/dev/null 2>&1; then
               export TERM=xterm-256color
-            fi
-
-            # Prune MCP servers dropped from this flake.
-            # Their /nix/store paths get garbage-collected, so a leftover entry
-            # makes Claude Code fail to start that server on every launch.
-            CLAUDE_JSON="$HOME/.claude.json"
-            if [ -f "$CLAUDE_JSON" ]; then
-              if ${pkgs.jq}/bin/jq -e '.mcpServers.context7 // .mcpServers["sequential-thinking"]' "$CLAUDE_JSON" > /dev/null 2>&1; then
-                ${pkgs.jq}/bin/jq 'del(.mcpServers.context7) | del(.mcpServers["sequential-thinking"])' \
-                  "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
-                echo "✓ Pruned stale MCP server entries from ~/.claude.json"
-              fi
             fi
           '';
         };
