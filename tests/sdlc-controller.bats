@@ -229,7 +229,7 @@ bump_tag() {
 }
 
 @test "bootstrap runs the sdlc installer after the profile steps" {
-    run bash -c "sed -n '/^main()/,\$p' '${BOOTSTRAP}' | grep -E '^ +(install_dev_profile|configure_profile_path|configure_gitlab_env|install_sdlc_controller|setup_dev_env)\$' | tr -d ' ' | tr '\n' ' '"
+    run bash -c "sed -n '/^main()/,\$p' '${BOOTSTRAP}' | grep -E '^ +(install_dev_profile|configure_profile_path|configure_gitlab_env|install_sdlc_controller|setup_dev_env)( |\$)' | awk '{print \$1}' | tr '\n' ' '"
     [ "$output" = "install_dev_profile configure_profile_path configure_gitlab_env install_sdlc_controller setup_dev_env " ]
 }
 

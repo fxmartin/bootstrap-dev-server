@@ -251,6 +251,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Claude Code** with auto-updates
 - **sdlc controller + glab**: `glab` ships in the Nix profile; the `sdlc` controller is installed with `uv tool install` from a pinned `claude-code-config` tag (`SDLC_CONTROLLER_TAG` in `config/versions.env`, bumped by merge request) on a uv-managed Python 3.12, never a `/nix/store` interpreter, so Nix garbage collection cannot break it. Re-running with the same tag changes nothing; a new tag upgrades. Login shells and `ssh dev '<cmd>'` export `GITLAB_HOST=gitlab.test` - see [sdlc and GitLab](#sdlc-and-gitlab)
 - **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI), pinned to 0.9.3 on x86_64-linux and run as a systemd user service
+- **acmd + acm**: the agentic-coding-monitor daemon and CLI come from a pinned flake input (in the Nix profile), run as a systemd user service, and show this server's agents and sdlc runs in the XPS overlay - see [acmd (agentic-coding-monitor)](#acmd-agentic-coding-monitor)
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer applies `main` every Sunday at 3am - hard-resets the checkout to `origin/main`, builds `dev-env`, upgrades the profile (email summary). It never updates `flake.lock` itself, see [Updating Packages](#updating-packages-flakelock)
 
@@ -656,6 +657,45 @@ Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nes
 multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
 its own tmux window, or skipping tmux when you use it.
 
+### acmd (agentic-coding-monitor)
+
+`acmd` is the daemon the XPS overlay reads for this server's agents, sdlc runs and vitals. `acmd` and
+the `acm` CLI come from the `agentic-coding-monitor` flake input (`packages.<system>.acm`), pinned by
+`flake.lock` and part of the `dev-env` profile, so `acm peers` on the XPS shows this server with
+install `nix` and `acm peers deploy dev-server` refuses it ("managed by nix: bump the acm pin").
+**Upgrading acm is a merge request here**: `nix flake lock --update-input agentic-coding-monitor`,
+commit `flake.lock`, merge. A bootstrap re-run upgrades the profile and restarts `acmd` when its
+binary changed (the weekly update upgrades the profile too, but a running `acmd` keeps its old
+binary until the next bootstrap run).
+
+The bootstrap runs it as a systemd **user service**, `~/.config/systemd/user/acmd.service`, the unit
+of acm's `homeManagerModules.acmd` (`ExecStart=~/.nix-profile/bin/acmd`, `Restart=on-failure`,
+`WantedBy=default.target`) with `PATH` set to the profile and `~/.local/bin`, so acmd finds `sdlc` and
+herdr's socket. The unit is rewritten only when its content drifts, followed by `daemon-reload` and
+`enable --now`. The state directory `~/.local/state/acm` is created with mode `0700`. A previous push
+install (`acm peers deploy`, `make install`: `~/.local/bin/acmd`, `acm` and their `.prev`/`.new`
+copies) is removed, and its unit replaced, so only the Nix-managed daemon runs.
+
+The input is private (the GitHub mirror `fxmartin/agentic-coding-monitor` of the GitLab project), so
+nix fetches it with a **read-only token** in your `~/.config/nix/nix.conf`:
+
+```
+access-tokens = github.com=<read-only token>
+```
+
+Supply it once at bootstrap time and the script stores it there with mode `0600`, replacing only the
+`github.com` entry:
+
+```bash
+ACM_NIX_ACCESS_TOKEN=<token> ./bootstrap-dev-server.sh
+```
+
+The token is never logged and never written anywhere else, the repo clone included. Without it the
+bootstrap logs an error naming `access-tokens` in `nix.conf`, cannot fetch or upgrade the `dev-env`
+profile (it carries acm) and skips the acmd service, but carries on with the rest, so the SSH
+hardening is still applied; add the token and re-run. A service that cannot be set up is logged the
+same way. Check it with `systemctl --user status acmd`.
+
 ### sdlc and GitLab
 
 `sdlc fix` and `sdlc build` run on the server against the local-ci-cd GitLab at `http://gitlab.test`
@@ -1019,6 +1059,7 @@ Environment variables for the bootstrap script:
 | `UFW_RATE_LIMIT` | true | Enable UFW rate limiting for SSH |
 | `GEOIP_ENABLED` | true | Enable GeoIP country-based blocking |
 | `GEOIP_COUNTRIES` | LU,FR,GR | Comma-separated whitelist of country codes |
+| `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input; stored in `~/.config/nix/nix.conf` `access-tokens` (mode 0600), never logged |
 
 ### GeoIP Country Codes
 

@@ -12,9 +12,18 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # acmd + acm, pinned by flake.lock. Private: the GitHub mirror of the GitLab
+    # project, fetched with the read-only token in the user's nix.conf
+    # `access-tokens` (github.com=...). Upgrade by MR:
+    #   nix flake lock --update-input agentic-coding-monitor
+    agentic-coding-monitor = {
+      url = "github:fxmartin/agentic-coding-monitor";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, claude-code-nix }:
+  outputs = { self, nixpkgs, flake-utils, claude-code-nix, agentic-coding-monitor }:
     let
       # herdr 0.9.3, the fleet version, ahead of nixpkgs. The remote jump
       # (`herdr --remote`) and `herdr machine add` need equal versions on both
@@ -62,6 +71,9 @@
 
           # Agent multiplexer - keeps coding agents in persistent panes
           pkgs.herdr
+
+          # acmd (the daemon the XPS overlay reads) and the acm CLI
+          agentic-coding-monitor.packages.${system}.acm
 
           # Core CLI tools
           pkgs.git

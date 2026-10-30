@@ -92,6 +92,7 @@ RESTART_HERDR="${RESTART_HERDR:-false}"            # Stop an outside herdr serve
 
 # Internal state (set by functions)
 SSH_RESTART_NEEDED=false                           # Set by harden_ssh() if restart needed
+ACM_TOKEN_MISSING=false                            # Set by configure_acm_access_token() when no read token exists
 
 # Repository configuration
 GITHUB_REPO="fxmartin/bootstrap-dev-server"
@@ -1877,6 +1878,192 @@ setup_herdr_service() {
 }
 
 #===============================================================================
+# acmd as a systemd User Service (acm from the agentic-coding-monitor flake)
+#===============================================================================
+# acm (acmd + acm) comes from the flake's pinned agentic-coding-monitor input,
+# inside the dev-env profile, so the XPS aggregator sees install=nix and
+# `acm peers deploy` refuses it: upgrading acm is a bump of that input by MR.
+# The unit mirrors acm's homeManagerModules.acmd; PATH is herdr's, because acmd
+# runs `sdlc` (in ~/.local/bin) and `herdr`, and reads herdr's default socket.
+acmd_unit_content() {
+    cat <<'UNITEOF'
+[Unit]
+Description=agentic-coding-monitor daemon (acmd)
+After=graphical-session.target
+
+[Service]
+Environment="PATH=%h/.nix-profile/bin:%h/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=%h/.nix-profile/bin/acmd
+TimeoutStopSec=2
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+UNITEOF
+}
+
+# Whether nix.conf (arg 1) holds a github.com entry in access-tokens.
+acm_token_configured() {
+    grep -Eq '^[[:space:]]*access-tokens[[:space:]]*=.*(=|[[:space:]])github\.com=[^[:space:]]+' "$1" 2>/dev/null
+}
+
+# The acm input is private (GitHub mirror of root/agentic-coding-monitor): nix
+# fetches it with a read-only token from the user's nix.conf `access-tokens`.
+# FX supplies it as ACM_NIX_ACCESS_TOKEN at bootstrap time, or edits nix.conf by
+# hand. It lives in that 0600 file and nowhere else: never logged (awk reads it
+# from the environment, not argv), never written into the repo clone.
+configure_acm_access_token() {
+    log_info "Checking the read token for the private acm flake input..."
+
+    local conf_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/nix"
+    local conf="${conf_dir}/nix.conf"
+    local token="${ACM_NIX_ACCESS_TOKEN:-}"
+
+    if [[ -n "${token}" ]]; then
+        local tmp
+        mkdir -p "${conf_dir}"
+        tmp="$(umask 077 && mktemp "${conf_dir}/nix.conf.XXXXXX")"
+        # Replace only the github.com entry: other hosts and settings stay.
+        ACM_TOKEN_ENTRY="github.com=${token}" awk '
+            function emit(rest,    n, i, parts, kept) {
+                n = split(rest, parts, /[ \t]+/)
+                kept = ""
+                for (i = 1; i <= n; i++)
+                    if (parts[i] != "" && parts[i] !~ /^github\.com=/)
+                        kept = kept (kept == "" ? "" : " ") parts[i]
+                if (!done) {
+                    kept = kept (kept == "" ? "" : " ") ENVIRON["ACM_TOKEN_ENTRY"]
+                    done = 1
+                }
+                return kept
+            }
+            /^[ \t]*access-tokens[ \t]*=/ {
+                rest = $0
+                sub(/^[^=]*=[ \t]*/, "", rest)
+                kept = emit(rest)
+                if (kept != "") print "access-tokens = " kept
+                next
+            }
+            { print }
+            END { if (!done) print "access-tokens = " ENVIRON["ACM_TOKEN_ENTRY"] }
+        ' "$([[ -f "${conf}" ]] && echo "${conf}" || echo /dev/null)" >"${tmp}" || {
+            rm -f "${tmp}"
+            log_error "Could not write the acm read token to ${conf}"
+            return 1
+        }
+        if cmp -s "${tmp}" "${conf}" 2>/dev/null; then
+            rm -f "${tmp}"
+        else
+            mv "${tmp}" "${conf}"
+            log_ok "Stored the acm read token in ${conf} (access-tokens, mode 0600)"
+        fi
+    fi
+
+    if acm_token_configured "${conf}"; then
+        chmod 0600 "${conf}"
+        ACM_TOKEN_MISSING=false
+        return 0
+    fi
+
+    ACM_TOKEN_MISSING=true
+    log_error "No acm read token: set 'access-tokens = github.com=<read-only token>' in ${conf} (mode 0600), or re-run with ACM_NIX_ACCESS_TOKEN=<token>"
+    return 1
+}
+
+# A push install (`acm peers deploy`, `make install`) left binaries in
+# ~/.local/bin, with .prev and .new copies from the swap. Its unit shares the
+# Nix-managed unit's path, so setup_acmd_service's rewrite replaces it.
+remove_acm_push_install() {
+    local bin_dir="${HOME}/.local/bin" name suffix found=false
+    for name in acmd acm; do
+        for suffix in "" .prev .new; do
+            if [[ -e "${bin_dir}/${name}${suffix}" || -L "${bin_dir}/${name}${suffix}" ]]; then
+                rm -f "${bin_dir:?}/${name}${suffix}"
+                found=true
+            fi
+        done
+    done
+    if [[ "${found}" == "true" ]]; then
+        log_info "Removed the push install of acm from ${bin_dir}; the Nix-managed one replaces it"
+    fi
+}
+
+# True when the running acmd is not the profile's current binary: a profile
+# upgrade swaps the store path under a daemon that keeps running the old one.
+acmd_running_stale() {
+    local pid running wanted
+    pid="$(systemctl --user show -p MainPID --value acmd.service 2>/dev/null || true)"
+    [[ "${pid}" =~ ^[0-9]+$ && "${pid}" -gt 0 ]] || return 1
+    running="$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)"
+    wanted="$(readlink -f "${HOME}/.nix-profile/bin/acmd" 2>/dev/null || true)"
+    [[ "${running}" != "${wanted}" ]]
+}
+
+setup_acmd_service() {
+    log_info "Setting up the acmd user service..."
+
+    local unit_dir="${HOME}/.config/systemd/user"
+    local unit_file="${unit_dir}/acmd.service"
+    local unit_changed=false tmp
+
+    remove_acm_push_install
+
+    # acmd keeps its socket and notification state here; it is private to the user.
+    install -d -m 0700 "${HOME}/.local/state/acm"
+
+    # Rewritten only on content drift, so unit fixes reach provisioned servers.
+    mkdir -p "${unit_dir}"
+    tmp="$(mktemp)"
+    acmd_unit_content >"${tmp}"
+    if ! cmp -s "${tmp}" "${unit_file}" 2>/dev/null; then
+        install -m 644 "${tmp}" "${unit_file}"
+        unit_changed=true
+        log_ok "Wrote ${unit_file}"
+    fi
+    rm -f "${tmp}"
+
+    if [[ ! -x "${HOME}/.nix-profile/bin/acmd" ]]; then
+        log_warn "${HOME}/.nix-profile/bin/acmd not found - not enabling the acmd service (the dev-env profile step must succeed first, which needs the acm read token: access-tokens in nix.conf)"
+        return 0
+    fi
+
+    # No login session behind this shell: no user manager to talk to. The unit
+    # is on disk, so re-running from an SSH login finishes the job.
+    if ! systemctl --user show-environment &>/dev/null; then
+        log_warn "No systemd user manager reachable from this shell - unit written, not enabled. Re-run the bootstrap from an SSH login."
+        return 0
+    fi
+
+    if [[ "${unit_changed}" == "true" ]]; then
+        systemctl --user daemon-reload
+    fi
+
+    # Decided before `enable --now`: that starts a stopped acmd on the new
+    # binary and unit already, so only a running one can be stale.
+    local restart_needed=false
+    if systemctl --user is-active --quiet acmd.service &&
+        { [[ "${unit_changed}" == "true" ]] || acmd_running_stale; }; then
+        restart_needed=true
+    fi
+
+    systemctl --user enable --now acmd.service || {
+        log_error "systemctl --user enable --now acmd.service failed - see: journalctl --user -u acmd"
+        return 1
+    }
+
+    # acmd keeps no state a restart loses (it re-reads herdr and sdlc), unlike herdr.
+    if [[ "${restart_needed}" == "true" ]]; then
+        systemctl --user restart acmd.service || {
+            log_error "systemctl --user restart acmd.service failed - see: journalctl --user -u acmd"
+            return 1
+        }
+        log_info "acmd restarted onto the current unit and binary"
+    fi
+    log_ok "acmd running as a user service"
+}
+
+#===============================================================================
 # Put ~/.nix-profile/bin on PATH for Login and Non-Interactive Shells
 #===============================================================================
 # ~/.bashrc is not enough: Ubuntu's returns early for non-interactive shells,
@@ -2533,13 +2720,21 @@ main() {
     install_nix
     create_dev_flake
     setup_shell_integration
-    install_dev_profile
+    # The dev-env profile carries acm, a private flake input: its read token goes
+    # into nix.conf first. Without it the profile cannot be fetched or upgraded;
+    # that is tolerated so the rest of the bootstrap (SSH hardening included) runs.
+    configure_acm_access_token || log_warn "acm read token missing (access-tokens in nix.conf) - add it, then re-run the bootstrap"
+    install_dev_profile || {
+        [[ "${ACM_TOKEN_MISSING}" == "true" ]] || exit 1
+        log_warn "dev-env profile not installed or upgraded without the acm read token - add it, then re-run the bootstrap"
+    }
     configure_profile_path
     configure_gitlab_env
     # After the env: panes get GITLAB_HOST from the server alone, whose reload hands
     # /etc/environment to a user manager that started before it had the variable.
     # Not worth aborting over: a re-run would not reach restart_ssh_final's reload.
     setup_herdr_service || log_warn "herdr service setup failed (non-critical) - fix it, then re-run the bootstrap"
+    setup_acmd_service || log_warn "acmd service setup failed (non-critical) - fix it, then re-run the bootstrap"
     install_sdlc_controller
     setup_dev_env
     setup_nix_update_timer
