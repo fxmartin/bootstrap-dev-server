@@ -1437,11 +1437,12 @@ User=${DEV_USER}
 Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
-# Pull latest repo, update flake.lock, and verify the devShell still builds
-# before keeping the change. Any failure rolls flake.lock back and records
-# status=failed so ExecStopPost's notification reports the real outcome
-# instead of always "success".
-ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; git checkout -- flake.lock; OUTPUT=\$( (git pull --quiet && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix flake update --flake ${FLAKE_DIR} && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else git checkout -- flake.lock; echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
+# The repository is the only source of flake.lock: hard-reset the checkout to
+# origin/main (logging any local diff or commits it discards), build dev-env,
+# and only on success upgrade the profile. A failed fetch or build leaves the
+# previous profile in place and records status=failed so ExecStopPost's
+# notification reports the real outcome instead of always "success".
+ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; OUTPUT=\$( (git fetch --quiet origin && git diff --stat HEAD | sed "s/^/[discarded] /" && git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /" && git reset --hard --quiet origin/main && git log -1 --oneline | sed "s/^/[applied] /" && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#dev-env --no-link && nix profile upgrade dev-env) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
 
 # Send notification (runs as root to access msmtp config)
 ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
@@ -1563,25 +1564,59 @@ alias dm='dev minimal'
 alias dp='dev python'
 
 # Update dev environment
-# - Pulls latest from bootstrap-dev-server repo (flake.nix is symlinked, so changes apply automatically)
-# - Updates flake.lock with latest packages
+# - The repository is the only source of flake.lock: hard-resets the checkout
+#   to origin/main (flake.nix is symlinked, so the checkout IS the flake),
+#   builds dev-env, and only then upgrades the profile
+# - Never bumps the lock itself; lock updates arrive through merge requests
 dev-update() {
     echo "🔄 Updating dev environment..."
     local REPO_DIR="\${HOME}/.local/share/bootstrap-dev-server"
     local FLAKE_DIR="\${HOME}/.config/nix-dev-env"
 
-    # Pull latest from repo
-    if [[ -d "\${REPO_DIR}/.git" ]]; then
-        echo "📥 Pulling latest from bootstrap-dev-server repo..."
-        (cd "\${REPO_DIR}" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
+    if [[ ! -d "\${REPO_DIR}/.git" ]]; then
+        echo "❌ No checkout at \${REPO_DIR}"
+        return 1
     fi
 
-    # Update flake.lock (flake.nix is symlinked, no copy needed)
-    echo "⬆️  Updating Nix packages..."
-    (cd "\${FLAKE_DIR}" && nix flake update)
+    echo "📥 Fetching origin..."
+    (cd "\${REPO_DIR}" && git fetch --quiet origin) || {
+        echo "❌ Failed to fetch origin - nothing applied"
+        return 1
+    }
+
+    # Log what the reset throws away so nothing vanishes silently
+    local discarded
+    discarded="\$(cd "\${REPO_DIR}" && git diff --stat HEAD)"
+    if [[ -n "\${discarded}" ]]; then
+        echo "⚠️  Discarding local changes:"
+        echo "\${discarded}"
+    fi
+    discarded="\$(cd "\${REPO_DIR}" && git log --oneline origin/main..HEAD)"
+    if [[ -n "\${discarded}" ]]; then
+        echo "⚠️  Discarding local commits:"
+        echo "\${discarded}"
+    fi
+
+    (cd "\${REPO_DIR}" && git reset --hard --quiet origin/main) || {
+        echo "❌ Failed to reset to origin/main"
+        return 1
+    }
+
+    # Update submodules (Claude Code configs from nix-install)
+    (cd "\${REPO_DIR}" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
+
+    echo "🔨 Building dev-env..."
+    nix build "\${FLAKE_DIR}#dev-env" --no-link || {
+        echo "❌ Build failed - profile left unchanged"
+        return 1
+    }
+    nix profile upgrade dev-env || {
+        echo "❌ nix profile upgrade dev-env failed"
+        return 1
+    }
 
     echo ""
-    echo "✅ Dev environment updated!"
+    echo "✅ Dev environment updated to \$(git -C "\${REPO_DIR}" log -1 --oneline)"
     echo "   Exit and run 'dev' to use new packages"
 }
 
@@ -1775,10 +1810,11 @@ User=${DEV_USER}
 Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
-# Pull latest repo, update flake.lock, and verify the devShell still builds
-# before keeping the change. Any failure rolls flake.lock back so a broken
-# update is never left in place, and the failure is surfaced (not swallowed).
-ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git checkout -- flake.lock; git pull --quiet; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix flake update --flake ${FLAKE_DIR} && nix build ${FLAKE_DIR}#devShells.x86_64-linux.default --no-link || { git checkout -- flake.lock; exit 1; }'
+# The repository is the only source of flake.lock: hard-reset the checkout to
+# origin/main (logging any local diff or commits it discards), build dev-env,
+# and only on success upgrade the profile. Any failure stops the unit with the
+# previous profile still in place.
+ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git fetch --quiet origin; git diff --stat HEAD | sed "s/^/[discarded] /"; git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /"; git reset --hard --quiet origin/main; git log -1 --oneline | sed "s/^/[applied] /"; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix build ${FLAKE_DIR}#dev-env --no-link; nix profile upgrade dev-env'
 SERVICEEOF
             UNITS_CHANGED=1
         fi
@@ -1977,7 +2013,7 @@ create_claude_md() {
 - `dev` - Enter full dev environment
 - `dm` - Enter minimal environment  
 - `dp` - Enter Python environment
-- `dev-update` - Update Nix flake dependencies
+- `dev-update` - Apply origin/main (reset checkout, build dev-env, upgrade profile)
 - `claude` - Start Claude Code session
 CLAUDEEOF
 
@@ -2095,7 +2131,7 @@ print_summary() {
     echo -e "    ${YELLOW}dev python${NC}  - Python-focused environment"
     echo ""
     echo -e "  ${BLUE}Maintenance:${NC}"
-    echo -e "    ${YELLOW}dev-update${NC}  - Update all Nix packages"
+    echo -e "    ${YELLOW}dev-update${NC}  - Apply origin/main and upgrade the Nix profile"
     echo ""
     echo -e "  ${BLUE}Repository:${NC}"
     echo -e "    ${YELLOW}${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}${NC}"

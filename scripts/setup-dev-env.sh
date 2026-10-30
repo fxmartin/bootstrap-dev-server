@@ -144,38 +144,59 @@ alias dm='nix develop ~/.config/nix-dev-env#minimal --no-warn-dirty'
 alias dp='nix develop ~/.config/nix-dev-env#python --no-warn-dirty'
 
 # Update dev environment
-# - Pulls latest from bootstrap-dev-server repo (flake.nix is symlinked, so changes apply automatically)
-# - Updates flake.lock with latest packages
+# - The repository is the only source of flake.lock: hard-resets the checkout
+#   to origin/main (flake.nix is symlinked, so the checkout IS the flake),
+#   builds dev-env, and only then upgrades the profile
+# - Never bumps the lock itself; lock updates arrive through merge requests
 dev-update() {
   echo "🔄 Updating dev environment..."
   local REPO_DIR="$HOME/.local/share/bootstrap-dev-server"
   local FLAKE_DIR="$HOME/.config/nix-dev-env"
 
-  # Pull latest from repo
-  if [[ -d "$REPO_DIR/.git" ]]; then
-    echo "📥 Pulling latest from bootstrap-dev-server repo..."
-    (cd "$REPO_DIR" && git pull --quiet) || echo "⚠️  Failed to pull repo (continuing anyway)"
-
-    # Update submodules (Claude Code configs from nix-install)
-    echo "🔗 Updating Claude Code configs from nix-install..."
-    (cd "$REPO_DIR" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
+  if [[ ! -d "$REPO_DIR/.git" ]]; then
+    echo "❌ No checkout at $REPO_DIR"
+    return 1
   fi
 
-  # Update flake.lock (flake.nix is symlinked, no copy needed)
-  echo "⬆️  Updating Nix packages..."
-  (cd "$FLAKE_DIR" && nix flake update)
+  echo "📥 Fetching origin..."
+  (cd "$REPO_DIR" && git fetch --quiet origin) || {
+    echo "❌ Failed to fetch origin - nothing applied"
+    return 1
+  }
 
-  # Commit and push updated flake.lock so new provisions get recent packages
-  if [[ -d "$REPO_DIR/.git" ]]; then
-    (cd "$REPO_DIR" && git diff --quiet flake.lock 2>/dev/null) || {
-      echo "📌 Committing updated flake.lock..."
-      (cd "$REPO_DIR" && git add flake.lock && git commit -m "chore: update flake.lock with latest nixpkgs" && git push) \
-        || echo "⚠️  Failed to commit/push flake.lock (continuing anyway)"
-    }
+  # Log what the reset throws away so nothing vanishes silently
+  local discarded
+  discarded="$(cd "$REPO_DIR" && git diff --stat HEAD)"
+  if [[ -n "$discarded" ]]; then
+    echo "⚠️  Discarding local changes:"
+    echo "$discarded"
   fi
+  discarded="$(cd "$REPO_DIR" && git log --oneline origin/main..HEAD)"
+  if [[ -n "$discarded" ]]; then
+    echo "⚠️  Discarding local commits:"
+    echo "$discarded"
+  fi
+
+  (cd "$REPO_DIR" && git reset --hard --quiet origin/main) || {
+    echo "❌ Failed to reset to origin/main"
+    return 1
+  }
+
+  # Update submodules (Claude Code configs from nix-install)
+  (cd "$REPO_DIR" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
+
+  echo "🔨 Building dev-env..."
+  nix build "$FLAKE_DIR#dev-env" --no-link || {
+    echo "❌ Build failed - profile left unchanged"
+    return 1
+  }
+  nix profile upgrade dev-env || {
+    echo "❌ nix profile upgrade dev-env failed"
+    return 1
+  }
 
   echo ""
-  echo "✅ Dev environment updated!"
+  echo "✅ Dev environment updated to $(git -C "$REPO_DIR" log -1 --oneline)"
   echo "   Exit and run 'dev' to use new packages"
 }
 
