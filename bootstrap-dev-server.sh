@@ -1731,7 +1731,8 @@ install_dev_profile() {
 # agent panes survive disconnects and reboots and every pane inherits the
 # profile's toolset through PATH. The socket stays at herdr's default,
 # ~/.config/herdr/herdr.sock, where acmd and `herdr machine add` look for it.
-# %h is the user's home, resolved by systemd. ~/.local/bin is where uv puts sdlc.
+# %h is the user's home, resolved by systemd. ~/.local/bin is where uv puts sdlc;
+# the default profile holds nix itself, which is not in dev-env.
 herdr_unit_content() {
     cat <<'UNITEOF'
 [Unit]
@@ -1739,7 +1740,7 @@ Description=herdr server (agent multiplexer)
 
 [Service]
 Type=simple
-Environment="PATH=%h/.nix-profile/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=%h/.nix-profile/bin:%h/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=%h/.nix-profile/bin/herdr server
 Restart=on-failure
 RestartSec=2
@@ -1749,7 +1750,9 @@ WantedBy=default.target
 UNITEOF
 }
 
-# PIDs of this user's herdr servers (one per line), whoever started them.
+# PIDs of this user's herdr servers (one per line), whoever started them. Also
+# matches the short-lived `herdr server stop`: harmless, where narrowing to a bare
+# `herdr server` could miss a `herdr server live-handoff` holding the socket.
 herdr_server_pids() {
     local pattern='^([^ ]*/)?herdr +server( |$)'
     pgrep -u "$(id -u)" -f "${pattern}" 2>/dev/null || true
@@ -1850,14 +1853,20 @@ setup_herdr_service() {
         }
         log_ok "herdr server running as a user service"
     else
-        systemctl --user enable herdr.service
+        systemctl --user enable herdr.service || {
+            log_error "systemctl --user enable herdr.service failed"
+            return 1
+        }
         log_ok "herdr.service enabled (not started: an outside server owns the socket)"
     fi
 
     # Without linger the user manager, and so the server, only lives while an
     # SSH session is open.
     if [[ "$(loginctl show-user "${DEV_USER}" --property=Linger --value 2>/dev/null || true)" != "yes" ]]; then
-        sudo loginctl enable-linger "${DEV_USER}"
+        sudo loginctl enable-linger "${DEV_USER}" || {
+            log_error "loginctl enable-linger ${DEV_USER} failed - herdr will not start at boot"
+            return 1
+        }
         log_ok "Enabled linger for ${DEV_USER}: herdr starts at boot"
     else
         log_ok "Linger already enabled for ${DEV_USER}"
@@ -2522,9 +2531,12 @@ main() {
     create_dev_flake
     setup_shell_integration
     install_dev_profile
-    setup_herdr_service
     configure_profile_path
     configure_gitlab_env
+    # After the env: panes get GITLAB_HOST from the server alone, whose reload hands
+    # /etc/environment to a user manager that started before it had the variable.
+    # Not worth aborting over: a re-run would not reach restart_ssh_final's reload.
+    setup_herdr_service || log_warn "herdr service setup failed (non-critical) - fix it, then re-run the bootstrap"
     install_sdlc_controller
     setup_dev_env
     setup_nix_update_timer

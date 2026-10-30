@@ -648,6 +648,8 @@ conflict: stopping a server ends its sessions and agent panes. To hand over to t
 `--restart-herdr` (or `RESTART_HERDR=true`); the bootstrap warns, stops that server and starts the unit.
 Run that from a shell outside herdr: inside a herdr pane the bootstrap refuses and leaves the server
 running, because stopping it would end the pane and the bootstrap with it.
+If the service cannot be set up, the bootstrap logs the error and carries on, so the SSH hardening
+is still applied; fix the cause and re-run it.
 Check the service with `systemctl --user status herdr`.
 
 Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two

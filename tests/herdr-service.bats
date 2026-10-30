@@ -167,6 +167,12 @@ foreign_alive() {
     assert_contains "${output}" 'Environment="PATH=%h/.nix-profile/bin:'
 }
 
+@test "unit PATH also reaches nix and the sbin directories, as a login shell does" {
+    run herdr_unit_content
+    assert_contains "${output}" ":/nix/var/nix/profiles/default/bin:"
+    assert_contains "${output}" ":/usr/sbin:"
+}
+
 @test "unit restarts on failure and is wanted by default.target" {
     run herdr_unit_content
     assert_contains "${output}" "Restart=on-failure"
@@ -265,6 +271,24 @@ foreign_alive() {
 # =============================================================================
 # A server already running outside the unit
 # =============================================================================
+
+@test "herdr_server_pids asks pgrep for this user's servers by full command line" {
+    cat >"${STUB_DIR}/pgrep" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >"${TEST_TEMP_DIR}/pgrep-args"
+EOF
+    herdr_server_pids
+    [ "$(head -3 "${TEST_TEMP_DIR}/pgrep-args" | tr '\n' ' ')" = "-u $(id -u) -f " ]
+
+    local pattern cmdline
+    pattern="$(tail -1 "${TEST_TEMP_DIR}/pgrep-args")"
+    for cmdline in "herdr server" "/usr/bin/herdr server" "/home/fx/.nix-profile/bin/herdr server"; do
+        grep -Eq -- "${pattern}" <<<"${cmdline}"
+    done
+    for cmdline in "herdr" "herdr --session work" "/usr/bin/herdr-server" "vim herdr server" "bash -c herdr server"; do
+        run ! grep -Eq -- "${pattern}" <<<"${cmdline}"
+    done
+}
 
 @test "an outside server is left running without --restart-herdr, and the conflict is logged" {
     start_foreign_server
@@ -371,6 +395,36 @@ EOF
     assert_contains "${output}" "journalctl --user -u herdr"
 }
 
+@test "a failing 'enable' behind an outside server is reported and fails the setup" {
+    start_foreign_server
+    cat >"${STUB_DIR}/systemctl" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+    "--user show-environment") exit 0 ;;
+    "--user is-active --quiet herdr.service") exit 1 ;;
+    "--user enable herdr.service") exit 1 ;;
+    *) exit 0 ;;
+esac
+EOF
+    run setup_herdr_service
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "enable herdr.service failed"
+}
+
+@test "a failing enable-linger is reported and fails the setup" {
+    cat >"${STUB_DIR}/loginctl" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "show-user" ]]; then
+    echo no
+    exit 0
+fi
+exit 1
+EOF
+    run setup_herdr_service
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "enable-linger"
+}
+
 # =============================================================================
 # Wiring into the bootstrap
 # =============================================================================
@@ -384,9 +438,24 @@ EOF
     [ "${status}" -eq 0 ]
 }
 
-@test "main sets up the herdr service after the dev profile exists" {
-    run bash -c "sed -n '/^main()/,\$p' '${BOOTSTRAP}' | grep -E '^ +(install_dev_profile|setup_herdr_service)\$' | tr -d ' ' | tr '\n' ' '"
-    [ "${output}" = "install_dev_profile setup_herdr_service " ]
+@test "main starts the herdr service once the dev profile and GITLAB_HOST exist" {
+    # Panes inherit GITLAB_HOST from the server alone, and nothing restarts it.
+    run bash -c "sed -n '/^main()/,\$p' '${BOOTSTRAP}' | grep -E '^ +(install_dev_profile|configure_gitlab_env|setup_herdr_service)( |\$)' | awk '{print \$1}' | tr '\n' ' '"
+    [ "${output}" = "install_dev_profile configure_gitlab_env setup_herdr_service " ]
+}
+
+@test "a herdr failure does not stop the bootstrap reaching restart_ssh_final" {
+    # A re-run would not reload sshd, so aborting here strands the SSH hardening.
+    local call
+    call="$(sed -n '/^main()/,$p' "${BOOTSTRAP}" | grep -E '^ +setup_herdr_service( |$)')"
+    run bash -c "set -euo pipefail
+log_warn() { echo \"WARN: \$1\"; }
+setup_herdr_service() { return 1; }
+${call}
+echo reached-restart_ssh_final"
+    [ "${status}" -eq 0 ]
+    assert_contains "${output}" "reached-restart_ssh_final"
+    assert_contains "${output}" "re-run"
 }
 
 @test "the herdr functions pass shellcheck" {
