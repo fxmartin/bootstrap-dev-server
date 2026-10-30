@@ -17,6 +17,7 @@
 #  12. Herdr               - Available, and no stale MCP entries remain
 #  13. Tailscale           - Authenticated, node key not expiring soon
 #  14. Monitoring          - node_exporter active, tailnet-only bind, /metrics served
+#  15. sdlc & GitLab       - sdlc/glab installed, uv-managed Python, gitlab.test resolves and answers
 #
 # Usage:
 #   ssh dev-server 'bash -s' < tests/verify-server.sh
@@ -551,6 +552,65 @@ if [[ -f "${NODE_EXPORTER_UNIT}" ]]; then
     fi
 else
     warn "node_exporter is not installed"
+fi
+
+header "15. sdlc Controller & GitLab Tests"
+
+GITLAB_HOST_EXPECTED="${GITLAB_HOST_EXPECTED:-gitlab.test}"
+
+# Test 15.1: sdlc controller installed (uv tool, ~/.local/bin)
+export PATH="${HOME}/.local/bin:${PATH}"
+if SDLC_VERSION="$(sdlc --version 2>/dev/null)"; then
+    pass "sdlc controller is installed"
+    info "sdlc version: ${SDLC_VERSION}"
+else
+    fail "sdlc --version failed - run: bash ~/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh"
+fi
+
+# Test 15.2: the controller runs on a uv-managed Python, never a /nix/store one
+# that Nix garbage collection could remove from under it.
+if command -v uv &>/dev/null; then
+    SDLC_VENV_CFG="$(uv tool dir 2>/dev/null || true)/sdlc-controller/pyvenv.cfg"
+    if [[ -f "${SDLC_VENV_CFG}" ]]; then
+        if grep -q '^home *=.*/nix/store' "${SDLC_VENV_CFG}"; then
+            fail "sdlc controller runs on a /nix/store Python - reinstall: rm ~/.local/state/bootstrap-dev-server/sdlc-controller.tag && bash scripts/install-sdlc-controller.sh"
+        else
+            pass "sdlc controller Python is uv-managed (not /nix/store)"
+        fi
+    else
+        info "No sdlc-controller venv to inspect"
+    fi
+fi
+
+# Test 15.3: glab installed
+if GLAB_VERSION="$(glab --version 2>/dev/null | head -1)"; then
+    pass "glab is installed"
+    info "glab version: ${GLAB_VERSION}"
+else
+    fail "glab --version failed - glab ships in the dev-env Nix profile; re-run the bootstrap"
+fi
+
+# Test 15.4: login environment exports GITLAB_HOST
+if [[ "${GITLAB_HOST:-}" == "${GITLAB_HOST_EXPECTED}" ]]; then
+    pass "GITLAB_HOST=${GITLAB_HOST}"
+else
+    fail "GITLAB_HOST is '${GITLAB_HOST:-unset}' (expected ${GITLAB_HOST_EXPECTED}) - re-run the bootstrap or log in again"
+fi
+
+# Test 15.5: gitlab.test resolves (Tailscale split DNS)
+if getent hosts "${GITLAB_HOST_EXPECTED}" &>/dev/null; then
+    pass "${GITLAB_HOST_EXPECTED} resolves"
+
+    # Test 15.6: GitLab answers. Any HTTP status counts (a login redirect is
+    # fine); only 000 means no connection. The tailnet ACL decides reachability.
+    GITLAB_HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${GITLAB_HOST_EXPECTED}" 2>/dev/null || true)"
+    if [[ -n "${GITLAB_HTTP_CODE}" && "${GITLAB_HTTP_CODE}" != "000" ]]; then
+        pass "http://${GITLAB_HOST_EXPECTED} answers (HTTP ${GITLAB_HTTP_CODE})"
+    else
+        fail "http://${GITLAB_HOST_EXPECTED} does not answer - check the tailnet ACL allows tag:server to reach home-lab on port 80"
+    fi
+else
+    fail "${GITLAB_HOST_EXPECTED} does not resolve - run: sudo tailscale up --advertise-tags=tag:server --accept-dns (accept-dns enables the tailnet split DNS)"
 fi
 
 # ============================================================================

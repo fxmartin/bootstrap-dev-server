@@ -249,6 +249,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 ### Development Environment
 - **Default Nix profile**: the whole toolset (`packages.<system>.dev-env` in `flake.nix`) is installed into `~/.nix-profile`, so it is on PATH in logins, `ssh dev '<cmd>'`, systemd user services and herdr panes - no need to type `dev` first. The bootstrap installs it the first time, upgrades it on re-runs (a no-op when the flake is unchanged) and removes any hand-installed stray entries, logging each one
 - **Claude Code** with auto-updates
+- **sdlc controller + glab**: `glab` ships in the Nix profile; the `sdlc` controller is installed with `uv tool install` from a pinned `claude-code-config` tag (`SDLC_CONTROLLER_TAG` in `config/versions.env`, bumped by merge request) on a uv-managed Python 3.12, never a `/nix/store` interpreter, so Nix garbage collection cannot break it. Re-running with the same tag changes nothing; a new tag upgrades. Login shells and `ssh dev '<cmd>'` export `GITLAB_HOST=gitlab.test` - see [sdlc and GitLab](#sdlc-and-gitlab)
 - **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer updates flake.lock every Sunday at 3am (email summary)
@@ -409,9 +410,10 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up --advertise-tags=tag:server
+sudo tailscale up --advertise-tags=tag:server --accept-dns
 ```
 
+`--accept-dns` lets `gitlab.test` resolve through the tailnet split DNS (needed by `glab` and `sdlc`).
 This displays a URL to authenticate with your Tailscale account.
 
 **Do not pass `--ssh`.** Tailscale SSH intercepts port 22 on the tailnet interface and
@@ -635,6 +637,27 @@ default Nix profile (and the dev shell) — just run `herdr`.
 Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
 multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
 its own tmux window, or skipping tmux when you use it.
+
+### sdlc and GitLab
+
+`sdlc fix` and `sdlc build` run on the server against the local-ci-cd GitLab at `http://gitlab.test`
+(`GITLAB_HOST=gitlab.test`). That needs Tailscale split DNS (`--accept-dns`, above) and a tailnet ACL that
+lets `tag:server` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
+
+To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, wait for the
+GitHub mirror to sync (up to five minutes), and re-run the bootstrap on the server, which pulls first.
+The installer alone does not pull: it reads the clone's `config/versions.env`, so on a stale clone it
+reports "already installed" and changes nothing. To run it directly, pull first:
+
+```bash
+git -C ~/.local/share/bootstrap-dev-server pull
+bash ~/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh
+```
+
+**Concurrency**: on this server size (cx33: 4 vCPU / 8 GB) run 1-2 concurrent workers, or pass
+`--sequential`. Each worker runs a Claude Code session *and* the repo's test suite at the same time, so
+three or more workers exhaust the memory (the bootstrap configures no swap, so the kernel starts
+OOM-killing them) and make timing-sensitive tests flake.
 
 ### GitHub Authentication
 

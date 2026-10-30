@@ -76,6 +76,10 @@ SSH_TAILNET_ONLY="${SSH_TAILNET_ONLY:-false}"
 # the server off the tailnet.
 TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:server}"     # Tags to advertise on `tailscale up`
 
+# GitLab host that glab and the sdlc controller talk to (local-ci-cd GitLab,
+# reached over Tailscale split DNS). Exported for every login context below.
+GITLAB_HOST="${GITLAB_HOST:-gitlab.test}"
+
 # GitHub authentication
 SKIP_GITHUB_AUTH="${SKIP_GITHUB_AUTH:-false}"      # Skip GitHub CLI authentication (for testing)
 
@@ -761,7 +765,9 @@ install_tailscale() {
     log_warn "╔════════════════════════════════════════════════════════════════════╗"
     log_warn "║  Authenticate after bootstrap:                                     ║"
     log_warn "║                                                                    ║"
-    log_warn "║    sudo tailscale up --advertise-tags=${TAILSCALE_TAGS}"
+    log_warn "║    sudo tailscale up --advertise-tags=${TAILSCALE_TAGS} --accept-dns"
+    log_warn "║                                                                    ║"
+    log_warn "║  --accept-dns lets ${GITLAB_HOST} resolve (tailnet split DNS).      "
     log_warn "║                                                                    ║"
     log_warn "║  Do NOT pass --ssh: Tailscale SSH intercepts port 22 on the        ║"
     log_warn "║  tailnet and demands an interactive browser check, which breaks    ║"
@@ -1707,6 +1713,82 @@ PROFILEEOF
 }
 
 #===============================================================================
+# Export GITLAB_HOST and Put ~/.local/bin on PATH for Every Login Context
+#===============================================================================
+# glab and the sdlc controller read GITLAB_HOST; uv puts the `sdlc` entry point
+# in ~/.local/bin. Same two routes as configure_profile_path: /etc/environment
+# (sshd sessions, `ssh dev '<cmd>'`, systemd user services) and ~/.profile.
+configure_gitlab_env() {
+    log_info "Exporting GITLAB_HOST=${GITLAB_HOST} and ~/.local/bin on PATH..."
+
+    local env_file="${ENVIRONMENT_FILE:-/etc/environment}"
+    local local_bin="${HOME}/.local/bin"
+    local profile_rc="${HOME}/.profile"
+    local marker="# >>> gitlab-env >>>"
+
+    if grep -qxF "GITLAB_HOST=${GITLAB_HOST}" "${env_file}" 2>/dev/null; then
+        log_ok "${env_file} already exports GITLAB_HOST"
+    else
+        # Drop a stale value first so a changed host replaces, not duplicates
+        if grep -q '^GITLAB_HOST=' "${env_file}" 2>/dev/null; then
+            sudo sed -i '/^GITLAB_HOST=/d' "${env_file}"
+        fi
+        echo "GITLAB_HOST=${GITLAB_HOST}" | sudo tee -a "${env_file}" >/dev/null
+        log_ok "Exported GITLAB_HOST=${GITLAB_HOST} in ${env_file}"
+    fi
+
+    if grep -qF "${local_bin}" "${env_file}" 2>/dev/null; then
+        log_ok "${env_file} already puts ${local_bin} on PATH"
+    elif grep -q '^PATH="' "${env_file}" 2>/dev/null; then
+        sudo sed -i "/^PATH=\"/ s|\"\$|:${local_bin}\"|" "${env_file}"
+        log_ok "Appended ${local_bin} to PATH in ${env_file}"
+    else
+        log_warn "No quoted PATH in ${env_file} - add ${local_bin} to it by hand"
+    fi
+
+    if grep -qxF "export GITLAB_HOST=${GITLAB_HOST}" "${profile_rc}" 2>/dev/null; then
+        log_ok "Login shell GITLAB_HOST already configured"
+    else
+        # Drop a stale block first so a changed host replaces, not duplicates
+        if grep -qF "${marker}" "${profile_rc}" 2>/dev/null; then
+            sed -i "/^${marker}\$/,/^# <<< gitlab-env <<<\$/d" "${profile_rc}"
+        fi
+        cat >>"${profile_rc}" <<PROFILEEOF
+
+${marker}
+export GITLAB_HOST=${GITLAB_HOST}
+case ":\$PATH:" in
+    *":\$HOME/.local/bin:"*) ;;
+    *) export PATH="\$PATH:\$HOME/.local/bin" ;;
+esac
+# <<< gitlab-env <<<
+PROFILEEOF
+        log_ok "Login shell GITLAB_HOST configured in ${profile_rc}"
+    fi
+}
+
+#===============================================================================
+# Install the sdlc Controller (pinned tag, uv-managed Python)
+#===============================================================================
+install_sdlc_controller() {
+    log_info "Installing the sdlc controller..."
+
+    local installer="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/scripts/install-sdlc-controller.sh"
+    if [[ ! -f "${installer}" ]]; then
+        log_warn "scripts/install-sdlc-controller.sh not found under ${REPO_CLONE_DIR} - skipping sdlc"
+        return 0
+    fi
+
+    # Not worth aborting a bootstrap over: the installer is idempotent, so a
+    # transient network failure is fixed by re-running it.
+    if bash "${installer}"; then
+        log_ok "sdlc controller ready (GITLAB_HOST=${GITLAB_HOST})"
+    else
+        log_warn "sdlc controller installation failed (non-critical) - re-run: bash ${installer}"
+    fi
+}
+
+#===============================================================================
 # Per-user Setup Formerly Done by the Dev Shell's shellHook
 #===============================================================================
 # Claude config symlinks, stale MCP pruning, zshrc and msmtprc templates.
@@ -2234,6 +2316,8 @@ main() {
     setup_shell_integration
     install_dev_profile
     configure_profile_path
+    configure_gitlab_env
+    install_sdlc_controller
     setup_dev_env
     setup_nix_update_timer
     setup_nix_gc_timer

@@ -22,6 +22,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `lib/logging.sh` | Shared logging library with timestamps and log files |
 | `scripts/install-node-exporter.sh` | node_exporter installer: pinned release, sha256-verified, dedicated user, UFW on tailscale0 |
 | `config/node-exporter-start.sh` | Unit wrapper: binds node_exporter to the Tailscale IP only, bounded wait for the tailnet |
+| `scripts/install-sdlc-controller.sh` | sdlc controller installer: `uv tool install` from the tag pinned in `config/versions.env`, uv-managed Python, idempotent |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `scripts/setup-dev-env.sh` | Per-user setup the dev shell's shellHook used to do: Claude config symlinks, MCP pruning, zshrc/msmtprc templates |
 | `tests/verify-server.sh` | Post-install verification script |
@@ -107,6 +108,7 @@ bootstrap-dev-server/
 ├── scripts/
 │   ├── secure-ssh-key.sh     # SSH key passphrase helper
 │   ├── install-node-exporter.sh  # node_exporter installer (tailnet-only)
+│   ├── install-sdlc-controller.sh  # sdlc controller installer (pinned tag, uv-managed Python)
 │   └── setup-dev-env.sh      # Per-user setup formerly in the dev shell's shellHook
 ├── tests/
 │   └── verify-server.sh      # Post-install verification
@@ -116,7 +118,8 @@ bootstrap-dev-server/
 │   │   ├── agents/           # Specialized agent definitions
 │   │   └── commands/         # Slash command definitions
 │   ├── node-exporter.service   # node_exporter system unit
-│   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│   ├── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│   └── versions.env            # Pinned tool versions (SDLC_CONTROLLER_TAG), bumped by MR
 ```
 
 ## Story Management
@@ -168,6 +171,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
+| `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |
 | `LOG_LEVEL` | INFO | Minimum log level |
 | `LOG_FILE` | (auto) | Path to log file |
 
