@@ -53,7 +53,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 - Containers (Podman, podman-compose)
 - CLI productivity (ripgrep, fd, fzf, bat, eza, lazygit, etc.)
 - Editors (Neovim, Helix)
-- Terminal multiplexer (tmux, auto-launches on SSH)
+- An interactive ssh login attaches to herdr (`NO_HERDR=1` skips it); tmux is no longer configured or auto-launched
 
 ## Development Workflow
 

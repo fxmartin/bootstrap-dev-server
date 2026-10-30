@@ -24,7 +24,7 @@ The server maintains the **single source of truth** for all my projects. No more
 | **Always Available** | Your dev environment is always on, always accessible |
 | **Single Source of Truth** | All projects, all progress, one location |
 | **Device Agnostic** | SSH from Mac, iPad, Linux, Windows—anything |
-| **Persistent Sessions** | Mosh + tmux = sessions that survive disconnects |
+| **Persistent Sessions** | Mosh + herdr = sessions that survive disconnects |
 | **Consistent Environment** | Same tools, same config, every time |
 | **Cost Effective** | ~€5.50/month for a CX33 (less than two coffees) |
 
@@ -251,8 +251,8 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Claude Code** with auto-updates
 - **sdlc controller + glab**: `glab` ships in the Nix profile; the `sdlc` controller is installed with `uv tool install` from a pinned `claude-code-config` tag (`SDLC_CONTROLLER_TAG` in `config/versions.env`, bumped by merge request) on a uv-managed Python 3.12, never a `/nix/store` interpreter, so Nix garbage collection cannot break it. Re-running with the same tag changes nothing; a new tag upgrades. Login shells and `ssh dev '<cmd>'` export `GITLAB_HOST=gitlab.test` - see [sdlc and GitLab](#sdlc-and-gitlab)
 - **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI), pinned to 0.9.3 on x86_64-linux and run as a systemd user service
+- **herdr on login**: an interactive `ssh dev` attaches to the running herdr server; leaving herdr returns to the plain login shell. See [Logging in](#logging-in-attaching-to-herdr)
 - **acmd + acm**: the agentic-coding-monitor daemon and CLI come from a pinned flake input (in the Nix profile), run as a systemd user service, and show this server's agents and sdlc runs in the XPS overlay - see [acmd (agentic-coding-monitor)](#acmd-agentic-coding-monitor)
-- **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer applies `main` every Sunday at 3am - hard-resets the checkout to `origin/main`, builds `dev-env`, upgrades the profile (email summary). It never updates `flake.lock` itself, see [Updating Packages](#updating-packages-flakelock)
 
 #### Python/FastAPI Stack
@@ -296,7 +296,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - HTTP: `xh` (curl), `httpie`
 - Git: `lazygit`, `delta` (diff), `git-lfs`
 - Data: `jq`, `yq`, `miller` (CSV/JSON), `csvkit`
-- Shell: `zsh`, `starship`, `zoxide`, `direnv`, `tmux`
+- Shell: `zsh`, `starship`, `zoxide`, `direnv`, `tmux` (kept in the profile for one more cycle; no longer configured or auto-launched)
 - Other: `websocat`, `glow` (markdown)
 
 #### Editors
@@ -653,9 +653,31 @@ If the service cannot be set up, the bootstrap logs the error and carries on, so
 is still applied; fix the cause and re-run it.
 Check the service with `systemctl --user status herdr`.
 
-Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
-multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
-its own tmux window, or skipping tmux when you use it.
+#### Logging in: attaching to herdr
+
+An interactive `ssh dev` attaches the herdr client, so you resume your agents straight away. Leaving herdr
+returns to the plain login shell. The attach lives in the `# >>> nix-dev-env >>>` block of `~/.bashrc`, because
+bash is the login shell on a provisioned server. The `# >>> nix-dev-env zsh config >>>` block of `~/.zshrc`
+carries the same guard for a login shell changed to zsh. The bootstrap rewrites both when their content drifts.
+
+| Login | Attaches? |
+|-------|-----------|
+| Interactive (`ssh dev`: `SSH_TTY` set, no forced command) | yes |
+| `mosh dev` | yes, its default `ssh -tt` leaves `SSH_TTY` set. `mosh --no-ssh-pty` gets a plain shell |
+| A shell named on the command line (`ssh -t dev bash`) | yes, add `-o SetEnv=NO_HERDR=1` for a plain one |
+| `ssh dev '<cmd>'`, `ssh -t dev '<cmd>'`, scp, acmd forwards, `acm peers` probes | no, and the login adds nothing to the output |
+| Already inside herdr (`HERDR_ENV` set) | no, so herdr never nests |
+| Inside tmux (`TMUX` set) | no, so herdr never nests in the fallback |
+| A shell opened after leaving herdr (`zsh`, `exec zsh`, `dev`) | no, the login exports `NO_HERDR=1` before it attaches |
+| `NO_HERDR=1` in the environment | no |
+
+Escape hatch: `ssh -o SetEnv=NO_HERDR=1 dev` gets a plain shell. The hardened sshd config carries
+`AcceptEnv NO_HERDR` for this. A hardening file that predates it is regenerated whole from the template on the
+next bootstrap run, with no backup, so check `/etc/ssh/sshd_config.d/99-hardening.conf` for hand edits first.
+
+tmux is no longer launched on login. The bootstrap removes the marked block it used to write to
+`~/.tmux.conf` and leaves any lines outside the markers untouched. The `tmux` package stays in the
+profile for one more cycle.
 
 ### acmd (agentic-coding-monitor)
 
