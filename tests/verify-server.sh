@@ -417,6 +417,13 @@ else
     warn "herdr not found (expected from the dev-env Nix profile)"
 fi
 
+# Test 12.1b: the herdr server runs as a systemd user service
+if systemctl --user is-active --quiet herdr.service 2>/dev/null; then
+    pass "herdr.service is active"
+else
+    warn "herdr.service is not active (re-run the bootstrap; --restart-herdr if an outside server holds the socket)"
+fi
+
 # Test 12.2: no stale MCP entries left behind in ~/.claude.json.
 # Their /nix/store paths get garbage-collected, so Claude Code would fail to
 # start those servers on every launch.
