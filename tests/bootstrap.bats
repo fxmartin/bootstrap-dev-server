@@ -492,13 +492,17 @@ assert_reset_then_build_then_upgrade() {
     local after_build="${text#*nix build}"
     [[ "${after_build}" == *"#dev-env"* ]]
     [[ "${after_build}" == *"nix profile upgrade dev-env"* ]]
+    # Same command, not merely somewhere later in the text.
+    [[ "${text}" =~ nix\ build\ [^\;\&\|]*#dev-env[^\;\&\|]*--no-update-lock-file ]]
 }
 
+# The function itself names the string, to detect a stale unit: check what it writes.
 @test "setup_nix_update_timer unit never runs nix flake update" {
-    run bootstrap_function_text setup_nix_update_timer
+    run_timer_setup_over_unit ""
     [ "$status" -eq 0 ]
-    [[ -n "$output" ]]
-    [[ "$output" != *"nix flake update"* ]]
+    grep -q "^ExecStart=" "${UNIT_FILE}"
+    run grep -c "nix flake update" "${UNIT_FILE}"
+    [ "$output" = "0" ]
 }
 
 @test "configure_update_notifications unit never runs nix flake update" {
@@ -598,6 +602,61 @@ define_nix_stub() {
     export -f nix
 }
 
+# nix stub for a merged flake.nix the committed lock does not cover: like real
+# nix it writes flake.lock on the box, unless --no-update-lock-file makes that
+# an error.
+define_nix_stub_lock_incomplete() {
+    # shellcheck disable=SC2329
+    nix() {
+        echo "$*" >> "${NIX_LOG}"
+        if [[ "$1" == "build" ]]; then
+            [[ "$*" == *"--no-update-lock-file"* ]] && return 1
+            echo "unreviewed-lock" > "${WORK_DIR}/flake.lock"
+        fi
+        return 0
+    }
+    export -f nix
+}
+
+# The checkout must end on main's reviewed lock, with no profile change.
+assert_lock_refused() {
+    [ "$(cat "${WORK_DIR}/flake.lock")" = "reviewed-lock" ]
+    [ -z "$(git -C "${WORK_DIR}" status --short)" ]
+    run cat "${NIX_LOG}"
+    [[ "$output" != *"profile upgrade"* ]]
+}
+
+# Helper: the fixture again, plus an external/nix-install submodule the checkout
+# has initialised, then a gitlink bump on origin - a merged submodule update.
+make_gitlink_bump_on_origin() {
+    make_checkout_behind_origin
+    export GIT_ALLOW_PROTOCOL=file
+    local sub="${TEST_TEMP_DIR}/sub"
+    local pusher="${TEST_TEMP_DIR}/pusher"
+    git init -q -b main "${sub}"
+    git -C "${sub}" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "one"
+    git -C "${pusher}" submodule --quiet add "${sub}" external/nix-install
+    git -C "${pusher}" commit -q -m "add submodule"
+    git -C "${pusher}" push -q origin main
+    git -C "${WORK_DIR}" pull -q origin main
+    git -C "${WORK_DIR}" submodule --quiet update --init
+    git -C "${sub}" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "two"
+    git -C "${pusher}/external/nix-install" pull -q origin main
+    git -C "${pusher}" add external/nix-install
+    git -C "${pusher}" commit -q -m "chore: bump nix-install"
+    git -C "${pusher}" push -q origin main
+}
+
+# git stub: `git submodule` fails, everything else is real.
+define_git_stub_submodule_update_fails() {
+    # shellcheck disable=SC2329
+    git() {
+        [[ "$1" == "submodule" ]] && return 1
+        command git "$@"
+    }
+    export -f git
+}
+
 # Resolve REPO_DIR/FLAKE_DIR placeholders in an extracted ExecStart body
 bind_unit_paths() {
     local body="$1"
@@ -695,6 +754,67 @@ bind_unit_paths() {
     [[ "$output" != *"[discarded]"* ]]
 }
 
+@test "setup_nix_update_timer ExecStart pipeline: a flake.nix the lock does not cover fails closed" {
+    make_checkout_behind_origin
+    define_nix_stub_lock_incomplete
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body '^setup_nix_update_timer()')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    assert_lock_refused
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: a gitlink bump leaves the checkout clean and nothing to discard" {
+    make_gitlink_bump_on_origin
+    define_nix_stub
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body '^setup_nix_update_timer()')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "${WORK_DIR}" status --short)" ]
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"[discarded]"* ]]
+}
+
+@test "setup_nix_update_timer ExecStart pipeline: a failed submodule sync warns and still applies main" {
+    make_gitlink_bump_on_origin
+    define_nix_stub
+    define_git_stub_submodule_update_fails
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body '^setup_nix_update_timer()')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[warn] submodule update failed"* ]]
+    run cat "${NIX_LOG}"
+    [[ "$output" == *"profile upgrade dev-env"* ]]
+}
+
+# `git fetch` recurses into a moved submodule by itself, so a dead submodule
+# remote fails the run at the fetch, with nothing discarded and nothing applied.
+@test "setup_nix_update_timer ExecStart pipeline: a dead submodule remote fails the fetch before anything is reset" {
+    make_gitlink_bump_on_origin
+    define_nix_stub
+    rm -rf "${TEST_TEMP_DIR}/sub"
+    local head_before
+    head_before="$(git -C "${WORK_DIR}" rev-parse HEAD)"
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body '^setup_nix_update_timer()')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(git -C "${WORK_DIR}" rev-parse HEAD)" = "${head_before}" ]
+    [ ! -s "${NIX_LOG}" ]
+}
+
 @test "configure_update_notifications ExecStart pipeline: applies origin/main's lock and records success status" {
     make_checkout_behind_origin
     define_nix_stub
@@ -765,6 +885,93 @@ bind_unit_paths() {
     [[ "$output" == *"[discarded]"*"flake.lock"* ]]
 
     rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "configure_update_notifications ExecStart pipeline: a flake.nix the lock does not cover fails closed" {
+    make_checkout_behind_origin
+    define_nix_stub_lock_incomplete
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body 'Update the nix-flake-update service to include notification')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "failed" ]
+    assert_lock_refused
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "configure_update_notifications ExecStart pipeline: a gitlink bump leaves the checkout clean and nothing to discard" {
+    make_gitlink_bump_on_origin
+    define_nix_stub
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body 'Update the nix-flake-update service to include notification')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "${WORK_DIR}" status --short)" ]
+
+    run bash -c "${cmd_body}"
+    [ "$status" -eq 0 ]
+    run cat /tmp/nix-update-output.txt
+    [[ "$output" != *"[discarded]"* ]]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "configure_update_notifications ExecStart pipeline: a failed reset stops the run, the submodule fallback does not revive it" {
+    make_checkout_behind_origin
+    define_nix_stub
+    touch "${WORK_DIR}/.git/index.lock"
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body 'Update the nix-flake-update service to include notification')")"
+
+    run bash -c "${cmd_body}"
+    [ "$status" -ne 0 ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "failed" ]
+    [ ! -s "${NIX_LOG}" ]
+
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+# Helper: run setup_nix_update_timer against a sandboxed /etc/systemd/system
+# holding $1 as the existing service. Leaves UNIT_FILE set.
+run_timer_setup_over_unit() {
+    local unit_dir="${TEST_TEMP_DIR}/systemd"
+    mkdir -p "${unit_dir}"
+    UNIT_FILE="${unit_dir}/nix-flake-update.service"
+    printf '%s\n' "$1" > "${UNIT_FILE}"
+    source_bootstrap_function "config"
+    eval "$(bootstrap_function_text install_systemd_unit)"
+    eval "$(bootstrap_function_text setup_nix_update_timer)"
+    # shellcheck disable=SC2329
+    sudo() { "${@//\/etc\/systemd\/system/${unit_dir}}"; }
+    # shellcheck disable=SC2329
+    systemctl() { :; }
+    run setup_nix_update_timer
+}
+
+@test "setup_nix_update_timer replaces a notification unit that still runs nix flake update" {
+    run_timer_setup_over_unit 'ExecStart=/bin/bash -c "nix flake update --flake /x"
+ExecStopPost=/bin/bash -c "sudo /usr/local/bin/nix-update-notify.sh"'
+    [ "$status" -eq 0 ]
+    run grep -c "nix flake update" "${UNIT_FILE}"
+    [ "$output" = "0" ]
+    grep -q "git reset --hard --quiet origin/main" "${UNIT_FILE}"
+}
+
+@test "setup_nix_update_timer keeps a current notification unit" {
+    local unit='ExecStart=/bin/bash -c "git reset --hard --quiet origin/main"
+ExecStopPost=/bin/bash -c "sudo /usr/local/bin/nix-update-notify.sh"'
+    run_timer_setup_over_unit "${unit}"
+    [ "$status" -eq 0 ]
+    [ "$(cat "${UNIT_FILE}")" = "${unit}" ]
 }
 
 # Helper: run scripts/setup-dev-env.sh's dev-update against the fixture
@@ -864,6 +1071,24 @@ run_dev_update() {
     [[ "$output" != *"Dev environment updated to"* ]]
 }
 
+@test "dev-update with a flake.nix the lock does not cover fails closed" {
+    make_checkout_behind_origin
+    define_nix_stub_lock_incomplete
+
+    run_dev_update
+    [ "$status" -ne 0 ]
+    assert_lock_refused
+}
+
+@test "dev-update on a gitlink bump leaves the checkout clean" {
+    make_gitlink_bump_on_origin
+    define_nix_stub
+
+    run_dev_update
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "${WORK_DIR}" status --short)" ]
+}
+
 @test "the repo ships an update-lock recipe that updates the lock, then runs nix flake check" {
     [ -f "${PROJECT_ROOT}/justfile" ]
     run sed -n '/^update-lock/,/^$/p' "${PROJECT_ROOT}/justfile"
@@ -876,6 +1101,42 @@ run_dev_update() {
     [ "$status" -eq 0 ]
     run grep -n "Systemd timer updates flake.lock" "${PROJECT_ROOT}/README.md"
     [ "$status" -ne 0 ]
+}
+
+@test "README documents that the server refuses lock updates and how dev-update reaches a provisioned box" {
+    run grep -n -- "--no-update-lock-file" "${PROJECT_ROOT}/README.md"
+    [ "$status" -eq 0 ]
+    run grep -n "Re-running the bootstrap rewrites" "${PROJECT_ROOT}/README.md"
+    [ "$status" -eq 0 ]
+}
+
+# create_claude_md's template is user-owned, so a provisioned box only gets the
+# one stock line that the lock-authority change made false.
+load_create_claude_md() {
+    source_bootstrap_function "config"
+    eval "$(bootstrap_function_text create_claude_md)"
+}
+
+@test "create_claude_md migrates the stock dev-update line on a provisioned box" {
+    printf '%s\n' '# mine' '- `dev-update` - Update Nix flake dependencies' > "${HOME}/CLAUDE.md"
+    load_create_claude_md
+    run create_claude_md
+    [ "$status" -eq 0 ]
+    run grep -c "Update Nix flake dependencies" "${HOME}/CLAUDE.md"
+    [ "$output" = "0" ]
+    grep -qF 'dev-update` - Apply origin/main' "${HOME}/CLAUDE.md"
+    grep -qx '# mine' "${HOME}/CLAUDE.md"
+}
+
+@test "create_claude_md leaves a customised file untouched" {
+    printf '%s\n' '# mine' '- `dev-update` - my own words' > "${HOME}/CLAUDE.md"
+    touch -d '2020-01-01' "${HOME}/CLAUDE.md"
+    local before
+    before="$(stat -c '%i %Y' "${HOME}/CLAUDE.md")"
+    load_create_claude_md
+    run create_claude_md
+    [ "$status" -eq 0 ]
+    [ "$(stat -c '%i %Y' "${HOME}/CLAUDE.md")" = "${before}" ]
 }
 
 # =============================================================================

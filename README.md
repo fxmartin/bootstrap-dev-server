@@ -723,11 +723,15 @@ curl -s http://$(ssh dev-server tailscale ip -4):9100/metrics | grep node_export
 
 The repository is the only source of `flake.lock`. The server never runs `nix flake update`: the weekly `nix-flake-update.timer` and the `dev-update` shell function both apply exactly what is on `main`:
 
-1. `git fetch` + `git reset --hard origin/main` on `~/.local/share/bootstrap-dev-server`
-2. `nix build ~/.config/nix-dev-env#dev-env`
+1. `git fetch` + `git reset --hard origin/main` on `~/.local/share/bootstrap-dev-server`, then `git submodule update --recursive`
+2. `nix build ~/.config/nix-dev-env#dev-env --no-update-lock-file`
 3. Only if the build succeeds, `nix profile upgrade dev-env`
 
 A failed fetch or build leaves the previous profile in place; the weekly service reports `failed` in its email. Because the reset is hard, local edits to tracked files in the checkout are discarded - the service and `dev-update` log the file list and short stat (and any local commits) before they go, so nothing vanishes silently. Put changes in a merge request instead.
+
+`--no-update-lock-file` means the box never locks anything itself: if a merged `flake.nix` needs a lock change nobody committed, the run fails instead of writing an unreviewed `flake.lock`. The bootstrap's profile step refuses the same way.
+
+`dev-update` lives in generated blocks in `~/.bashrc` and `~/.zshrc`. Re-running the bootstrap rewrites those blocks when their content drifts, keeps everything outside the markers, and saves the previous file as `.backup`. A box provisioned earlier keeps its old `dev-update`, which still runs `nix flake update`, until that re-run; open a new shell afterwards.
 
 **To get newer packages** (maintainer, on a dev machine):
 
@@ -1036,7 +1040,8 @@ After installation:
 │       │   └── nix-install/   # Git submodule (Claude configs source)
 │       │       └── config/claude/
 │       ├── lib/
-│       │   └── logging.sh     # Shared logging library
+│       │   ├── logging.sh     # Shared logging library
+│       │   └── rc-block.sh    # Keeps generated rc blocks current
 │       ├── config/
 │       │   ├── node-exporter.service   # node_exporter system unit
 │       │   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind

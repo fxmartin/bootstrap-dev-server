@@ -25,6 +25,9 @@ else
     log_warn() { echo -e "$(date '+%Y-%m-%d %H:%M:%S') [WARN]  ${1}" >&2; }
 fi
 
+# shellcheck source=../lib/rc-block.sh
+source "${REPO_DIR}/lib/rc-block.sh"
+
 CLAUDE_JSON="${CLAUDE_JSON:-${HOME}/.claude.json}"
 CLAUDE_USER_DIR="${CLAUDE_USER_DIR:-${HOME}/.claude}"
 REPO_CLAUDE_DIR="${REPO_CLAUDE_DIR:-${HOME}/.local/share/bootstrap-dev-server/external/nix-install/config/claude}"
@@ -79,11 +82,10 @@ link_claude_config() {
     return 0
 }
 
-# Generate .zshrc if it doesn't exist or doesn't carry our block
+# Keep our .zshrc block current, so config changes reach provisioned servers
 write_zshrc() {
     mkdir -p "$(dirname "${ZSHRC}")" "${HOME}/.config/zsh"
-    if [[ ! -f "${ZSHRC}" ]] || ! grep -q "nix-dev-env" "${ZSHRC}" 2>/dev/null; then
-        cat >"${ZSHRC}" <<'ZSHEOF'
+    if write_rc_block "${ZSHRC}" "# >>> nix-dev-env zsh config >>>" "# <<< nix-dev-env zsh config <<<" <<'ZSHEOF'; then
 # >>> nix-dev-env zsh config >>>
 # History
 HISTFILE=~/.zsh_history
@@ -185,8 +187,10 @@ dev-update() {
   # Update submodules (Claude Code configs from nix-install)
   (cd "$REPO_DIR" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
 
+  # --no-update-lock-file: a flake.nix the committed lock does not cover fails
+  # here instead of locking on the box
   echo "🔨 Building dev-env..."
-  nix build "$FLAKE_DIR#dev-env" --no-link || {
+  nix build "$FLAKE_DIR#dev-env" --no-update-lock-file --no-link || {
     echo "❌ Build failed - profile left unchanged"
     return 1
   }
@@ -235,7 +239,7 @@ if [[ ( -n "$SSH_CONNECTION" || -n "$MOSH_CONNECTION" ) && -z "$TMUX" ]]; then
 fi
 # <<< nix-dev-env zsh config <<<
 ZSHEOF
-        log_ok "Created ~/.zshrc with dev environment config"
+        log_ok "Wrote dev environment config to ~/.zshrc"
     fi
 }
 

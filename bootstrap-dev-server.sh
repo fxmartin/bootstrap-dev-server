@@ -1438,11 +1438,12 @@ Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
 # The repository is the only source of flake.lock: hard-reset the checkout to
-# origin/main (logging any local diff or commits it discards), build dev-env,
-# and only on success upgrade the profile. A failed fetch or build leaves the
-# previous profile in place and records status=failed so ExecStopPost's
-# notification reports the real outcome instead of always "success".
-ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; OUTPUT=\$( (git fetch --quiet origin && git diff --stat HEAD | sed "s/^/[discarded] /" && git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /" && git reset --hard --quiet origin/main && git log -1 --oneline | sed "s/^/[applied] /" && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#dev-env --no-link && nix profile upgrade dev-env) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
+# origin/main (logging any local diff or commits it discards), sync submodules,
+# build dev-env with lock updates refused, and only on success upgrade the
+# profile. A failed fetch or build leaves the previous profile in place and
+# records status=failed so ExecStopPost's notification reports the real outcome
+# instead of always "success".
+ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; OUTPUT=\$( (git fetch --quiet origin && git diff --stat HEAD | sed "s/^/[discarded] /" && git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /" && git reset --hard --quiet origin/main && { git submodule update --recursive || echo "[warn] submodule update failed"; } && git log -1 --oneline | sed "s/^/[applied] /" && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link && nix profile upgrade dev-env) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
 
 # Send notification (runs as root to access msmtp config)
 ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
@@ -1538,15 +1539,19 @@ setup_shell_integration() {
     local FLAKE_DIR="${HOME}/.config/nix-dev-env"
     local BASHRC="${HOME}/.bashrc"
     local MARKER="# >>> nix-dev-env >>>"
+    local rc_lib="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/lib/rc-block.sh"
 
-    # Check if already configured
-    if grep -q "${MARKER}" "${BASHRC}" 2>/dev/null; then
-        log_ok "Shell integration already configured"
-        return 0
+    if [[ ! -f "${rc_lib}" ]]; then
+        log_error "lib/rc-block.sh not found under ${REPO_CLONE_DIR}"
+        return 1
     fi
+    # shellcheck disable=SC1091  # Path is dynamically built from vars
+    # shellcheck source=lib/rc-block.sh
+    source "${rc_lib}"
 
-    cat >>"${BASHRC}" <<SHELLEOF
-
+    # Regenerate the block on every run and rewrite it only on content drift, so
+    # dev-update fixes reach already-provisioned servers.
+    if ! write_rc_block "${BASHRC}" "${MARKER}" "# <<< nix-dev-env <<<" <<SHELLEOF; then
 ${MARKER}
 # Nix daemon
 if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
@@ -1605,8 +1610,10 @@ dev-update() {
     # Update submodules (Claude Code configs from nix-install)
     (cd "\${REPO_DIR}" && git submodule update --recursive) || echo "⚠️  Failed to update submodules (continuing anyway)"
 
+    # --no-update-lock-file: a flake.nix the committed lock does not cover fails
+    # here instead of locking on the box
     echo "🔨 Building dev-env..."
-    nix build "\${FLAKE_DIR}#dev-env" --no-link || {
+    nix build "\${FLAKE_DIR}#dev-env" --no-update-lock-file --no-link || {
         echo "❌ Build failed - profile left unchanged"
         return 1
     }
@@ -1630,6 +1637,9 @@ claude-quick() {
 }
 # <<< nix-dev-env <<<
 SHELLEOF
+        log_ok "Shell integration already configured"
+        return 0
+    fi
 
     log_ok "Shell integration configured"
     log_info "Run 'source ~/.bashrc' or reconnect to activate"
@@ -1686,15 +1696,17 @@ install_dev_profile() {
         return 1
     fi
 
-    # Install the first time, upgrade after: an unchanged flake is a no-op
+    # Install the first time, upgrade after: an unchanged flake is a no-op.
+    # --no-update-lock-file: a flake.nix the committed lock does not cover fails
+    # here instead of locking on the box and reaching the profile unreviewed.
     if grep -Eq '"attrPath": *"packages\.[^"]+\.dev-env"' <<<"${profile_json}"; then
-        nix profile upgrade dev-env || {
+        nix profile upgrade dev-env --no-update-lock-file || {
             log_error "nix profile upgrade dev-env failed"
             return 1
         }
         log_ok "Dev toolset profile is up to date"
     else
-        nix profile install "${FLAKE_DIR}#dev-env" || {
+        nix profile install "${FLAKE_DIR}#dev-env" --no-update-lock-file || {
             log_error "nix profile install ${FLAKE_DIR}#dev-env failed"
             return 1
         }
@@ -1795,9 +1807,12 @@ setup_nix_update_timer() {
     # drift, so unit-file fixes reach already-provisioned servers instead of
     # being skipped forever once the timer is enabled. The notification-
     # enhanced service written by configure_update_notifications takes
-    # precedence: never clobber it with the plain unit.
+    # precedence: never clobber it with the plain unit - unless it still runs
+    # `nix flake update`, which only happens when that step was skipped on this
+    # run. Losing email until the next full run beats mutating flake.lock.
     # Service unit runs as the dev user, not root.
-    if ! sudo grep -q "nix-update-notify" "${SERVICE_FILE}" 2>/dev/null; then
+    if ! sudo grep -q "nix-update-notify" "${SERVICE_FILE}" 2>/dev/null ||
+        sudo grep -q "nix flake update" "${SERVICE_FILE}" 2>/dev/null; then
         if install_systemd_unit "${SERVICE_FILE}" <<SERVICEEOF; then
 [Unit]
 Description=Update Nix flake packages
@@ -1811,10 +1826,10 @@ Environment="HOME=/home/${DEV_USER}"
 Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 
 # The repository is the only source of flake.lock: hard-reset the checkout to
-# origin/main (logging any local diff or commits it discards), build dev-env,
-# and only on success upgrade the profile. Any failure stops the unit with the
-# previous profile still in place.
-ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git fetch --quiet origin; git diff --stat HEAD | sed "s/^/[discarded] /"; git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /"; git reset --hard --quiet origin/main; git log -1 --oneline | sed "s/^/[applied] /"; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix build ${FLAKE_DIR}#dev-env --no-link; nix profile upgrade dev-env'
+# origin/main (logging any local diff or commits it discards), sync submodules,
+# build dev-env with lock updates refused, and only on success upgrade the
+# profile. Any failure stops the unit with the previous profile still in place.
+ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git fetch --quiet origin; git diff --stat HEAD | sed "s/^/[discarded] /"; git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /"; git reset --hard --quiet origin/main; git submodule update --recursive || echo "[warn] submodule update failed"; git log -1 --oneline | sed "s/^/[applied] /"; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link; nix profile upgrade dev-env'
 SERVICEEOF
             UNITS_CHANGED=1
         fi
@@ -1976,8 +1991,16 @@ create_claude_md() {
     log_info "Creating CLAUDE.md template..."
 
     local CLAUDE_MD="${HOME}/CLAUDE.md"
+    # shellcheck disable=SC2016  # Literal backticks, nothing to expand
+    local stale_dev_update='- `dev-update` - Update Nix flake dependencies'
 
     if [[ -f "${CLAUDE_MD}" ]]; then
+        # The file is the user's from here on: migrate only the stock line that
+        # no longer describes dev-update, and only if it is still there verbatim.
+        if grep -qxF -- "${stale_dev_update}" "${CLAUDE_MD}"; then
+            sed -i "s|^${stale_dev_update}\$|- \`dev-update\` - Apply origin/main (reset checkout, build dev-env, upgrade profile)|" "${CLAUDE_MD}"
+            log_ok "CLAUDE.md dev-update description updated"
+        fi
         log_ok "CLAUDE.md already exists"
         return 0
     fi
