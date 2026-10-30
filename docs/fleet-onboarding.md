@@ -85,7 +85,7 @@ answers, and the services (`systemctl --user status herdr acmd`).
 
 End to end: an `sdlc` run started on the server must appear in the XPS overlay.
 
-1. On the server, open a herdr pane (`herdr`, or `herdr --machine dev-server` from the XPS).
+1. On the server, open a herdr pane (`herdr`, or `herdr --remote dev-server` from the XPS).
 2. Pick a small, low-risk open issue in a GitLab project you can push to. In that repository's
    checkout in the pane, run:
 

@@ -68,6 +68,13 @@ line_of() {
     grep -qi "overlay" "${RUNBOOK}"
 }
 
+@test "runbook attaches with --remote, never a --machine with no command" {
+    grep -qF "herdr --remote dev-server" "${RUNBOOK}"
+    # --machine only runs an API command on a saved machine: bare, herdr exits with a usage error
+    run grep -E 'herdr --machine [^ `]+(`|$)' "${RUNBOOK}"
+    [ "${status}" -ne 0 ]
+}
+
 @test "runbook never contains a token-looking value" {
     run grep -E "(ghp_|github_pat_|glpat-)[A-Za-z0-9_]{8,}" "${RUNBOOK}"
     [ "${status}" -ne 0 ]
