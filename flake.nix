@@ -15,11 +15,43 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, claude-code-nix }:
+    let
+      # herdr 0.9.3, the fleet version, ahead of nixpkgs. The remote jump
+      # (`herdr --remote`) and `herdr machine add` need equal versions on both
+      # ends, and the XPS and both Macs run 0.9.3. Same approach as nix-install's
+      # darwin/configuration.nix: upstream's own release binary, pinned by hash,
+      # no source build (it is static-pie, so nothing to patch).
+      # Drop this overlay once the fleet moves to a version nixpkgs ships.
+      herdrOverlay = final: prev: {
+        herdr =
+          if prev.stdenv.hostPlatform.system == "x86_64-linux" then
+            prev.stdenvNoCC.mkDerivation rec {
+              pname = "herdr";
+              version = "0.9.3";
+              src = prev.fetchurl {
+                url = "https://github.com/herdrdev/herdr/releases/download/v${version}/herdr-linux-x86_64";
+                hash = "sha256-GKjcZfHC+khYhDRDVt6hz9kRxvBs9G+njhk/QIf026c=";
+              };
+              dontUnpack = true;
+              installPhase = ''
+                runHook preInstall
+                install -Dm755 "$src" "$out/bin/herdr"
+                runHook postInstall
+              '';
+              meta = prev.herdr.meta // {
+                platforms = [ "x86_64-linux" ];
+              };
+            }
+          else
+            prev.herdr;
+      };
+    in
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
+          overlays = [ herdrOverlay ];
         };
 
         # Defined once: devShells.default and packages.dev-env both consume it,

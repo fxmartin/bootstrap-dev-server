@@ -86,6 +86,10 @@ SKIP_GITHUB_AUTH="${SKIP_GITHUB_AUTH:-false}"      # Skip GitHub CLI authenticat
 # Security hardening (for testing in containers without privileges)
 SKIP_SECURITY_HARDENING="${SKIP_SECURITY_HARDENING:-false}"  # Skip security hardening phase
 
+# herdr server hand-over: a server running outside the systemd unit is only
+# stopped when asked, because stopping it ends its sessions and agent panes.
+RESTART_HERDR="${RESTART_HERDR:-false}"            # Stop an outside herdr server so the unit takes over
+
 # Internal state (set by functions)
 SSH_RESTART_NEEDED=false                           # Set by harden_ssh() if restart needed
 
@@ -1721,6 +1725,139 @@ install_dev_profile() {
 }
 
 #===============================================================================
+# herdr Server as a systemd User Service
+#===============================================================================
+# The server starts at boot (with linger) from the dev-env profile's herdr, so
+# agent panes survive disconnects and reboots and every pane inherits the
+# profile's toolset through PATH. The socket stays at herdr's default,
+# ~/.config/herdr/herdr.sock, where acmd and `herdr machine add` look for it.
+# %h is the user's home, resolved by systemd. ~/.local/bin is where uv puts sdlc.
+herdr_unit_content() {
+    cat <<'UNITEOF'
+[Unit]
+Description=herdr server (agent multiplexer)
+
+[Service]
+Type=simple
+Environment="PATH=%h/.nix-profile/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=%h/.nix-profile/bin/herdr server
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+UNITEOF
+}
+
+# PIDs of this user's herdr servers (one per line), whoever started them.
+herdr_server_pids() {
+    local pattern='^([^ ]*/)?herdr +server( |$)'
+    pgrep -u "$(id -u)" -f "${pattern}" 2>/dev/null || true
+}
+
+# Stops the servers in $1 (newline-separated PIDs): SIGTERM, then SIGKILL after
+# a bounded wait. Liveness is asked of pgrep, not kill -0, so a zombie nobody
+# reaps does not count as running.
+stop_unmanaged_herdr() {
+    local pids="$1" i
+    log_warn "Stopping herdr server PID ${pids//$'\n'/ }: this ends its sessions and every agent pane in them (--restart-herdr)"
+    # shellcheck disable=SC2086  # one word per PID
+    kill -TERM ${pids} 2>/dev/null || true
+    for ((i = 0; i < 20; i++)); do
+        [[ -z "$(herdr_server_pids)" ]] && return 0
+        sleep 0.5
+    done
+    log_warn "herdr server ignored SIGTERM - sending SIGKILL"
+    # shellcheck disable=SC2086
+    kill -KILL ${pids} 2>/dev/null || true
+    for ((i = 0; i < 10; i++)); do
+        [[ -z "$(herdr_server_pids)" ]] && return 0
+        sleep 0.5
+    done
+    return 1
+}
+
+setup_herdr_service() {
+    log_info "Setting up the herdr server user service..."
+
+    local unit_dir="${HOME}/.config/systemd/user"
+    local unit_file="${unit_dir}/herdr.service"
+    local socket="${HOME}/.config/herdr/herdr.sock"
+    local unit_changed=false tmp
+
+    # Rewritten only on content drift, so unit fixes reach provisioned servers.
+    mkdir -p "${unit_dir}"
+    tmp="$(mktemp)"
+    herdr_unit_content >"${tmp}"
+    if ! cmp -s "${tmp}" "${unit_file}" 2>/dev/null; then
+        install -m 644 "${tmp}" "${unit_file}"
+        unit_changed=true
+        log_ok "Wrote ${unit_file}"
+    fi
+    rm -f "${tmp}"
+
+    if [[ ! -x "${HOME}/.nix-profile/bin/herdr" ]]; then
+        log_warn "${HOME}/.nix-profile/bin/herdr not found - not enabling the herdr service (the dev-env profile step must succeed first)"
+        return 0
+    fi
+
+    # No login session behind this shell (containers, sudo -u, a console
+    # install): there is no user manager to talk to. The unit is on disk, so
+    # re-running from an SSH login finishes the job.
+    if ! systemctl --user show-environment &>/dev/null; then
+        log_warn "No systemd user manager reachable from this shell - unit written, not enabled. Re-run the bootstrap from an SSH login."
+        return 0
+    fi
+
+    # A server the unit itself runs is ours; only an outside one conflicts.
+    local outside_pids="" start_now=true
+    if ! systemctl --user is-active --quiet herdr.service; then
+        outside_pids="$(herdr_server_pids)"
+    fi
+    if [[ -n "${outside_pids}" ]]; then
+        if [[ "${RESTART_HERDR:-false}" == "true" ]]; then
+            if ! stop_unmanaged_herdr "${outside_pids}"; then
+                log_error "Could not stop the herdr server (PID ${outside_pids//$'\n'/ })"
+                return 1
+            fi
+            # The old server cannot clean up after itself once killed.
+            rm -f "${socket}"
+        else
+            log_warn "A herdr server is already running outside the unit (PID ${outside_pids//$'\n'/ }) - leaving it running."
+            log_warn "Stopping it ends its sessions. Re-run with --restart-herdr (or RESTART_HERDR=true) to hand over to the unit; it starts at next boot either way."
+            start_now=false
+        fi
+    fi
+
+    if [[ "${unit_changed}" == "true" ]]; then
+        systemctl --user daemon-reload
+        if systemctl --user is-active --quiet herdr.service; then
+            log_info "herdr.service changed while running - the new unit applies at the next herdr restart (that ends its sessions)"
+        fi
+    fi
+
+    if [[ "${start_now}" == "true" ]]; then
+        systemctl --user enable --now herdr.service || {
+            log_error "systemctl --user enable --now herdr.service failed - see: journalctl --user -u herdr"
+            return 1
+        }
+        log_ok "herdr server running as a user service"
+    else
+        systemctl --user enable herdr.service
+        log_ok "herdr.service enabled (not started: an outside server owns the socket)"
+    fi
+
+    # Without linger the user manager, and so the server, only lives while an
+    # SSH session is open.
+    if [[ "$(loginctl show-user "${DEV_USER}" --property=Linger --value 2>/dev/null || true)" != "yes" ]]; then
+        sudo loginctl enable-linger "${DEV_USER}"
+        log_ok "Enabled linger for ${DEV_USER}: herdr starts at boot"
+    else
+        log_ok "Linger already enabled for ${DEV_USER}"
+    fi
+}
+
+#===============================================================================
 # Put ~/.nix-profile/bin on PATH for Login and Non-Interactive Shells
 #===============================================================================
 # ~/.bashrc is not enough: Ubuntu's returns early for non-interactive shells,
@@ -2275,6 +2412,9 @@ main() {
             --skip-security-hardening)
                 SKIP_SECURITY_HARDENING=true
                 ;;
+            --restart-herdr)
+                RESTART_HERDR=true
+                ;;
             --help|-h)
                 echo "Usage: $0 [OPTIONS]"
                 echo ""
@@ -2282,6 +2422,7 @@ main() {
                 echo "  --yes, -y                   Run in non-interactive mode (future use)"
                 echo "  --skip-github-auth          Skip GitHub CLI authentication (for testing)"
                 echo "  --skip-security-hardening   Skip security hardening phase (for containers)"
+                echo "  --restart-herdr             Stop a herdr server running outside the systemd unit (ends its sessions)"
                 echo "  --help, -h                  Show this help message"
                 exit 0
                 ;;
@@ -2374,6 +2515,7 @@ main() {
     create_dev_flake
     setup_shell_integration
     install_dev_profile
+    setup_herdr_service
     configure_profile_path
     configure_gitlab_env
     install_sdlc_controller

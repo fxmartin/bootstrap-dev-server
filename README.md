@@ -250,7 +250,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **Default Nix profile**: the whole toolset (`packages.<system>.dev-env` in `flake.nix`) is installed into `~/.nix-profile`, so it is on PATH in logins, `ssh dev '<cmd>'`, systemd user services and herdr panes - no need to type `dev` first. The bootstrap installs it the first time, upgrades it on re-runs (a no-op when the flake is unchanged) and removes any hand-installed stray entries, logging each one
 - **Claude Code** with auto-updates
 - **sdlc controller + glab**: `glab` ships in the Nix profile; the `sdlc` controller is installed with `uv tool install` from a pinned `claude-code-config` tag (`SDLC_CONTROLLER_TAG` in `config/versions.env`, bumped by merge request) on a uv-managed Python 3.12, never a `/nix/store` interpreter, so Nix garbage collection cannot break it. Re-running with the same tag changes nothing; a new tag upgrades. Login shells and `ssh dev '<cmd>'` export `GITLAB_HOST=gitlab.test` - see [sdlc and GitLab](#sdlc-and-gitlab)
-- **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI)
+- **Herdr**: Agent multiplexer for coding agents (GitHub via `gh` CLI), pinned to 0.9.3 and run as a systemd user service
 - **tmux** auto-launches on SSH connection
 - **Weekly Nix updates**: Systemd timer applies `main` every Sunday at 3am - hard-resets the checkout to `origin/main`, builds `dev-env`, upgrades the profile (email summary). It never updates `flake.lock` itself, see [Updating Packages](#updating-packages-flakelock)
 
@@ -633,6 +633,18 @@ See [Appendix B: Parallels VM Setup](#appendix-b-parallels-vm-setup) for detaile
 [Herdr](https://herdr.dev) is an agent multiplexer: it keeps coding agents in persistent
 terminal panes and shows at a glance which are running, waiting, or idle. It ships in the
 default Nix profile (and the dev shell) — just run `herdr`.
+
+The flake pins herdr to **0.9.3**, the fleet version (upstream's release binary, fetched by hash;
+the remote jump and `herdr machine add` need equal versions on both ends). The bootstrap runs the
+server as a systemd **user service**, `~/.config/systemd/user/herdr.service`
+(`ExecStart=~/.nix-profile/bin/herdr server`, `PATH` set to the profile so every pane gets the full
+toolset, `Restart=on-failure`), enables it with linger so it starts at boot, and leaves the socket at
+`~/.config/herdr/herdr.sock`. The unit is rewritten only when its content drifts.
+
+A herdr server already running outside the unit is **left running**, and the bootstrap logs the
+conflict: stopping a server ends its sessions and agent panes. To hand over to the unit, re-run with
+`--restart-herdr` (or `RESTART_HERDR=true`); the bootstrap warns, stops that server and starts the unit.
+Check the service with `systemctl --user status herdr`.
 
 Note that the bootstrap auto-launches tmux on SSH. Running herdr inside tmux nests two
 multiplexers, with the prefix-key and mouse conflicts that implies; consider giving herdr
@@ -1401,6 +1413,9 @@ For testing and special use cases, the bootstrap script supports additional flag
 
 # Skip security hardening (for unprivileged containers)
 ./bootstrap-dev-server.sh --skip-security-hardening
+
+# Stop a herdr server running outside the systemd unit (ends its sessions), so the unit takes over
+./bootstrap-dev-server.sh --restart-herdr
 
 # Show help with all options
 ./bootstrap-dev-server.sh --help
