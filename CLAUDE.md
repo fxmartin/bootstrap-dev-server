@@ -116,6 +116,10 @@ bootstrap-dev-server/
 │   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
 ```
 
+## Story Management
+
+`docs/STORIES.md` (overview) and `docs/stories/epic-*.md` are the single source of truth for planned work, acceptance criteria and progress; the sdlc controller builds from them (`sdlc build <story-id>`). Tick a story's box and update the epic's completed points when it merges.
+
 ## Code Standards
 
 ### Shell Scripts
