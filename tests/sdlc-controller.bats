@@ -242,3 +242,84 @@ load_bootstrap_function() {
     run grep -F -- '--sequential' "${PROJECT_ROOT}/README.md"
     [ "$status" -eq 0 ]
 }
+
+# =============================================================================
+# Coverage gaps: installer edge cases and install_sdlc_controller
+# =============================================================================
+
+@test "installer rejects a malformed Python pin" {
+    cp "${VERSIONS}" "${TEST_TEMP_DIR}/versions.env"
+    export SDLC_VERSIONS_FILE="${TEST_TEMP_DIR}/versions.env"
+    sed -i 's|^SDLC_CONTROLLER_PYTHON=.*|SDLC_CONTROLLER_PYTHON=/nix/store/python3|' "${SDLC_VERSIONS_FILE}"
+    run bash "${INSTALLER}"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"SDLC_CONTROLLER_PYTHON"* ]]
+    [ ! -s "${UV_LOG}" ]
+}
+
+@test "installer fails clearly when the versions file is missing" {
+    export SDLC_VERSIONS_FILE="${TEST_TEMP_DIR}/absent.env"
+    run bash "${INSTALLER}"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not found"* ]]
+    [ ! -s "${UV_LOG}" ]
+}
+
+@test "installer reinstalls when the tag is recorded but sdlc is gone" {
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    rm -f "${MOCK_HOME}/.local/bin/sdlc"
+    : >"${UV_LOG}"
+    # Drop any host-installed sdlc from PATH so only the removed stub counted
+    local clean="" dir
+    while IFS= read -r dir; do
+        [[ -x "${dir}/sdlc" ]] || clean="${clean:+${clean}:}${dir}"
+    done < <(tr ':' '\n' <<<"${PATH}")
+    PATH="${clean}" run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    grep -q '^uv tool install ' "${UV_LOG}"
+}
+
+@test "configure_gitlab_env warns when /etc/environment has no quoted PATH" {
+    export ENVIRONMENT_FILE="${TEST_TEMP_DIR}/environment"
+    : >"${ENVIRONMENT_FILE}"
+    GITLAB_HOST=gitlab.test
+    load_bootstrap_function configure_gitlab_env
+    run configure_gitlab_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No quoted PATH"* ]]
+    grep -qx 'GITLAB_HOST=gitlab.test' "${ENVIRONMENT_FILE}"
+}
+
+@test "install_sdlc_controller skips quietly when the installer is absent" {
+    REPO_CLONE_DIR="${TEST_TEMP_DIR}/no-clone"
+    BOOTSTRAP_SUBDIR="."
+    load_bootstrap_function install_sdlc_controller
+    run install_sdlc_controller
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"skipping sdlc"* ]]
+}
+
+@test "install_sdlc_controller treats an installer failure as non-critical" {
+    REPO_CLONE_DIR="${TEST_TEMP_DIR}/clone"
+    BOOTSTRAP_SUBDIR="."
+    GITLAB_HOST=gitlab.test
+    mkdir -p "${REPO_CLONE_DIR}/scripts"
+    printf '#!/usr/bin/env bash\nexit 1\n' >"${REPO_CLONE_DIR}/scripts/install-sdlc-controller.sh"
+    load_bootstrap_function install_sdlc_controller
+    run install_sdlc_controller
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"non-critical"* ]]
+}
+
+@test "install_sdlc_controller runs the installer when present" {
+    REPO_CLONE_DIR="${TEST_TEMP_DIR}/clone"
+    BOOTSTRAP_SUBDIR="."
+    GITLAB_HOST=gitlab.test
+    mkdir -p "${REPO_CLONE_DIR}/scripts"
+    printf '#!/usr/bin/env bash\ntouch "%s/ran"\n' "${TEST_TEMP_DIR}" >"${REPO_CLONE_DIR}/scripts/install-sdlc-controller.sh"
+    load_bootstrap_function install_sdlc_controller
+    run install_sdlc_controller
+    [ "$status" -eq 0 ]
+    [ -f "${TEST_TEMP_DIR}/ran" ]
+}
