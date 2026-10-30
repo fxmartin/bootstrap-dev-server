@@ -84,3 +84,24 @@ line_of() {
         [ "${status}" -eq 0 ] || { echo "no runbook link under: ${section}"; return 1; }
     done
 }
+
+@test "runbook relative links point at existing files and README anchors" {
+    local link target anchor heading
+    while IFS= read -r link; do
+        target="${link%%#*}"
+        anchor=""
+        [[ "${link}" == *"#"* ]] && anchor="${link#*#}"
+        [ -f "${PROJECT_ROOT}/${target}" ] || { echo "broken file link: ${link}"; return 1; }
+        if [ -n "${anchor}" ]; then
+            # GitHub slug: lowercase, drop punctuation except hyphens, spaces to hyphens
+            heading="$(grep -E '^#+ ' "${PROJECT_ROOT}/${target}" \
+                | sed -E 's/^#+ //' | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9 _-]//g; s/ /-/g' | grep -Fx -- "${anchor}" || true)"
+            [ -n "${heading}" ] || { echo "broken anchor: ${link}"; return 1; }
+        fi
+    done < <(grep -oE '\]\((\.\./[^)]+)\)' "${RUNBOOK}" | sed -E 's|^\]\(\.\./(.*)\)$|\1|')
+}
+
+@test "runbook states the equal-herdr-version requirement" {
+    grep -qi "herdr versions" "${RUNBOOK}"
+}
