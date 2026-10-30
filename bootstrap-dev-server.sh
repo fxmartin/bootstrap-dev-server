@@ -1746,9 +1746,13 @@ configure_gitlab_env() {
         log_warn "No quoted PATH in ${env_file} - add ${local_bin} to it by hand"
     fi
 
-    if grep -qF "${marker}" "${profile_rc}" 2>/dev/null; then
+    if grep -qxF "export GITLAB_HOST=${GITLAB_HOST}" "${profile_rc}" 2>/dev/null; then
         log_ok "Login shell GITLAB_HOST already configured"
     else
+        # Drop a stale block first so a changed host replaces, not duplicates
+        if grep -qF "${marker}" "${profile_rc}" 2>/dev/null; then
+            sed -i "/^${marker}\$/,/^# <<< gitlab-env <<<\$/d" "${profile_rc}"
+        fi
         cat >>"${profile_rc}" <<PROFILEEOF
 
 ${marker}

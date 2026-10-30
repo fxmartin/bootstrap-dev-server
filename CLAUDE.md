@@ -108,6 +108,7 @@ bootstrap-dev-server/
 ├── scripts/
 │   ├── secure-ssh-key.sh     # SSH key passphrase helper
 │   ├── install-node-exporter.sh  # node_exporter installer (tailnet-only)
+│   ├── install-sdlc-controller.sh  # sdlc controller installer (pinned tag, uv-managed Python)
 │   └── setup-dev-env.sh      # Per-user setup formerly in the dev shell's shellHook
 ├── tests/
 │   └── verify-server.sh      # Post-install verification
@@ -117,7 +118,8 @@ bootstrap-dev-server/
 │   │   ├── agents/           # Specialized agent definitions
 │   │   └── commands/         # Slash command definitions
 │   ├── node-exporter.service   # node_exporter system unit
-│   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│   ├── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│   └── versions.env            # Pinned tool versions (SDLC_CONTROLLER_TAG), bumped by MR
 ```
 
 ## Story Management
@@ -169,6 +171,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
+| `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |
 | `LOG_LEVEL` | INFO | Minimum log level |
 | `LOG_FILE` | (auto) | Path to log file |
 

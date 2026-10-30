@@ -145,7 +145,7 @@ load_bootstrap_function() {
     # A PATH holding only the basics, so a real uv on the host cannot leak in
     local bare="${TEST_TEMP_DIR}/bare"
     mkdir -p "${bare}"
-    for tool in bash dirname date cat mkdir basename tput; do
+    for tool in bash dirname date cat mkdir basename; do
         ln -s "$(command -v "${tool}")" "${bare}/${tool}"
     done
     run env PATH="${bare}" HOME="${MOCK_HOME}" bash "${INSTALLER}"
@@ -185,6 +185,23 @@ load_bootstrap_function() {
     [ "$status" -eq 0 ]
     [ "$(grep -c '^GITLAB_HOST=' "${ENVIRONMENT_FILE}")" -eq 1 ]
     grep -qx 'GITLAB_HOST=gitlab.test' "${ENVIRONMENT_FILE}"
+}
+
+@test "configure_gitlab_env replaces a stale host in the login-shell block" {
+    export ENVIRONMENT_FILE="${TEST_TEMP_DIR}/environment"
+    : >"${ENVIRONMENT_FILE}"
+    GITLAB_HOST=home-lab:8080
+    load_bootstrap_function configure_gitlab_env
+    run configure_gitlab_env
+    [ "$status" -eq 0 ]
+    echo 'export KEEP_ME=1' >>"${HOME}/.profile"
+    GITLAB_HOST=gitlab.test
+    run configure_gitlab_env
+    [ "$status" -eq 0 ]
+    [ "$(grep -cF '>>> gitlab-env >>>' "${HOME}/.profile")" -eq 1 ]
+    grep -qx 'export KEEP_ME=1' "${HOME}/.profile"
+    run bash -c "HOME='${HOME}' sh -c '. \"\$HOME/.profile\"; echo \"\$GITLAB_HOST\"'"
+    [ "$output" = "gitlab.test" ]
 }
 
 @test "configure_gitlab_env exports GITLAB_HOST for login shells, once" {
@@ -243,6 +260,11 @@ load_bootstrap_function() {
     [ "$status" -eq 0 ]
 }
 
+@test "README upgrade path pulls the clone before re-running the installer" {
+    run grep -F 'git -C ~/.local/share/bootstrap-dev-server pull' "${PROJECT_ROOT}/README.md"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Coverage gaps: installer edge cases and install_sdlc_controller
 # =============================================================================
@@ -276,6 +298,17 @@ load_bootstrap_function() {
         [[ -x "${dir}/sdlc" ]] || clean="${clean:+${clean}:}${dir}"
     done < <(tr ':' '\n' <<<"${PATH}")
     PATH="${clean}" run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    grep -q '^uv tool install ' "${UV_LOG}"
+}
+
+@test "installer reinstalls when the tag is recorded but sdlc no longer runs" {
+    run bash "${INSTALLER}"
+    [ "$status" -eq 0 ]
+    # The venv's interpreter is gone: the entry point is on PATH but cannot start
+    printf '#!/nonexistent/python\n' >"${MOCK_HOME}/.local/bin/sdlc"
+    : >"${UV_LOG}"
+    run bash "${INSTALLER}"
     [ "$status" -eq 0 ]
     grep -q '^uv tool install ' "${UV_LOG}"
 }

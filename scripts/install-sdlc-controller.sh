@@ -59,7 +59,9 @@ fi
 installed_tag=""
 [[ -f "${STATE_FILE}" ]] && installed_tag="$(<"${STATE_FILE}")"
 
-if [[ "${installed_tag}" == "${SDLC_CONTROLLER_TAG}" ]] && command -v sdlc &>/dev/null; then
+# Run it, not just look it up: a venv whose interpreter is gone leaves `sdlc` on
+# PATH but unable to start, and that has to reinstall.
+if [[ "${installed_tag}" == "${SDLC_CONTROLLER_TAG}" ]] && sdlc --version &>/dev/null; then
     log_ok "sdlc controller ${SDLC_CONTROLLER_TAG} already installed"
     exit 0
 fi

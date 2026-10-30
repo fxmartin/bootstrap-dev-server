@@ -644,12 +644,20 @@ its own tmux window, or skipping tmux when you use it.
 (`GITLAB_HOST=gitlab.test`). That needs Tailscale split DNS (`--accept-dns`, above) and a tailnet ACL that
 lets `tag:server` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
 
-To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, and re-run
-`scripts/install-sdlc-controller.sh` (or the bootstrap) on the server.
+To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, wait for the
+GitHub mirror to sync (up to five minutes), and re-run the bootstrap on the server, which pulls first.
+The installer alone does not pull: it reads the clone's `config/versions.env`, so on a stale clone it
+reports "already installed" and changes nothing. To run it directly, pull first:
+
+```bash
+git -C ~/.local/share/bootstrap-dev-server pull
+bash ~/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh
+```
 
 **Concurrency**: on this server size (cx33: 4 vCPU / 8 GB) run 1-2 concurrent workers, or pass
 `--sequential`. Each worker runs a Claude Code session *and* the repo's test suite at the same time, so
-three or more workers push the box into swap and make timing-sensitive tests flake.
+three or more workers exhaust the memory (the bootstrap configures no swap, so the kernel starts
+OOM-killing them) and make timing-sensitive tests flake.
 
 ### GitHub Authentication
 
