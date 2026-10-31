@@ -271,3 +271,16 @@ teardown() {
     [ "$status" -eq 0 ]
     assert_contains "${output}" "no init message"
 }
+
+@test "timers survive the library being sourced from inside a function (upgrade_logging)" {
+    # The bootstrap sources lib/logging.sh from upgrade_logging(): a plain
+    # `declare -A` there is local to that function, so the first
+    # log_timer_start under `set -u` killed the run silently (2>/dev/null).
+    run bash -c "set -euo pipefail
+        upgrade() { source '${PROJECT_ROOT}/lib/logging.sh'; }
+        upgrade
+        log_timer_start nix_setup 2>/dev/null || true
+        echo survived"
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *survived* ]]
+}
