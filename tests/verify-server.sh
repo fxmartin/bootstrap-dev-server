@@ -500,7 +500,7 @@ if command -v tailscale &>/dev/null; then
         EXPIRY_EPOCH="$(date -d "${TS_EXPIRY}" +%s 2>/dev/null || echo 0)"
         NOW_EPOCH="$(date +%s)"
         if [[ "${EXPIRY_EPOCH}" -eq 0 ]]; then
-            info "Tailscale node key expires: ${TS_EXPIRY}"
+            warn "Tailscale node key expires: ${TS_EXPIRY} (date unparseable here) - untagged node, will drop off the tailnet"
         else
             SECONDS_LEFT=$((EXPIRY_EPOCH - NOW_EPOCH))
             DAYS_LEFT=$((SECONDS_LEFT / 86400))
