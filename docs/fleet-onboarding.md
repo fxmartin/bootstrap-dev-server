@@ -6,7 +6,7 @@ configured from this repository; the steps below are the only manual ones (the T
 secrets, interactive logins and the aggregator peer). Nothing here is hand-edited on the server.
 
 Prerequisites: your SSH alias for the server is `dev-server`, and your tailnet ACL defines
-`tag:server` and lets it reach the GitLab host on port 80 (see [sdlc and GitLab](../README.md#sdlc-and-gitlab)).
+`tag:trusted` and lets it reach the GitLab host on port 80 (see [sdlc and GitLab](../README.md#sdlc-and-gitlab)).
 Run the server-side steps over `ssh dev-server`: an interactive login lands in a herdr pane (see
 [Logging in](../README.md#logging-in-attaching-to-herdr)).
 
@@ -38,8 +38,14 @@ Once the bootstrap has finished, join the tailnet, which it cannot do for you: t
 open in a browser. `--accept-dns` is what lets `gitlab.test` resolve (see [Post-Bootstrap: Tailscale Authentication](../README.md#post-bootstrap-tailscale-authentication)).
 
 ```bash
-sudo tailscale up --advertise-tags=tag:server --accept-dns
+sudo tailscale up --advertise-tags=tag:trusted --accept-dns
 ```
+
+The tag must match the tailnet policy's `tagOwners` (source of truth: nix-install
+`docs/apps/security/tailscale-acl.md`). Changing the advertised tags on a node that is already
+logged in logs it out until you approve the printed login URL. If Tailscale asks you to pass all
+non-default flags, re-run with the full flag list it prints (for example keeping `--ssh`), and
+never use `--reset`.
 
 ## 2. Secrets and logins
 

@@ -414,7 +414,7 @@ The script detects what's already configured and skips completed steps. You'll s
 Tailscale is installed but requires authentication. After bootstrap completes:
 
 ```bash
-sudo tailscale up --advertise-tags=tag:server --accept-dns
+sudo tailscale up --advertise-tags=tag:trusted --accept-dns
 ```
 
 `--accept-dns` lets `gitlab.test` resolve through the tailnet split DNS (needed by `glab` and `sdlc`).
@@ -437,13 +437,11 @@ drops off the tailnet while remaining perfectly healthy on its public IP — so 
 alerts you. A tagged node is owned by the tailnet rather than a user and its key never
 expires.
 
-The tag must already exist in your tailnet ACL under `tagOwners`, for example:
+The tag must match the tailnet policy's `tagOwners`: asking for a tag nobody owns logs the node
+out (`NeedsLogin`). The live policy is documented in nix-install
+`docs/apps/security/tailscale-acl.md`, which is the source of truth for tags and grants.
 
-```json
-"tagOwners": { "tag:server": ["autogroup:admin"] }
-```
-
-Override the default with `TAILSCALE_TAGS=tag:mytag`. If you have already authenticated
+Override the default (`tag:trusted`) with `TAILSCALE_TAGS=tag:mytag`. If you have already authenticated
 untagged, either re-run the command above or disable key expiry for the machine in the
 admin console (**Machines → ⋯ → Disable key expiry**).
 
@@ -744,7 +742,7 @@ curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/
 
 `sdlc fix` and `sdlc build` run on the server against the local-ci-cd GitLab at `http://gitlab.test`
 (`GITLAB_HOST=gitlab.test`). That needs Tailscale split DNS (`--accept-dns`, above) and a tailnet ACL that
-lets `tag:server` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
+lets `tag:trusted` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
 The `glab auth login` step and an end-to-end `sdlc fix` smoke test are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
 
 To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, wait for the
@@ -825,12 +823,8 @@ issues #571-#575). Nothing else is installed here: no Prometheus, no Grafana, no
    and the unit's `StartLimit` stops a permanently-down tailnet from crash-looping forever.
 2. **Firewall on `tailscale0` only.** `ufw allow in on tailscale0 to any port 9100 proto tcp`.
    There is no rule on the public interface.
-3. **Tailscale ACL.** Only the NAS may reach `dev-server:9100`. Add to the ACL in the
-   Tailscale admin console (adjust the NAS selector to its tag or hostname):
-
-   ```json
-   {"action": "accept", "src": ["tag:nas"], "dst": ["tag:server:9100"]}
-   ```
+3. **Tailscale ACL.** Only the metrics collector may reach `dev-server:9100`. The grant
+   lives in the tailnet policy; see nix-install `docs/apps/security/tailscale-acl.md`.
 
 Install details (`scripts/install-node-exporter.sh`, run by bootstrap phase 5, safe to re-run):
 
