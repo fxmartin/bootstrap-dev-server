@@ -197,3 +197,7 @@ section() {
     grep -qF -- '--skip-security-hardening' "${RUNBOOK}"
     grep -qF 'socket = "/run/user/<uid>/acm.sock"' "${README}"
 }
+
+@test "runbook says the bootstrap names gh by path-free name, like glab" {
+    grep -qF "git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'" "${RUNBOOK}"
+}
