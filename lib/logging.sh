@@ -46,7 +46,9 @@ else
 fi
 
 # Timer storage (associative array)
-declare -A LOG_TIMERS
+# -g: upgrade_logging() sources this file inside a function, where a plain
+# declare would make the array local to it and unset once it returns.
+declare -gA LOG_TIMERS
 
 # =============================================================================
 # Initialization
