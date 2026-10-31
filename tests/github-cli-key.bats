@@ -60,3 +60,38 @@ teardown() {
     run bash -c "sed -n '/^main()/,\$p' '${BOOTSTRAP}' | grep -E '^ +(refresh_github_cli_apt_source|install_base_packages)( |\$)' | awk '{print \$1}' | tr '\n' ' '"
     [ "$output" = "refresh_github_cli_apt_source install_base_packages " ]
 }
+
+@test "empty download is treated as a failure and keeps the keyring" {
+    mkdir -p "$(dirname "${GH_KEYRING_FILE}")"
+    printf 'OLDKEY' >"${GH_KEYRING_FILE}"
+    wget() { : >"$2"; }
+    run refresh_github_cli_apt_source
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN: Could not download"* ]]
+    [ "$(cat "${GH_KEYRING_FILE}")" = "OLDKEY" ]
+    [ ! -e "${GH_SOURCE_LIST}" ]
+}
+
+@test "success sets the refreshed flag so install_github_cli skips re-adding" {
+    refresh_github_cli_apt_source
+    [ "${GH_APT_SOURCE_REFRESHED}" = "true" ]
+}
+
+@test "failed download leaves the refreshed flag false" {
+    WGET_FAIL=1
+    refresh_github_cli_apt_source
+    [ "${GH_APT_SOURCE_REFRESHED}" = "false" ]
+}
+
+@test "unchanged source list is not rewritten" {
+    refresh_github_cli_apt_source
+    : >"${SUDO_LOG}"
+    refresh_github_cli_apt_source
+    ! grep -q "install " "${SUDO_LOG}"
+}
+
+@test "stale source list is rewritten" {
+    printf 'deb old' >"${GH_SOURCE_LIST}"
+    refresh_github_cli_apt_source
+    grep -q "cli.github.com/packages stable main" "${GH_SOURCE_LIST}"
+}
