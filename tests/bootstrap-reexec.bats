@@ -138,3 +138,19 @@ clone_it() { git clone -q "${UPSTREAM}" "${CLONE}"; }
     [[ "${output}" == *"CONTINUED"* ]]
     [ ! -f "${RECORD}" ]
 }
+
+@test "running from the clone itself: a pull that moves HEAD still re-execs" {
+    # The documented re-run: ./bootstrap-dev-server.sh from inside the clone.
+    # After the pull, running and clone script are the same (new) file, so a
+    # content compare alone would wrongly skip the re-exec.
+    cp "${TEST_TEMP_DIR}/running.sh" "${SEED}/bootstrap-dev-server.sh"
+    git -C "${SEED}" commit -qam same
+    git -C "${SEED}" push -q origin main
+    clone_it
+    publish_v2
+    run bash "${CLONE}/bootstrap-dev-server.sh" --yes
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"REEXECED"* ]]
+    [[ "${output}" != *"CONTINUED"* ]]
+    grep -q 'ARGS=--yes' "${RECORD}"
+}
