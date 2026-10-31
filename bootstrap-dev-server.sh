@@ -217,6 +217,45 @@ UNATTENDEDEOF
 }
 
 #===============================================================================
+# Refresh GitHub CLI apt key
+#===============================================================================
+# GitHub rotates the key signing its apt repo. install_github_cli returns early
+# once gh exists, so the keyring must be refreshed on every run, before the
+# first apt-get update, or that update cannot verify cli.github.com.
+GH_KEYRING_FILE="${GH_KEYRING_FILE:-/etc/apt/keyrings/githubcli-archive-keyring.gpg}"
+GH_SOURCE_LIST="${GH_SOURCE_LIST:-/etc/apt/sources.list.d/github-cli.list}"
+GH_APT_SOURCE_REFRESHED=false
+
+refresh_github_cli_apt_source() {
+    local tmp_key tmp_list arch
+    tmp_key=$(mktemp)
+    tmp_list=$(mktemp)
+
+    # A failed download must not stop the run: an installed gh still works
+    if ! wget -qO "${tmp_key}" https://cli.github.com/packages/githubcli-archive-keyring.gpg || [[ ! -s "${tmp_key}" ]]; then
+        log_warn "Could not download the GitHub CLI apt key; keeping the existing one"
+        rm -f "${tmp_key}" "${tmp_list}"
+        return 0
+    fi
+
+    arch=$(dpkg --print-architecture)
+    echo "deb [arch=${arch} signed-by=${GH_KEYRING_FILE}] https://cli.github.com/packages stable main" >"${tmp_list}"
+
+    sudo mkdir -p -m 755 "$(dirname "${GH_KEYRING_FILE}")"
+    if ! cmp -s "${tmp_key}" "${GH_KEYRING_FILE}"; then
+        sudo install -m 644 "${tmp_key}" "${GH_KEYRING_FILE}"
+        log_ok "GitHub CLI apt key refreshed"
+    fi
+    if ! cmp -s "${tmp_list}" "${GH_SOURCE_LIST}"; then
+        sudo install -m 644 "${tmp_list}" "${GH_SOURCE_LIST}"
+    fi
+
+    rm -f "${tmp_key}" "${tmp_list}"
+    GH_APT_SOURCE_REFRESHED=true
+    return 0
+}
+
+#===============================================================================
 # Install GitHub CLI
 #===============================================================================
 install_github_cli() {
@@ -228,25 +267,27 @@ install_github_cli() {
         return 0
     fi
 
-    # Add GitHub CLI repository (official method for Ubuntu)
-    log_info "Adding GitHub CLI apt repository..."
+    if [[ "${GH_APT_SOURCE_REFRESHED}" != "true" ]]; then
+        # Add GitHub CLI repository (official method for Ubuntu)
+        log_info "Adding GitHub CLI apt repository..."
 
-    # Install required packages for adding repository
-    sudo apt-get install -y -qq software-properties-common
+        # Install required packages for adding repository
+        sudo apt-get install -y -qq software-properties-common
 
-    # Add GitHub CLI GPG key
-    sudo mkdir -p -m 755 /etc/apt/keyrings
-    if ! wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null; then
-        log_error "Failed to download GitHub CLI GPG key"
-        return 1
+        # Add GitHub CLI GPG key
+        sudo mkdir -p -m 755 /etc/apt/keyrings
+        if ! wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null; then
+            log_error "Failed to download GitHub CLI GPG key"
+            return 1
+        fi
+        sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+
+        # Add repository
+        local arch
+        arch=$(dpkg --print-architecture)
+        echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" |
+            sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
     fi
-    sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-
-    # Add repository
-    local arch
-    arch=$(dpkg --print-architecture)
-    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" |
-        sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
 
     # Install gh
     sudo apt-get update -qq
@@ -2671,6 +2712,7 @@ main() {
 
     log_phase "1: Preflight and Base Packages"
     preflight_checks
+    refresh_github_cli_apt_source
     install_base_packages
     configure_unattended_upgrades
 
