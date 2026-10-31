@@ -2773,14 +2773,17 @@ reexec_from_updated_clone() {
         return 0
     fi
     [[ -f "${clone_script}" ]] || return 0
+    new_rev="$(git -C "${REPO_CLONE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
+    # A pull that moved HEAD always re-execs: run from the clone itself, the
+    # running path now holds the new file, so comparing contents would match.
     # A script piped from curl has no readable file to compare: treat as different
-    if [[ -n "${running}" && -f "${running}" && "${running}" != /dev/* ]] \
+    if [[ "${old_rev}" == "${new_rev}" ]] \
+        && [[ -n "${running}" && -f "${running}" && "${running}" != /dev/* ]] \
         && cmp -s "${running}" "${clone_script}"; then
         return 0
     fi
 
-    new_rev="$(git -C "${REPO_CLONE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     log_info "Bootstrap updated (${old_rev}..${new_rev}); restarting from the clone"
     export BOOTSTRAP_REEXECED=1
     exec bash "${clone_script}" "$@"
