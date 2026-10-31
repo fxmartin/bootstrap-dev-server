@@ -680,6 +680,22 @@ check_xdg_state() {
 }
 check_xdg_state
 
+# Test 15.8: no Git credential helper may pin a /nix/store path (GC deletes it)
+check_credential_helpers() {
+    local key bad=0
+    while IFS= read -r key; do
+        [[ -z "${key}" ]] && continue
+        if git config --global --get-all "${key}" 2>/dev/null | grep -q '/nix/store/'; then
+            fail "${key} pins a /nix/store path that garbage collection deletes - re-run the bootstrap (gh) or: git config --global --replace-all ${key} '!<tool> auth git-credential'"
+            bad=1
+        fi
+    done < <(git config --global --name-only --get-regexp '^credential\..*\.helper$' 2>/dev/null | sort -u)
+    if [[ ${bad} -eq 0 ]]; then
+        pass "no Git credential helper pins a /nix/store path"
+    fi
+}
+check_credential_helpers
+
 # ============================================================================
 # SUMMARY
 # ============================================================================

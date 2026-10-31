@@ -71,6 +71,14 @@ logging in, whatever you answered at `glab`'s own Git prompt: that prompt record
 git config --global --replace-all credential.http://gitlab.test.helper '!glab auth git-credential'
 ```
 
+The bootstrap does the same for GitHub: after its device login (or when `gh` is already signed in)
+it names `gh` by path-free name, like `glab`, for `github.com` and `gist.github.com`. Re-run it to
+repair a server whose helper still pins a `/nix/store` path, or set it by hand:
+
+```bash
+git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'
+```
+
 Without the acm token the bootstrap logs an error naming `access-tokens`, skips the `dev-env`
 profile and the `acmd` service, and carries on; add the token and re-run it (step 1). The token is
 also needed by `dev`, `dev-update` and the weekly update timer.

@@ -363,6 +363,19 @@ configure_git_identity() {
 #===============================================================================
 # Authenticate GitHub CLI
 #===============================================================================
+# gh's setup-git records its resolved /nix/store path as the Git credential
+# helper; garbage collection deletes that path after an upgrade and every HTTPS
+# push then fails. Name gh by PATH instead, keeping the empty reset entry gh writes.
+set_github_git_credential_helpers() {
+    local url key
+    for url in https://github.com https://gist.github.com; do
+        key="credential.${url}.helper"
+        git config --global --unset-all "${key}" || true
+        git config --global --add "${key}" ''
+        git config --global --add "${key}" '!gh auth git-credential'
+    done
+}
+
 authenticate_github_cli() {
     log_info "Checking GitHub CLI authentication..."
 
@@ -371,6 +384,7 @@ authenticate_github_cli() {
         local gh_user
         gh_user=$(gh api user --jq '.login' 2>/dev/null || echo "unknown")
         log_ok "GitHub CLI already authenticated as: ${gh_user}"
+        set_github_git_credential_helpers
         return 0
     fi
 
@@ -392,6 +406,8 @@ authenticate_github_cli() {
         log_error "  3. Or use token: gh auth login --with-token < token.txt"
         return 1
     fi
+
+    set_github_git_credential_helpers
 
     # Verify authentication
     local gh_user
