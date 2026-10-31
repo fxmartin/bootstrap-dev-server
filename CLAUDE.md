@@ -177,6 +177,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input, stored in the user's `nix.conf` `access-tokens` (mode 0600), never logged or committed |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
+| `XDG_STATE_HOME` | `$HOME/.local/state` | Set (not configurable) via `~/.config/environment.d/10-xdg-state.conf` and `~/.profile` so sdlc and acmd share one run registry |
 | `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |
 | `LOG_LEVEL` | INFO | Minimum log level |
 | `LOG_FILE` | (auto) | Path to log file |

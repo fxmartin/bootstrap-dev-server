@@ -125,6 +125,9 @@ version, so the remote jump may not work). Compare `herdr --version` on both end
 
 On the server, `~/.local/share/bootstrap-dev-server/tests/verify-server.sh` checks `sdlc`, `glab`, that
 `gitlab.test` resolves and answers, and the services (`systemctl --user status herdr acmd`).
+It also checks `XDG_STATE_HOME`: `systemctl --user show-environment` must list it, and `~/.profile` must export it, so
+`sdlc` and `acmd` share `~/.local/state/sdlc/registry.json`. Without it the overlay shows no `sdlc` runs. After the
+first bootstrap, restart herdr yourself (it ends sessions); acmd is restarted for you.
 
 ## 5. Smoke test
 

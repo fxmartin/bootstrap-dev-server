@@ -2253,6 +2253,77 @@ PROFILEEOF
 }
 
 #===============================================================================
+# XDG_STATE_HOME (one sdlc run registry for sdlc and acmd)
+#===============================================================================
+# sdlc falls back to ~/.sdlc/registry.json without XDG_STATE_HOME; acmd falls back
+# to ~/.local/state/sdlc/registry.json and pins it for every sdlc it runs. Setting
+# the variable everywhere makes both use the second path.
+configure_xdg_state() {
+    log_info "Setting XDG_STATE_HOME=\$HOME/.local/state for sdlc and acmd..."
+
+    local env_dir="${HOME}/.config/environment.d"
+    local env_file="${env_dir}/10-xdg-state.conf"
+    local state_dir="${HOME}/.local/state/sdlc"
+    local begin="# >>> xdg-state >>>"
+    local end="# <<< xdg-state <<<"
+    local changed=false
+
+    # environment.d (not a literal path) so systemd expands the user's own HOME
+    # shellcheck disable=SC2016  # systemd expands ${HOME}, not this shell
+    local want='XDG_STATE_HOME=${HOME}/.local/state'
+    mkdir -p "${env_dir}" "${state_dir}"
+    if [[ "$(cat "${env_file}" 2>/dev/null || true)" != "${want}" ]]; then
+        printf '%s\n' "${want}" >"${env_file}"
+        changed=true
+        log_ok "Wrote ${env_file}"
+    fi
+
+    if ! declare -F write_rc_block >/dev/null; then
+        # shellcheck disable=SC1091  # Path is dynamically built from vars
+        # shellcheck source=lib/rc-block.sh
+        source "${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/lib/rc-block.sh"
+    fi
+    if write_rc_block "${HOME}/.profile" "${begin}" "${end}" <<PROFILEEOF
+${begin}
+export XDG_STATE_HOME="\${XDG_STATE_HOME:-\$HOME/.local/state}"
+${end}
+PROFILEEOF
+    then
+        log_ok "Login shell XDG_STATE_HOME configured in ${HOME}/.profile"
+    fi
+
+    local legacy="${HOME}/.sdlc/registry.json"
+    local current="${state_dir}/registry.json"
+    if [[ -f "${legacy}" ]]; then
+        if [[ -e "${current}" ]]; then
+            log_warn "Both ${legacy} and ${current} exist - leaving both; merge or remove the legacy one by hand"
+        else
+            mv "${legacy}" "${current}"
+            [[ -e "${legacy}.lock" ]] && mv "${legacy}.lock" "${current}.lock"
+            changed=true
+            log_ok "Moved ${legacy} (and its .lock) to ${current}"
+        fi
+    fi
+
+    if ! systemctl --user show-environment &>/dev/null; then
+        log_warn "No systemd user manager reachable - herdr and acmd pick XDG_STATE_HOME up after a re-login and restart"
+        return 0
+    fi
+
+    if [[ "${changed}" == "true" ]] ||
+        ! systemctl --user show-environment | grep -q '^XDG_STATE_HOME='; then
+        systemctl --user daemon-reexec || log_warn "systemctl --user daemon-reexec failed"
+        changed=true
+    fi
+    log_info "herdr and acmd pick up XDG_STATE_HOME at their next restart (herdr is not restarted here: that ends its sessions)"
+    # acmd keeps no state a restart loses, unlike herdr
+    if [[ "${changed}" == "true" ]] && systemctl --user is-active --quiet acmd.service; then
+        systemctl --user restart acmd.service || log_warn "acmd restart failed - restart it by hand"
+        log_info "acmd restarted onto the new registry path"
+    fi
+}
+
+#===============================================================================
 # Install the sdlc Controller (pinned tag, uv-managed Python)
 #===============================================================================
 install_sdlc_controller() {
@@ -2796,6 +2867,7 @@ main() {
     }
     configure_profile_path
     configure_gitlab_env
+    configure_xdg_state || log_warn "XDG_STATE_HOME setup failed (non-critical) - fix it, then re-run the bootstrap"
     # After the env: panes get GITLAB_HOST from the server alone, whose reload hands
     # /etc/environment to a user manager that started before it had the variable.
     # Not worth aborting over: a re-run would not reach restart_ssh_final's reload.
