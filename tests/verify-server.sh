@@ -660,6 +660,26 @@ else
     fail "${GITLAB_HOST_EXPECTED} does not resolve - run: sudo tailscale up --advertise-tags=${TAILSCALE_TAGS} --accept-dns (accept-dns enables the tailnet split DNS)"
 fi
 
+# Test 15.7: sdlc and acmd must resolve the same run registry (XDG_STATE_HOME)
+check_xdg_state() {
+    if systemctl --user show-environment 2>/dev/null | grep -q '^XDG_STATE_HOME='; then
+        pass "systemd user environment has XDG_STATE_HOME (herdr, acmd)"
+    else
+        fail "systemctl --user show-environment lacks XDG_STATE_HOME - re-run the bootstrap, then: systemctl --user daemon-reexec and restart herdr/acmd"
+    fi
+    if grep -q '^export XDG_STATE_HOME=' "${HOME}/.profile" 2>/dev/null; then
+        pass "${HOME}/.profile exports XDG_STATE_HOME"
+    else
+        fail "${HOME}/.profile does not export XDG_STATE_HOME - re-run the bootstrap"
+    fi
+    if [[ -d "${HOME}/.local/state/sdlc" ]]; then
+        pass "${HOME}/.local/state/sdlc exists (acmd registry watch)"
+    else
+        fail "${HOME}/.local/state/sdlc is missing - re-run the bootstrap"
+    fi
+}
+check_xdg_state
+
 # ============================================================================
 # SUMMARY
 # ============================================================================
