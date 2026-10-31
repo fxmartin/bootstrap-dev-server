@@ -380,6 +380,7 @@ setup_profile_stubs() {
 #!/usr/bin/env bash
 echo "nix \$*" >>"${NIX_LOG}"
 if [[ "\${1:-}" == "profile" && "\${2:-}" == "list" ]]; then cat "${PROFILE_JSON}"; fi
+if [[ "\${1:-}" == "build" && -n "\${STUB_NIX_BUILD_FAIL:-}" ]]; then exit 1; fi
 STUB
     cat >"${STUB_DIR}/sudo" <<'STUB'
 #!/usr/bin/env bash
@@ -517,6 +518,56 @@ JSON
     remove_line="$(grep -n 'nix profile remove' "${NIX_LOG}" | cut -d: -f1)"
     install_line="$(grep -n 'nix profile install' "${NIX_LOG}" | cut -d: -f1)"
     [ "${remove_line}" -lt "${install_line}" ]
+}
+
+@test "a failing dev-env build removes nothing and fails the step" {
+    command -v jq &>/dev/null || skip "jq not available"
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]}},"version":3}
+JSON
+    export STUB_NIX_BUILD_FAIL=1
+    load_profile_function install_dev_profile
+    run --separate-stderr install_dev_profile
+    [ "$status" -ne 0 ]
+    [[ "${stderr}" == *"left untouched"* ]]
+    grep -qF "nix build ${HOME}/.config/nix-dev-env#dev-env --no-update-lock-file --no-link" "${NIX_LOG}"
+    run ! grep -q "nix profile remove" "${NIX_LOG}"
+    run ! grep -q "nix profile install" "${NIX_LOG}"
+}
+
+@test "a successful build precedes the stray removal and the install" {
+    command -v jq &>/dev/null || skip "jq not available"
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{"herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]}},"version":3}
+JSON
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -eq 0 ]
+    local build_line remove_line install_line
+    build_line="$(grep -n 'nix build' "${NIX_LOG}" | cut -d: -f1)"
+    remove_line="$(grep -n 'nix profile remove' "${NIX_LOG}" | cut -d: -f1)"
+    install_line="$(grep -n 'nix profile install' "${NIX_LOG}" | cut -d: -f1)"
+    [ "${build_line}" -lt "${remove_line}" ]
+    [ "${remove_line}" -lt "${install_line}" ]
+}
+
+@test "a failing build with dev-env already installed neither upgrades nor removes" {
+    command -v jq &>/dev/null || skip "jq not available"
+    setup_profile_stubs
+    cat >"${PROFILE_JSON}" <<'JSON'
+{"elements":{
+ "herdr":{"attrPath":"legacyPackages.x86_64-linux.herdr","storePaths":["/nix/store/bbb-herdr-0.9.1"]},
+ "dev-env":{"attrPath":"packages.x86_64-linux.dev-env","storePaths":["/nix/store/aaa-dev-env"]}
+},"version":3}
+JSON
+    export STUB_NIX_BUILD_FAIL=1
+    load_profile_function install_dev_profile
+    run install_dev_profile
+    [ "$status" -ne 0 ]
+    run ! grep -q "nix profile remove" "${NIX_LOG}"
+    run ! grep -q "nix profile upgrade" "${NIX_LOG}"
 }
 
 @test "the apt base packages provide jq for the stray check" {
