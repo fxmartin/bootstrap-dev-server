@@ -190,3 +190,10 @@ section() {
 @test "runbook states the equal-herdr-version requirement" {
     grep -qi "herdr versions" "${RUNBOOK}"
 }
+
+@test "runbook peers example sets acmd's linux socket and the hardening re-run caveat" {
+    grep -qF 'socket = "/run/user/1000/acm.sock"' "${RUNBOOK}"
+    grep -qF 'id -u' "${RUNBOOK}"
+    grep -qF -- '--skip-security-hardening' "${RUNBOOK}"
+    grep -qF 'socket = "/run/user/<uid>/acm.sock"' "${README}"
+}

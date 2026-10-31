@@ -722,6 +722,7 @@ profile (it carries acm), skips the acmd service and the Nix cache warm-up, but 
 rest, so the SSH hardening is still applied; add the token and re-run. A service that cannot be set
 up is logged the same way. Check it with `systemctl --user status acmd`.
 The `[[peers]]` entry to add on the XPS aggregator, and the checks that follow, are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
+The peer entry needs `socket = "/run/user/<uid>/acm.sock"` (acmd listens on `$XDG_RUNTIME_DIR/acm.sock` on Linux; the default path is darwin's). Peers reach it with `ssh -L`, which `AllowTcpForwarding no` also blocks, so the SSH hardening drop-in allows local forwards for the dev user only (`Match User`, remote forwarding stays off). That lands only when the hardening phase runs: do not pass `--skip-security-hardening` on the re-run.
 
 Everything that builds the default toolset needs the same token: `dev`, `dev-update` and
 the weekly timer all fail without the token, so a server that lacks it keeps its previous profile and

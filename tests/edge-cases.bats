@@ -196,7 +196,7 @@ Line2"
 }
 
 @test "SSH TCP forwarding is disabled" {
-    run grep "AllowTcpForwarding no" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
+    run grep -x "AllowTcpForwarding no" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
     [ "$status" -eq 0 ]
 }
 

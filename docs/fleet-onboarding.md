@@ -83,10 +83,18 @@ On the XPS (the machine running the acm aggregator), add the server to `~/.confi
 [[peers]]
 label = "dev-server"
 ssh   = "dev-server"
+socket = "/run/user/1000/acm.sock"
 ```
 
-`ssh` is an SSH alias (or host) the XPS can reach non-interactively. Then restart the aggregator's
-daemon so it picks the peer up:
+`ssh` is an SSH alias (or host) the XPS can reach non-interactively. `socket` is the remote acmd
+socket the peer forwards (`ssh -L`). On this Linux server acmd listens on `$XDG_RUNTIME_DIR/acm.sock`;
+the uid in `/run/user/<uid>` is `id -u` on the server. Without `socket`, acm assumes the darwin
+default `~/.local/state/acm/acm.sock`, which does not exist here and shows the peer as `unreachable`.
+
+The hardening drop-in keeps `AllowTcpForwarding no` globally (it also blocks Unix-socket forwards)
+and allows local forwards for the dev user only. That change lands only when the hardening phase
+runs, so re-run the bootstrap on the server **without** `--skip-security-hardening`. Then restart
+the aggregator's daemon so it picks the peer up:
 
 ```bash
 systemctl --user restart acmd

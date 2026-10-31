@@ -349,3 +349,33 @@ load_harden_ssh() {
     [ "${SSH_RESTART_NEEDED}" = "false" ]
     [ "$(stat -c '%Y' "${HARDENING}")" = "${before}" ]
 }
+
+@test "hardening keeps a global AllowTcpForwarding no and ends with the dev user's local-forward block" {
+    load_harden_ssh
+    DEV_USER=fx
+    harden_ssh
+    grep -qx 'AllowTcpForwarding no' "${HARDENING}"
+    run tail -n 3 "${HARDENING}"
+    [ "${lines[0]}" = "Match User fx" ]
+    [ "${lines[1]}" = "    AllowTcpForwarding local" ]
+    [ "${lines[2]}" = "Match all" ]
+    ! grep -Eq 'AllowTcpForwarding (yes|remote|all)' "${HARDENING}"
+    grep -qx 'X11Forwarding no' "${HARDENING}"
+}
+
+@test "a hardening file without the local-forward block is rewritten once, then left alone" {
+    load_harden_ssh
+    DEV_USER=fx
+    printf 'Port 22\nAllowTcpForwarding no\nAcceptEnv NO_HERDR\n' >"${HARDENING}"
+    harden_ssh
+    [ "${SSH_RESTART_NEEDED}" = "true" ]
+    grep -qx '    AllowTcpForwarding local' "${HARDENING}"
+
+    unset FORCE_SSH_UPDATE
+    SSH_RESTART_NEEDED=false
+    touch -d '2020-01-01' "${HARDENING}"
+    before="$(stat -c '%Y' "${HARDENING}")"
+    harden_ssh
+    [ "${SSH_RESTART_NEEDED}" = "false" ]
+    [ "$(stat -c '%Y' "${HARDENING}")" = "${before}" ]
+}
