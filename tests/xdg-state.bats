@@ -99,3 +99,44 @@ teardown() {
     run check_xdg_state
     [ "$(grep -c '^FAIL' <<<"${output}")" -eq 3 ]
 }
+
+@test "no systemd user manager: warns and skips systemctl actions" {
+    systemctl() {
+        echo "$*" >>"${SYSTEMCTL_LOG}"
+        [[ "$2" == show-environment ]] && return 1
+        return 0
+    }
+    run configure_xdg_state
+    [ "$status" -eq 0 ]
+    [[ "${output}" == *"WARN: No systemd user manager"* ]]
+    [ -d "${HOME}/.local/state/sdlc" ]
+    ! grep -q 'daemon-reexec\|restart' "${SYSTEMCTL_LOG}"
+}
+
+@test "drifted environment.d file is rewritten" {
+    mkdir -p "${HOME}/.config/environment.d"
+    echo 'XDG_STATE_HOME=/wrong' >"${HOME}/.config/environment.d/10-xdg-state.conf"
+    configure_xdg_state
+    [ "$(cat "${HOME}/.config/environment.d/10-xdg-state.conf")" = 'XDG_STATE_HOME=${HOME}/.local/state' ]
+}
+
+@test "acmd inactive: not restarted" {
+    systemctl() {
+        echo "$*" >>"${SYSTEMCTL_LOG}"
+        case "$2" in
+            show-environment) echo "XDG_STATE_HOME=/x" ;;
+            is-active) return 3 ;;
+        esac
+        return 0
+    }
+    configure_xdg_state
+    ! grep -q 'restart acmd' "${SYSTEMCTL_LOG}"
+}
+
+@test "user manager lacking the variable triggers daemon-reexec on an otherwise clean run" {
+    configure_xdg_state
+    : >"${SYSTEMCTL_LOG}"
+    export SYSTEMCTL_ENV="PATH=/bin"
+    configure_xdg_state
+    grep -q 'daemon-reexec' "${SYSTEMCTL_LOG}"
+}
