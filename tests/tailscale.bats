@@ -158,3 +158,8 @@ run_section_13() {
     run_section_13 '{"Self": {"KeyExpiry": "2099-01-01T00:00:00Z"}, "Peer": {"x": {"Tags": ["tag:home-lab"]}}}'
     [[ "${output}" == *"untagged node"* ]]
 }
+
+@test "verify-server GitLab failure hints name \${TAILSCALE_TAGS}, not a literal tag" {
+    grep -F 'does not answer' "${VERIFY}" | grep -qF '${TAILSCALE_TAGS}'
+    grep -F 'does not resolve' "${VERIFY}" | grep -qF -- '--advertise-tags=${TAILSCALE_TAGS}'
+}
