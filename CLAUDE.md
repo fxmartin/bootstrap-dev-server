@@ -176,6 +176,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `TAILSCALE_TAGS` | tag:trusted | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input, stored in the user's `nix.conf` `access-tokens` (mode 0600), never logged or committed |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
+| `BOOTSTRAP_REEXECED` | (unset) | Guard set by the self-update re-exec at the start of `main()`: the script pulls its clone and re-runs from it at most once. Set it yourself to skip the pull and re-exec |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
 | `XDG_STATE_HOME` | `$HOME/.local/state` | Set (not configurable) via `~/.config/environment.d/10-xdg-state.conf` and `~/.profile` so sdlc and acmd share one run registry |
 | `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |
