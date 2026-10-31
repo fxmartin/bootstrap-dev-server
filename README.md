@@ -746,6 +746,8 @@ curl -fsSL https://raw.githubusercontent.com/fxmartin/bootstrap-dev-server/main/
 lets `tag:trusted` reach the GitLab host on port 80. `tests/verify-server.sh` checks both and names the fix.
 The `glab auth login` step and an end-to-end `sdlc fix` smoke test are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
 
+The bootstrap also sets `XDG_STATE_HOME=$HOME/.local/state` (`~/.config/environment.d/10-xdg-state.conf` for systemd user units, a `~/.profile` block for logins) so `sdlc` and `acmd` share `~/.local/state/sdlc/registry.json`; a legacy `~/.sdlc/registry.json` is moved there. herdr picks the variable up at its next restart, which the bootstrap never forces.
+
 To upgrade the controller, change `SDLC_CONTROLLER_TAG` in `config/versions.env`, merge, wait for the
 GitHub mirror to sync (up to five minutes), and re-run the bootstrap on the server, which pulls first.
 The installer alone does not pull: it reads the clone's `config/versions.env`, so on a stale clone it
