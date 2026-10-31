@@ -53,6 +53,9 @@ WARNINGS=0
 # Get expected username (default: fx, can override with EXPECTED_USER env var)
 EXPECTED_USER="${EXPECTED_USER:-fx}"
 
+# Tag the node must advertise; must match the tailnet policy's tagOwners
+TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:trusted}"
+
 # Test result functions
 pass() {
     echo -e "${GREEN}✓ PASS${NC}: $1"
@@ -468,7 +471,7 @@ if command -v tailscale &>/dev/null; then
             info "Tailscale IP: ${TS_IP}"
             ;;
         NeedsLogin)
-            fail "Tailscale is NOT authenticated (BackendState=NeedsLogin) - run: sudo tailscale up --advertise-tags=tag:server"
+            fail "Tailscale is NOT authenticated (BackendState=NeedsLogin) - run: sudo tailscale up --advertise-tags=${TAILSCALE_TAGS}"
             ;;
         Stopped)
             fail "Tailscale is stopped (BackendState=Stopped) - run: sudo tailscale up"
@@ -478,17 +481,21 @@ if command -v tailscale &>/dev/null; then
             ;;
     esac
 
-    # Test 13.2: Node key expiry.
-    # A tagged node reports no expiry; an untagged one expires after 180 days
-    # and drops off the tailnet silently.
-    # Scope to Self: peers carry their own KeyExpiry values. jq is not on the
-    # server outside the dev shell, and truncating on the "Peer" key works
-    # whether the JSON is pretty-printed or compact.
+    # Test 13.2: Node tags and key expiry.
+    # A tagged node should report no expiry; an untagged one expires after 180
+    # days and drops off the tailnet silently. A node tagged after its first
+    # auth can still carry an expiry, so read Self.Tags rather than inferring.
+    # Scope to Self: peers carry their own values. jq is not on the server
+    # outside the dev shell, and truncating on the "Peer" key works whether
+    # the JSON is pretty-printed or compact.
     TS_STATUS_JSON="$(tailscale status --json 2>/dev/null || true)"
     TS_SELF_JSON="${TS_STATUS_JSON%%\"Peer\":*}"
+    TS_TAGS="$(echo "${TS_SELF_JSON}" | tr -d '\n' | grep -o '"Tags": *\[[^]]*\]' | head -1 | grep -o 'tag:[^"]*' | paste -sd, - || true)"
     TS_EXPIRY="$(echo "${TS_SELF_JSON}" | grep -o '"KeyExpiry": *"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
     if [[ -z "${TS_EXPIRY}" || "${TS_EXPIRY}" == "null" ]]; then
         pass "Tailscale node key does not expire (tagged node or expiry disabled)"
+    elif [[ -n "${TS_TAGS}" ]]; then
+        warn "Tailscale node is tagged (${TS_TAGS}), but key expiry is still on: disable it in the admin console (Machines → Disable key expiry)"
     else
         EXPIRY_EPOCH="$(date -d "${TS_EXPIRY}" +%s 2>/dev/null || echo 0)"
         NOW_EPOCH="$(date +%s)"
@@ -628,10 +635,10 @@ if getent hosts "${GITLAB_HOST_EXPECTED}" &>/dev/null; then
     if [[ -n "${GITLAB_HTTP_CODE}" && "${GITLAB_HTTP_CODE}" != "000" ]]; then
         pass "http://${GITLAB_HOST_EXPECTED} answers (HTTP ${GITLAB_HTTP_CODE})"
     else
-        fail "http://${GITLAB_HOST_EXPECTED} does not answer - check the tailnet ACL allows tag:server to reach home-lab on port 80"
+        fail "http://${GITLAB_HOST_EXPECTED} does not answer - check the tailnet ACL allows ${TAILSCALE_TAGS} to reach home-lab on port 80"
     fi
 else
-    fail "${GITLAB_HOST_EXPECTED} does not resolve - run: sudo tailscale up --advertise-tags=tag:server --accept-dns (accept-dns enables the tailnet split DNS)"
+    fail "${GITLAB_HOST_EXPECTED} does not resolve - run: sudo tailscale up --advertise-tags=${TAILSCALE_TAGS} --accept-dns (accept-dns enables the tailnet split DNS)"
 fi
 
 # ============================================================================

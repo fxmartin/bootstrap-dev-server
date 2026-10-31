@@ -74,7 +74,7 @@ SSH_TAILNET_ONLY="${SSH_TAILNET_ONLY:-false}"
 # Tagged nodes are owned by the tailnet, not a user, so their node keys never
 # expire. An untagged `tailscale up` expires after 180 days and silently drops
 # the server off the tailnet.
-TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:server}"     # Tags to advertise on `tailscale up`
+TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:trusted}"     # Tags to advertise on `tailscale up`
 
 # GitLab host that glab and the sdlc controller talk to (local-ci-cd GitLab,
 # reached over Tailscale split DNS). Exported for every login context below.

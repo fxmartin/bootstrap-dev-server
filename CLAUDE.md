@@ -173,7 +173,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `SSH_PORT` | 22 | SSH port |
 | `MOSH_PORT_START` | 60000 | Mosh UDP range start |
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
-| `TAILSCALE_TAGS` | tag:server | Tags advertised on `tailscale up` (tagged node keys never expire) |
+| `TAILSCALE_TAGS` | tag:trusted | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input, stored in the user's `nix.conf` `access-tokens` (mode 0600), never logged or committed |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |

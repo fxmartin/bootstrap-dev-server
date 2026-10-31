@@ -61,7 +61,7 @@ section() {
 @test "runbook authenticates Tailscale after the bootstrap, before the logins" {
     local bootstrap tailscale logins
     bootstrap="$(line_of "bootstrap-dev-server.sh | ACM_NIX_ACCESS_TOKEN=")"
-    tailscale="$(line_of "sudo tailscale up --advertise-tags=tag:server --accept-dns")"
+    tailscale="$(line_of "sudo tailscale up --advertise-tags=tag:trusted --accept-dns")"
     logins="$(line_of "## 2. Secrets and logins")"
     [ -n "${bootstrap}" ] && [ -n "${tailscale}" ]
     [ "${bootstrap}" -lt "${tailscale}" ]
