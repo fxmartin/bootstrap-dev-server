@@ -2755,6 +2755,38 @@ print_summary() {
 }
 
 #===============================================================================
+# Self-update: run the freshest script, not the one already in memory
+#===============================================================================
+# Phase 1 and the GitHub auth step run before clone_bootstrap_repo pulls, so a
+# fix to them would otherwise need two runs. Pull first and re-exec once.
+reexec_from_updated_clone() {
+    local clone_script="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/bootstrap-dev-server.sh"
+    local running="${BASH_SOURCE[0]:-}"
+
+    [[ -z "${BOOTSTRAP_REEXECED:-}" ]] || return 0
+    [[ -d "${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}" ]] || return 0
+
+    local old_rev new_rev
+    old_rev="$(git -C "${REPO_CLONE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    if ! git -C "${REPO_CLONE_DIR}" pull --ff-only --quiet; then
+        log_warn "Could not pull ${REPO_CLONE_DIR} - continuing with the running script"
+        return 0
+    fi
+    [[ -f "${clone_script}" ]] || return 0
+
+    # A script piped from curl has no readable file to compare: treat as different
+    if [[ -n "${running}" && -f "${running}" && "${running}" != /dev/* ]] \
+        && cmp -s "${running}" "${clone_script}"; then
+        return 0
+    fi
+
+    new_rev="$(git -C "${REPO_CLONE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    log_info "Bootstrap updated (${old_rev}..${new_rev}); restarting from the clone"
+    export BOOTSTRAP_REEXECED=1
+    exec bash "${clone_script}" "$@"
+}
+
+#===============================================================================
 # Main
 #===============================================================================
 main() {
@@ -2791,6 +2823,8 @@ main() {
                 ;;
         esac
     done
+
+    reexec_from_updated_clone "$@"
 
     # Profile-aware title
     local profile_title
