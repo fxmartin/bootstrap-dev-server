@@ -1731,8 +1731,10 @@ SHELLEOF
 # herdr panes), not only inside `dev`.
 #
 # The profile must hold only what the flake declares. Strays installed by hand
-# (e.g. a herdr 0.9.1 package) are removed first - they would otherwise collide
-# with dev-env's own bin/ entries and fail the install.
+# (e.g. a herdr 0.9.1 package) are removed before the install - they would
+# otherwise collide with dev-env's own bin/ entries and fail it. But only once
+# dev-env has built: a failed build (bad token, broken input, no network) must
+# leave the existing profile untouched rather than strip its tools.
 install_dev_profile() {
     log_info "Installing the dev toolset as the default Nix profile..."
 
@@ -1749,6 +1751,12 @@ install_dev_profile() {
     local profile_json
     if ! profile_json="$(nix profile list --json)"; then
         log_error "Could not list the Nix profile"
+        return 1
+    fi
+
+    # Build first so nothing is removed unless dev-env can actually be installed.
+    if ! nix build "${FLAKE_DIR}#dev-env" --no-update-lock-file --no-link; then
+        log_error "nix build ${FLAKE_DIR}#dev-env failed - the existing profile was left untouched"
         return 1
     fi
 
