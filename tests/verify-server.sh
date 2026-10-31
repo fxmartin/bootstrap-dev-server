@@ -153,6 +153,25 @@ else
     info "Bootstrap may not have run SSH hardening phase"
 fi
 
+# Test 2.4: acm peers forward acmd's Unix socket (ssh -L), which the global
+# AllowTcpForwarding no also blocks; the dev user needs the effective value "local".
+check_ssh_local_forwarding() {
+    if ! sudo -n true &>/dev/null; then
+        info "SSH local-forward check skipped (needs passwordless sudo for sshd -T)"
+        return 0
+    fi
+    local forwarding
+    forwarding="$(sudo -n sshd -T -C "user=$(whoami),host=x,addr=127.0.0.1" 2>/dev/null |
+        awk '$1 == "allowtcpforwarding" {print $2}')"
+    if [[ "${forwarding}" == "local" ]]; then
+        pass "SSH allows local forwards for $(whoami) (acm peer socket forward)"
+    else
+        fail "SSH allowtcpforwarding is '${forwarding:-unknown}' for $(whoami), expected 'local'"
+        info "Re-run the bootstrap with the hardening phase (no --skip-security-hardening)"
+    fi
+}
+check_ssh_local_forwarding
+
 # Test 2.5: SSH service running
 if systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; then
     pass "SSH service is running"

@@ -507,6 +507,12 @@ harden_ssh() {
         log_info "Adding AcceptEnv NO_HERDR to the SSH hardening config"
     fi
 
+    # acm peers forward acmd's Unix socket over ssh -L; a file without the local-forward block refuses it
+    if [[ -f "${SSH_HARDENING_FILE}" ]] && ! grep -qx "    AllowTcpForwarding local" "${SSH_HARDENING_FILE}"; then
+        FORCE_SSH_UPDATE=true
+        log_info "Adding the dev user's local-forward Match block to the SSH hardening config"
+    fi
+
     # Only create if doesn't exist or force update
     if [[ ! -f "${SSH_HARDENING_FILE}" ]] || [[ "${FORCE_SSH_UPDATE:-}" == "true" ]]; then
         sudo tee "${SSH_HARDENING_FILE}" >/dev/null <<SSHEOF
@@ -555,6 +561,11 @@ ClientAliveCountMax 2
 
 # Escape hatch from the herdr attach on login: ssh -o SetEnv=NO_HERDR=1 dev
 AcceptEnv NO_HERDR
+
+# acm peers forward acmd's Unix socket (ssh -L); this gate also covers stream-local forwards
+Match User ${DEV_USER}
+    AllowTcpForwarding local
+Match all
 SSHEOF
 
         # Validate SSH config (restart deferred to end of bootstrap to avoid killing connection)
