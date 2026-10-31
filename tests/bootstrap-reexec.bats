@@ -125,3 +125,16 @@ clone_it() { git clone -q "${UPSTREAM}" "${CLONE}"; }
     [[ "${output}" == *"REEXECED"* ]]
     grep -q 'GUARD=1' "${RECORD}"
 }
+
+@test "pulled clone lacks the script: no exec, run continues" {
+    clone_it
+    git -C "${SEED}" rm -q bootstrap-dev-server.sh
+    echo keep >"${SEED}/keep.txt"
+    git -C "${SEED}" add keep.txt
+    git -C "${SEED}" commit -qm "drop script"
+    git -C "${SEED}" push -q origin main
+    run bash "${TEST_TEMP_DIR}/running.sh"
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"CONTINUED"* ]]
+    [ ! -f "${RECORD}" ]
+}
