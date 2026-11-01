@@ -1,0 +1,31 @@
+[Unit]
+Description=ntfy push server (bound to the Tailscale address only)
+Documentation=https://docs.ntfy.sh
+# Same shape as node-exporter.service: ordering after tailscaled avoids burning
+# retries on every boot, Wants= turns a stopped tailscaled into the wrapper's
+# bounded retry loop instead of a dependency failure.
+After=network-online.target tailscaled.service
+Wants=network-online.target
+# The wrapper binds to the Tailscale IP only and refuses to start without one,
+# UFW opens 2586 on tailscale0 only, and the Tailscale ACL decides which node may
+# connect. StartLimit caps the restart loop on top of the wrapper's 12 x 10 s wait.
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ntfy
+Group=ntfy
+ExecStart=/usr/local/bin/ntfy-start
+Restart=on-failure
+RestartSec=10
+# The auth and message databases live in /var/lib/ntfy.
+StateDirectory=ntfy
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -160,3 +160,32 @@ cx33, keep to 1-2 concurrent workers (see [sdlc and GitLab](../README.md#sdlc-an
 
 If it fails: no column means step 3 or `systemctl --user status acmd`; a `glab` or `sdlc` auth or
 network error means the `gitlab.test` login or the tailnet ACL (step 2, then the verify script in step 4).
+
+## 6. Android app: fleet aggregator
+
+The bootstrap also makes this server the always-on aggregator for acm's Android app (see
+[acm fleet aggregator](../README.md#acm-fleet-aggregator-android-app)). These steps are the ones it
+cannot do. Join the tailnet first: after the first `tailscale up`, run `sudo systemctl restart ntfy`.
+
+1. **Trust the peer key.** The bootstrap prints `~/.ssh/id_acm_peers.pub`. Add it to nix-install, for
+   the two Macs, and to the XPS's `authorized_keys`. Then, on the server, `acm peers` must list
+   `omarchy-xps13`, `macbook-pro-m3-max` and `home-lab` as `connected`.
+2. **Open the tailnet ACL** (nix-install `docs/apps/security/tailscale-acl.md`): the Pixel reaches this
+   server on 22 and 2586, and this server reaches the three peers on 22.
+3. **Enrol the phone.** Copy the public key the app shows into a file on the server, and print its line:
+
+   ```bash
+   acm mobile key-line --acm "$HOME/.nix-profile/bin/acm" --level p3 --name pixel-10-pro <pubkey-file>
+   ```
+
+   Add that line to `config/acm-phone-keys.pub` by merge request, or to `~/.config/acm/phone-keys.pub`
+   on the server, then re-run the bootstrap. The two are alternatives: if the second file exists, the
+   first is ignored.
+4. **Log the ntfy app in.** Point it at `http://<tailscale-ip>:2586`, with the phone's name as user and
+   `~/.config/acm/ntfy/<name>.password` as password.
+5. **Check.** `~/.local/share/bootstrap-dev-server/tests/verify-server.sh` reports the peers, that the phone lines are restricted to
+   `acm bridge`, and that ntfy listens on the Tailscale IP only.
+
+To revoke a phone, follow [Revoking a phone](../README.md#acm-fleet-aggregator-android-app): merge the
+removal, then run `dev-update` and both scripts on the server. Editing the clone does not last, and a
+removal that has not reached the clone revokes nothing.

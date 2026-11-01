@@ -1,0 +1,14 @@
+# ABOUTME: ntfy server config: auth on, deny by default, no public features
+# ABOUTME: scripts/install-ntfy.sh appends the per-phone users and renders /etc/ntfy/server.yml
+#
+# The listen address and base URL are not here: config/ntfy-start.sh passes the
+# node's Tailscale IP at start, and refuses to start without one.
+
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+cache-file: "/var/lib/ntfy/cache.db"
+
+# The phones are enrolled from the repository, not over the web.
+enable-signup: false
+enable-login: false
+web-root: disable

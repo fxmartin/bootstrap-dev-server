@@ -17,7 +17,7 @@
 - An `sdlc fix` started in a herdr pane on the server finishes and shows in the dev-server column.
 
 ## Epic Scope
-**Total Stories**: 7 | **Total Points**: 22 | **MVP Stories**: 7
+**Total Stories**: 8 | **Total Points**: 27 | **MVP Stories**: 7
 
 Decided with FX on 2026-10-30:
 - Every change goes through this repository (branch, MR, green pipeline). Nothing is hand-edited on the machine. The only manual steps are secrets and interactive logins (Story 01.3-003).
@@ -205,9 +205,33 @@ Decided by FX on 2026-10-30: herdr is aligned with the rest of the fleet at **0.
 **Dependencies**: 01.3-001, 01.3-002
 **Risk Level**: Low
 
+### Feature 01.4: Fleet aggregator for acm's Android app
+
+##### Story 01.4-001: Peers, phone keys and ntfy for acm Epic-17 (issue #10)
+**User Story**: As FX, I want this server to be the always-on acm aggregator my Pixel reads over Tailscale, configured from this repository, so that the phone sees the whole fleet while my laptop sleeps and a lost phone is revoked by deleting one line.
+**Priority**: Should Have
+**Story Points**: 5
+
+**Acceptance Criteria**:
+- **Given** `config/acm-peers.toml` **When** the bootstrap runs **Then** `~/.config/acm/config.toml` holds its `[[peers]]` in a marker block, peers added outside the block are kept and win over a repository entry with the same label, and acmd restarts only when the block changed.
+- **Given** no peer key **Then** `~/.ssh/id_acm_peers` is generated, `~/.ssh/config` selects it for the peers, and its public key is printed for nix-install and the XPS.
+- **Given** phone lines in `config/acm-phone-keys.pub` or `~/.config/acm/phone-keys.pub` **Then** only lines in the exact `acm mobile key-line` form, with no `/nix/store` path, reach `authorized_keys`. Removing a line, bringing the server's clone up to date and re-running revokes it, and a refused line does not hold other changes back.
+- **Given** the bootstrap **Then** ntfy runs as a system service on the Tailscale IP only, UFW opens 2586 on `tailscale0` only, access is denied by default, and each phone has a user and a topic.
+- **Given** `tests/verify-server.sh` **Then** it checks the peers file, that phone lines are restricted to `acm bridge`, and that ntfy listens on the Tailscale IP only.
+- **Given** the suite **Then** all of this is covered by offline bats tests.
+
+**Definition of Done**:
+- [ ] Code implemented and peer reviewed
+- [x] Tests written and passing
+- [x] User-facing docs updated in the same commit for behavior-changing diffs (README/docs/usage/help; CHANGELOG excluded)
+
+**Dependencies**: 01.3-001
+**Risk Level**: Medium
+
 ## Epic Progress
 - [x] 01.1-001 · [x] 01.1-002
 - [x] 01.2-001 · [x] 01.2-002
 - [x] 01.3-001 · [x] 01.3-002 · [x] 01.3-003
+- [ ] 01.4-001
 
-**Completed points**: 22 / 22 (built 2026-10-30: 01.1-001 MR !5, 01.1-002 MR !6, 01.3-002 MR !7, 01.2-001 MR !11 with OOMPolicy=continue added after review, 01.2-002 MR !13, 01.3-001 MR !14, 01.3-003 MR !15 with the runbook's herdr-login steps fixed after review; reinstall guard #1 MR !10. Not yet run on the server.)
+**Completed points**: 22 / 27 (built 2026-10-30: 01.1-001 MR !5, 01.1-002 MR !6, 01.3-002 MR !7, 01.2-001 MR !11 with OOMPolicy=continue added after review, 01.2-002 MR !13, 01.3-001 MR !14, 01.3-003 MR !15 with the runbook's herdr-login steps fixed after review; reinstall guard #1 MR !10. Not yet run on the server.)

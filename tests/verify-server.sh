@@ -18,6 +18,7 @@
 #  13. Tailscale           - Authenticated, node key not expiring soon
 #  14. Monitoring          - node_exporter active, tailnet-only bind, /metrics served
 #  15. sdlc & GitLab       - sdlc/glab installed, uv-managed Python, gitlab.test resolves and answers
+#  16. acm Fleet Role      - peers and peer key, phone keys restricted to acm bridge, ntfy on the tailnet only
 #
 # Usage:
 #   ssh dev-server 'bash -s' < tests/verify-server.sh
@@ -695,6 +696,136 @@ check_credential_helpers() {
     fi
 }
 check_credential_helpers
+
+header "16. acm Fleet Aggregator Tests"
+
+# Test 16.1: this server aggregates the fleet for the phone
+check_acm_peers() {
+    local config="${XDG_CONFIG_HOME:-${HOME}/.config}/acm/config.toml"
+    if [[ ! -f "${config}" ]]; then
+        fail "${config} is missing - re-run the bootstrap"
+    elif grep -q '^\[\[peers\]\]' "${config}"; then
+        pass "${config} lists $(grep -c '^\[\[peers\]\]' "${config}") peer(s)"
+    else
+        fail "${config} has no [[peers]] - re-run the bootstrap"
+    fi
+
+    if [[ -f "${HOME}/.ssh/id_acm_peers" && -f "${HOME}/.ssh/id_acm_peers.pub" ]]; then
+        pass "peer SSH key ~/.ssh/id_acm_peers exists"
+    else
+        fail "peer SSH key ~/.ssh/id_acm_peers is missing - re-run the bootstrap"
+    fi
+}
+check_acm_peers
+
+# Test 16.2: a phone's key can run acm bridge and nothing else. Same form as
+# lib/acm-phone-keys.sh; repeated here because this script also runs piped over ssh.
+check_acm_phone_keys() {
+    local file="${HOME}/.ssh/authorized_keys"
+    local begin="# >>> bootstrap-dev-server acm phones >>>"
+    local end="# <<< bootstrap-dev-server acm phones <<<"
+    local safe='^command="((/[A-Za-z0-9._-]+)*/acm) bridge --allow (p1|p2|p3)",restrict (ecdsa-sha2-nistp256|ssh-ed25519) [A-Za-z0-9+/]+={0,2} ([A-Za-z0-9_-]{1,60})$'
+    local line in_block=false count=0 bad=0 acm_path blob
+    local -a blobs=() outside=()
+
+    if [[ ! -f "${file}" ]]; then
+        info "No ${file}, so no phones are enrolled"
+        return 0
+    fi
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" == "${begin}" ]]; then
+            in_block=true
+        elif [[ "${line}" == "${end}" ]]; then
+            in_block=false
+        elif [[ -z "${line}" || "${line}" == \#* ]]; then
+            continue
+        elif [[ "${in_block}" == "true" || "${line}" == *"acm bridge"* ]]; then
+            if [[ ! "${line}" =~ ${safe} ]]; then
+                fail "authorized_keys has a phone line not restricted to acm bridge: ${line:0:60}..."
+                bad=1
+                continue
+            fi
+            acm_path="${BASH_REMATCH[1]}"
+            if [[ "${acm_path}" == /nix/store/* || "${acm_path}" == *..* ]]; then
+                fail "A phone line pins ${acm_path}, which garbage collection deletes"
+                bad=1
+            elif [[ ! -x "${acm_path}" ]]; then
+                fail "A phone line runs ${acm_path}, which is not executable here"
+                bad=1
+            fi
+            blob="$(awk '{ print $(NF - 1) }' <<<"${line}")"
+            blobs+=("${blob}")
+            count=$((count + 1))
+        else
+            outside+=("${line}")
+        fi
+    done <"${file}"
+
+    for blob in "${blobs[@]:-}"; do
+        [[ -n "${blob}" ]] || continue
+        for line in "${outside[@]:-}"; do
+            if [[ "${line}" == *"${blob}"* ]]; then
+                fail "A phone's key is also authorized outside the phones block, unrestricted: remove that line"
+                bad=1
+            fi
+        done
+    done
+
+    if [[ ${count} -eq 0 && ${bad} -eq 0 ]]; then
+        info "No phones enrolled"
+    elif [[ ${bad} -eq 0 ]]; then
+        pass "${count} phone key(s) restricted to acm bridge"
+    fi
+}
+check_acm_phone_keys
+
+# Test 16.3: ntfy answers on the tailnet and nowhere else
+check_ntfy() {
+    local unit="${NTFY_UNIT_FILE:-/etc/systemd/system/ntfy.service}"
+    local port=2586 ts_ip listeners address state code exposed=0
+
+    if [[ ! -f "${unit}" ]]; then
+        warn "ntfy is not installed"
+        return 0
+    fi
+
+    state="$(systemctl is-active ntfy 2>/dev/null || true)"
+    if [[ "${state}" != "active" ]]; then
+        fail "ntfy is not running (state=${state:-unknown}) - check: journalctl -u ntfy"
+    fi
+
+    ts_ip="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+    listeners="$(ss -ltnH 2>/dev/null | awk -v suffix=":${port}" 'substr($4, length($4) - length(suffix) + 1) == suffix { print $4 }' || true)"
+    if [[ -z "${listeners}" ]]; then
+        fail "Nothing listens on port ${port} - check: journalctl -u ntfy"
+        return 0
+    fi
+    while IFS= read -r address; do
+        if [[ -z "${ts_ip}" || "${address}" != "${ts_ip}:${port}" ]]; then
+            fail "ntfy listens on ${address} - it must bind to the Tailscale IP only"
+            exposed=1
+        fi
+    done <<<"${listeners}"
+    if [[ ${exposed} -eq 0 ]]; then
+        pass "ntfy listens on ${ts_ip}:${port} only"
+    fi
+
+    if sudo ufw status 2>/dev/null | grep -E "${port}" | grep -q 'tailscale0'; then
+        pass "UFW allows ${port} on tailscale0 only"
+    else
+        warn "No tailscale0-scoped UFW rule for ${port} - phones cannot reach ntfy"
+    fi
+
+    # Any topic outside the grants: 403 is auth working.
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://${ts_ip}:${port}/verify-probe/json?poll=1" 2>/dev/null || true)"
+    if [[ "${code}" == "403" ]]; then
+        pass "anonymous read of a topic is refused (HTTP 403)"
+    else
+        fail "anonymous read of a topic answered HTTP ${code:-none}, not 403 - ntfy auth is off"
+    fi
+}
+check_ntfy
 
 # ============================================================================
 # SUMMARY

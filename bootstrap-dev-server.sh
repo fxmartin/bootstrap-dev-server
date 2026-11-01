@@ -690,6 +690,8 @@ configure_firewall() {
         sudo ufw allow in on tailscale0 to any port "${MOSH_PORT_START}:${MOSH_PORT_END}" proto udp comment 'Mosh (tailnet only)'
         # node_exporter has no auth: tailnet interface only, never the public one
         sudo ufw allow in on tailscale0 to any port 9100 proto tcp comment 'node_exporter (tailnet only)'
+        # ntfy serves the phones over the tailnet: never the public interface
+        sudo ufw allow in on tailscale0 to any port 2586 proto tcp comment 'ntfy (tailnet only)'
         sudo ufw --force enable
         log_ok "Firewall configured - SSH/Mosh reachable on the tailnet only"
         log_warn "Public SSH is CLOSED. Break-glass access is the Hetzner web console;"
@@ -710,6 +712,9 @@ configure_firewall() {
 
     # node_exporter has no auth: tailnet interface only, never the public one
     sudo ufw allow in on tailscale0 to any port 9100 proto tcp comment 'node_exporter (tailnet only)'
+
+    # ntfy serves the phones over the tailnet: never the public interface
+    sudo ufw allow in on tailscale0 to any port 2586 proto tcp comment 'ntfy (tailnet only)'
 
     # Enable firewall
     sudo ufw --force enable
@@ -919,6 +924,25 @@ install_node_exporter() {
         log_ok "node_exporter running on <tailscale-ip>:9100 (Prometheus on the NAS scrapes it)"
     else
         log_warn "node_exporter installation failed (non-critical) - re-run: bash ${installer}"
+    fi
+}
+
+# ntfy carries acm's alerts to the phones (acm Epic-17, P2). Same security model
+# as node_exporter; the installer lives in scripts/install-ntfy.sh.
+install_ntfy() {
+    log_info "Installing ntfy (tailnet-only push server)..."
+
+    local installer="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/scripts/install-ntfy.sh"
+    if [[ ! -f "${installer}" ]]; then
+        log_warn "scripts/install-ntfy.sh not found under ${REPO_CLONE_DIR} - skipping ntfy"
+        return 0
+    fi
+
+    # Not worth aborting a bootstrap over: the installer is idempotent.
+    if bash "${installer}"; then
+        log_ok "ntfy running on <tailscale-ip>:2586"
+    else
+        log_warn "ntfy installation failed (non-critical) - re-run: bash ${installer}"
     fi
 }
 
@@ -2370,6 +2394,27 @@ install_sdlc_controller() {
 }
 
 #===============================================================================
+# acm Fleet Aggregator Role (peers, peer SSH key, phone keys)
+#===============================================================================
+setup_acm_fleet() {
+    log_info "Setting up the acm fleet aggregator role..."
+
+    local setup_script="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/scripts/setup-acm-fleet.sh"
+    if [[ ! -f "${setup_script}" ]]; then
+        log_warn "scripts/setup-acm-fleet.sh not found under ${REPO_CLONE_DIR} - skipping the acm fleet role"
+        return 0
+    fi
+
+    # Not worth aborting a bootstrap over: a refused peer or phone line is fixed
+    # in the file, and the script is idempotent.
+    if bash "${setup_script}"; then
+        log_ok "acm fleet aggregator role configured"
+    else
+        log_warn "acm fleet setup reported a problem (non-critical) - fix it, then re-run: bash ${setup_script}"
+    fi
+}
+
+#===============================================================================
 # Per-user Setup Formerly Done by the Dev Shell's shellHook
 #===============================================================================
 # Claude config symlinks, stale MCP pruning, zshrc and msmtprc templates.
@@ -2935,6 +2980,7 @@ main() {
     # Not worth aborting over: a re-run would not reach restart_ssh_final's reload.
     setup_herdr_service || log_warn "herdr service setup failed (non-critical) - fix it, then re-run the bootstrap"
     setup_acmd_service || log_warn "acmd service setup failed (non-critical) - fix it, then re-run the bootstrap"
+    setup_acm_fleet
     install_sdlc_controller
     setup_dev_env
     setup_nix_update_timer
@@ -2954,9 +3000,10 @@ main() {
     log_timer_end "nix_cache_warmup" 2>/dev/null || true
     log_timer_end "nix_setup" 2>/dev/null || true
 
-    log_phase "5: Monitoring (node_exporter)"
+    log_phase "5: Monitoring and Alerts (node_exporter, ntfy)"
     remove_beszel_agent
     install_node_exporter
+    install_ntfy
 
     log_phase "6: Final SSH Configuration"
     restart_ssh_final

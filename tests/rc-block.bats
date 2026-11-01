@@ -74,7 +74,8 @@ write_block() {
     printf '%s\nbody\n# everything after this is mine\n' "${BEGIN}" >"${RC}"
     before="$(cat "${RC}")"
     run write_block "new body"
-    [ "$status" -eq 1 ]
+    # 2, not 1: a caller must be able to tell "refused" from "already current".
+    [ "$status" -eq 2 ]
     [[ "$output" == *"WARN"*"closing marker"* ]]
     [ "$(cat "${RC}")" = "${before}" ]
 }

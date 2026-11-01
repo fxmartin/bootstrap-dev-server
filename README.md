@@ -248,6 +248,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 - **PAM hardening**: Empty passwords disallowed (nullok removed)
 - **Daily security report**: Email summary of Fail2Ban, SSH, UFW, and audit events (7am daily)
 - **node_exporter**: Prometheus metrics on the Tailscale IP only (port 9100), scraped by Prometheus on the NAS - see [Monitoring](#monitoring-node_exporter)
+- **ntfy**: push server for acm's phone alerts on the Tailscale IP only (port 2586), auth on - see [acm fleet aggregator](#acm-fleet-aggregator-android-app)
 
 ### Development Environment
 - **Default Nix profile**: the whole toolset (`packages.<system>.dev-env` in `flake.nix`) is installed into `~/.nix-profile`, so it is on PATH in logins, `ssh dev '<cmd>'`, systemd user services and herdr panes - no need to type `dev` first. The bootstrap installs it the first time, upgrades it on re-runs (a no-op when the flake is unchanged) and removes any hand-installed stray entries, logging each one
@@ -383,7 +384,7 @@ Actual bootstrap timing from a CX33 server in Falkenstein (fsn1), December 2025:
 | 2 | Git & GitHub Setup | ~70s |
 | 3 | Security Hardening | ~53s |
 | 4 | Nix Installation | ~217s (3m 37s) |
-| 5 | Monitoring (node_exporter) | ~10s |
+| 5 | Monitoring and Alerts (node_exporter, ntfy) | ~15s |
 | 6 | Final SSH Configuration | instant |
 | **Total** | **Full bootstrap** | **~6-7 minutes** |
 
@@ -846,6 +847,68 @@ nothing bound on `0.0.0.0:9100`), or by hand from a tailnet machine:
 curl -s http://$(ssh dev-server tailscale ip -4):9100/metrics | grep node_exporter_build_info
 ```
 
+## acm Fleet Aggregator (Android app)
+
+The dev server is always on, so its acmd is the aggregator acm's Android app reads over Tailscale
+(agentic-coding-monitor Epic-17). `scripts/setup-acm-fleet.sh` and `scripts/install-ntfy.sh` set the
+server side up; the bootstrap runs both, and both are safe to re-run on their own. The steps that
+happen elsewhere are in the [runbook](docs/fleet-onboarding.md#6-android-app-fleet-aggregator).
+
+**Peers.** `config/acm-peers.toml` lists the XPS, the M3 Max and home-lab. They are written to a
+marker block in `~/.config/acm/config.toml`, and acmd restarts when the block changes. Peers you add
+outside the block stay, and win over a repository entry with the same label. A `ssh` value may be
+`user@host`: without a user, the login is this server's user.
+
+**Peer key.** `~/.ssh/id_acm_peers` (ed25519, no passphrase, because acmd uses it unattended) is
+generated once, and its public key is printed on every run, to add to nix-install and the XPS. A marker
+block in `~/.ssh/config` selects it for the peers and accepts each peer's host key on first contact.
+
+**Phones.** Each line of `config/acm-phone-keys.pub`, or of `~/.config/acm/phone-keys.pub` if you would
+rather keep it out of the repository (`ACM_PHONE_KEYS_FILE` overrides both), must be exactly what
+`acm mobile key-line` prints. Pass `--acm` so the forced command is the profile path:
+
+```bash
+acm mobile key-line --acm "$HOME/.nix-profile/bin/acm" --level p3 --name pixel-10-pro <pubkey-file>
+```
+
+The lines go into a marker block in `~/.ssh/authorized_keys`; your other keys are left alone. A line
+in any other form is refused and fails the run, while the valid ones still apply. So is a `/nix/store`
+acm path, which garbage collection would delete, and a name other than letters, digits, `-` and `_`.
+
+**Revoking a phone.** The scripts read the server's clone and neither one updates it, and `dev-update`
+does not run them. So the order matters: remove the line by merge request, then on the server:
+
+```bash
+dev-update
+bash ~/.local/share/bootstrap-dev-server/scripts/setup-acm-fleet.sh
+bash ~/.local/share/bootstrap-dev-server/scripts/install-ntfy.sh
+```
+
+Do not edit the file in the clone: `dev-update` and the weekly timer reset it to `origin/main`, and the
+next run enrols the phone again.
+
+If a lost phone cannot wait for a merge, use the override, which only applies once it exists. This
+creates it from the current lines and leaves an existing one alone:
+
+```bash
+[[ -e ~/.config/acm/phone-keys.pub ]] || cp ~/.local/share/bootstrap-dev-server/config/acm-phone-keys.pub ~/.config/acm/phone-keys.pub
+```
+
+Remove the phone's line from `~/.config/acm/phone-keys.pub` and run both scripts (no `dev-update`
+needed). While that file exists the repository file is ignored, so keep making changes there, or merge
+the removal, delete the file and run both scripts again.
+
+**ntfy** carries acm's alerts to the phones through UnifiedPush. Like node_exporter it is pinned
+(`NTFY_VERSION` in `config/versions.env`), sha256-verified, run by a dedicated `ntfy` user, bound to the
+Tailscale IP only by `config/ntfy-start.sh`, and open on `tailscale0` only. Access is denied by default.
+Each phone gets a user named after it, the topic `acm-<name>` and read access to `up*`; a revoked phone's
+user goes at the restart. Its password is in `~/.config/acm/ntfy/<name>.password` (mode 0600), for the
+ntfy app. `up*` topics are anonymous write-only, which UnifiedPush requires: acmd publishes without
+credentials, so any tailnet node that knows a phone's random topic name can post to it.
+
+Like node_exporter, ntfy gives up about six minutes after boot if the tailnet is not up. After the
+first `tailscale up`, run `sudo systemctl restart ntfy`.
+
 ## Updating Packages (`flake.lock`)
 
 The repository is the only source of `flake.lock`. The server never runs `nix flake update`: the weekly `nix-flake-update.timer` and the `dev-update` shell function both apply exactly what is on `main`:
@@ -1105,6 +1168,8 @@ Environment variables for the bootstrap script:
 | `GEOIP_ENABLED` | true | Enable GeoIP country-based blocking |
 | `GEOIP_COUNTRIES` | LU,FR,GR | Comma-separated whitelist of country codes |
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input; stored in `~/.config/nix/nix.conf` `access-tokens` (mode 0600), never logged |
+| `ACM_PEERS_FILE` | `config/acm-peers.toml` | Peers for the [acm fleet aggregator](#acm-fleet-aggregator-android-app) |
+| `ACM_PHONE_KEYS_FILE` | `~/.config/acm/phone-keys.pub` if present, else `config/acm-phone-keys.pub` | Phone `authorized_keys` lines, as printed by `acm mobile key-line` (public keys only) |
 
 ### GeoIP Country Codes
 
@@ -1172,15 +1237,23 @@ After installation:
 │       │       └── config/claude/
 │       ├── lib/
 │       │   ├── logging.sh     # Shared logging library
-│       │   └── rc-block.sh    # Keeps generated rc blocks current
+│       │   ├── rc-block.sh    # Keeps generated rc blocks current
+│       │   └── acm-phone-keys.sh  # Phone key file and line validation
 │       ├── config/
 │       │   ├── node-exporter.service   # node_exporter system unit
-│       │   └── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│       │   ├── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
+│       │   ├── ntfy.service            # ntfy system unit
+│       │   ├── ntfy-start.sh           # ExecStart wrapper: Tailscale-IP bind
+│       │   ├── ntfy-server.yml         # ntfy settings
+│       │   ├── acm-peers.toml          # Machines this server aggregates
+│       │   └── acm-phone-keys.pub      # Phones allowed to run acm bridge
 │       ├── profiles/
 │       │   └── nyx.sh         # Nyx profile installation script
 │       ├── scripts/
 │       │   ├── secure-ssh-key.sh  # Add passphrase to SSH key
-│       │   └── install-node-exporter.sh  # node_exporter installer
+│       │   ├── install-node-exporter.sh  # node_exporter installer
+│       │   ├── install-ntfy.sh    # ntfy installer
+│       │   └── setup-acm-fleet.sh # acm peers, peer key, phone keys
 │       └── tests/
 │           ├── *.bats         # Unit test suites (300 tests)
 │           ├── e2e/

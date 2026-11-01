@@ -18,10 +18,10 @@
 
 | Epic ID | Epic Name | Business Value | Story Count | Total Points | Priority |
 |---------|-----------|----------------|-------------|--------------|----------|
-| Epic-01 | Agentic Fleet Host | The dev server joins the fleet from this repo only: toolset as the default profile, lock updates by MR, herdr instead of tmux, acmd and sdlc installed and pinned | 7 | 22 | Must Have (FX, 2026-10-30) |
+| Epic-01 | Agentic Fleet Host | The dev server joins the fleet from this repo only: toolset as the default profile, lock updates by MR, herdr instead of tmux, acmd and sdlc installed and pinned, fleet aggregator for the Android app | 8 | 27 | Must Have (FX, 2026-10-30) |
 
 ## Epic Navigation
-- **[Epic-01: Agentic Fleet Host](./stories/epic-01-agentic-fleet-host.md)** — default Nix profile, repo-only `flake.lock`, herdr user service and ssh attach, acmd from the acm flake, sdlc + glab, onboarding runbook.
+- **[Epic-01: Agentic Fleet Host](./stories/epic-01-agentic-fleet-host.md)** — default Nix profile, repo-only `flake.lock`, herdr user service and ssh attach, acmd from the acm flake, sdlc + glab, onboarding runbook, fleet aggregator for acm's Android app.
 
 ## Dependencies
 
@@ -35,6 +35,7 @@ graph LR
   S1 --> D2[01.3-002 sdlc + glab]
   A1 --> R[01.3-003 runbook]
   D2 --> R
+  A1 --> F[01.4-001 fleet aggregator]
 ```
 
 ## Critical Path
@@ -44,6 +45,6 @@ graph LR
 4. 01.3-001 after 01.2-001; 01.3-003 last.
 
 ## Totals
-- **Total Stories**: 7
-- **Total Story Points**: 22
+- **Total Stories**: 8
+- **Total Story Points**: 27
 - **Epics**: 1

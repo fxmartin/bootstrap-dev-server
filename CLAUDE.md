@@ -23,6 +23,10 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `scripts/install-node-exporter.sh` | node_exporter installer: pinned release, sha256-verified, dedicated user, UFW on tailscale0 |
 | `config/node-exporter-start.sh` | Unit wrapper: binds node_exporter to the Tailscale IP only, bounded wait for the tailnet |
 | `scripts/install-sdlc-controller.sh` | sdlc controller installer: `uv tool install` from the tag pinned in `config/versions.env`, uv-managed Python, idempotent |
+| `scripts/setup-acm-fleet.sh` | acm fleet aggregator role: `[[peers]]` block in `~/.config/acm/config.toml`, peer SSH key, phone keys in `authorized_keys` |
+| `scripts/install-ntfy.sh` | ntfy installer: pinned release, sha256-verified, dedicated user, a user and topic per phone, UFW on tailscale0 |
+| `config/ntfy-start.sh` | Unit wrapper: binds ntfy to the Tailscale IP only, bounded wait for the tailnet |
+| `lib/acm-phone-keys.sh` | Which phone key file applies, and the exact form a phone line must have |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `lib/rc-block.sh` | Rewrites a marker-delimited rc block on content drift, so generated shell config reaches provisioned servers |
 | `scripts/setup-dev-env.sh` | Per-user setup the dev shell's shellHook used to do: Claude config symlinks, MCP pruning, zshrc/msmtprc templates |
@@ -41,6 +45,11 @@ This file provides guidance to Claude Code when working in this sub-project.
 
 **Monitoring:**
 - Prometheus node_exporter on the Tailscale IP only (port 9100), scraped by Prometheus on the TerraMaster NAS over the tailnet (nix-install Epic-15 "Fleet Cockpit")
+
+**Fleet aggregator (acm Epic-17, Android app):**
+- acmd aggregates the XPS, M3 Max and home-lab (`config/acm-peers.toml`), over a dedicated key `~/.ssh/id_acm_peers`
+- Phones reach `acm bridge` and nothing else (`config/acm-phone-keys.pub` or `~/.config/acm/phone-keys.pub`)
+- ntfy on the Tailscale IP only (port 2586), auth on, a user and topic per phone
 
 **Development Environment:**
 - Toolset installed as the user's default Nix profile (`packages.<system>.dev-env`, same `devPackages` list as the default dev shell), on PATH for login, `ssh dev '<cmd>'` and systemd user services
@@ -108,10 +117,13 @@ bootstrap-dev-server/
 │       └── config/claude/    # Claude Code configs (agents, commands, CLAUDE.md)
 ├── lib/
 │   ├── logging.sh            # Shared logging library
-│   └── rc-block.sh           # Keeps generated rc blocks current
+│   ├── rc-block.sh           # Keeps generated rc blocks current
+│   └── acm-phone-keys.sh     # Phone key file and line validation
 ├── scripts/
 │   ├── secure-ssh-key.sh     # SSH key passphrase helper
 │   ├── install-node-exporter.sh  # node_exporter installer (tailnet-only)
+│   ├── install-ntfy.sh       # ntfy installer (tailnet-only)
+│   ├── setup-acm-fleet.sh    # acm peers, peer key, phone keys
 │   ├── install-sdlc-controller.sh  # sdlc controller installer (pinned tag, uv-managed Python)
 │   └── setup-dev-env.sh      # Per-user setup formerly in the dev shell's shellHook
 ├── tests/
@@ -123,7 +135,12 @@ bootstrap-dev-server/
 │   │   └── commands/         # Slash command definitions
 │   ├── node-exporter.service   # node_exporter system unit
 │   ├── node-exporter-start.sh  # ExecStart wrapper: Tailscale-IP bind
-│   └── versions.env            # Pinned tool versions (SDLC_CONTROLLER_TAG), bumped by MR
+│   ├── ntfy.service            # ntfy system unit
+│   ├── ntfy-start.sh           # ExecStart wrapper: Tailscale-IP bind
+│   ├── ntfy-server.yml         # ntfy settings (auth on, deny by default)
+│   ├── acm-peers.toml          # Machines this server aggregates
+│   ├── acm-phone-keys.pub      # Phones allowed to run acm bridge (public keys only)
+│   └── versions.env            # Pinned tool versions (SDLC_CONTROLLER_TAG, NTFY_VERSION), bumped by MR
 ```
 
 ## Story Management
@@ -175,6 +192,8 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `MOSH_PORT_END` | 60010 | Mosh UDP range end |
 | `TAILSCALE_TAGS` | tag:trusted | Tags advertised on `tailscale up` (tagged node keys never expire) |
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input, stored in the user's `nix.conf` `access-tokens` (mode 0600), never logged or committed |
+| `ACM_PEERS_FILE` | `config/acm-peers.toml` | Peers for the fleet aggregator role |
+| `ACM_PHONE_KEYS_FILE` | `~/.config/acm/phone-keys.pub` if present, else `config/acm-phone-keys.pub` | Phone `authorized_keys` lines, as printed by `acm mobile key-line` (public keys only) |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
 | `BOOTSTRAP_REEXECED` | (unset) | Guard set by the self-update re-exec at the start of `main()`: the script pulls its clone and re-runs from it at most once. Set it yourself to skip the pull and re-exec |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
@@ -221,8 +240,11 @@ has somewhere to land.
 - SSH key is dedicated (`~/.ssh/id_devserver`) - separate from GitHub/other services
 - Password authentication is disabled after bootstrap
 - Root login is disabled after bootstrap
-- UFW blocks all except SSH (22) and Mosh (60000-60010); 9100 (node_exporter) is open on `tailscale0` only
+- UFW blocks all except SSH (22) and Mosh (60000-60010); 9100 (node_exporter) and 2586 (ntfy) are open on `tailscale0` only
 - node_exporter has no authentication: it binds to the Tailscale IP, never 0.0.0.0. Tailnet reachability + the tailscale0 UFW rule + the Tailscale ACL are the whole security model
+- ntfy binds to the Tailscale IP, never 0.0.0.0, and denies by default. The one exception is UnifiedPush: `up*` topics are anonymous write-only, because acmd publishes without credentials
+- A phone's `authorized_keys` line must be exactly what `acm mobile key-line` prints: forced `acm bridge`, `restrict`, no `/nix/store` path. Anything else is refused
+- `~/.ssh/id_acm_peers` has no passphrase, because acmd uses it unattended. It belongs on the peers only
 - Daily security reports sent via msmtp
 
 ## Troubleshooting
