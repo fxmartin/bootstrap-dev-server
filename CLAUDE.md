@@ -27,6 +27,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 | `scripts/install-ntfy.sh` | ntfy installer: pinned release, sha256-verified, dedicated user, a user and topic per phone, UFW on tailscale0 |
 | `config/ntfy-start.sh` | Unit wrapper: binds ntfy to the Tailscale IP only, bounded wait for the tailnet |
 | `lib/acm-phone-keys.sh` | Which phone key file applies, and the exact form a phone line must have |
+| `lib/geoip.sh` | Picks the public interface geoip-shell filters (never all/tailscale0) |
 | `lib/tailscale.sh` | Node-key-expiry predicate gating the SSH lockdown |
 | `lib/rc-block.sh` | Rewrites a marker-delimited rc block on content drift, so generated shell config reaches provisioned servers |
 | `scripts/setup-dev-env.sh` | Per-user setup the dev shell's shellHook used to do: Claude config symlinks, MCP pruning, zshrc/msmtprc templates |
@@ -197,6 +198,7 @@ log_debug "Debug message (only if LOG_LEVEL=DEBUG)"
 | `ACM_PHONE_KEYS_FILE` | `~/.config/acm/phone-keys.pub` if present, else `config/acm-phone-keys.pub` | Phone `authorized_keys` lines, as printed by `acm mobile key-line` (public keys only) |
 | `RESTART_HERDR` | false | Stop a herdr server running outside the systemd unit (ends its sessions); same as `--restart-herdr` (refuses inside a herdr pane) |
 | `BOOTSTRAP_REEXECED` | (unset) | Guard set by the self-update re-exec at the start of `main()`: the script pulls its clone and re-runs from it at most once. Set it yourself to skip the pull and re-exec |
+| `GEOIP_IFACES` | default-route NIC | Interfaces geoip-shell filters; `all`/`tailscale0` refused (tailnet sources have no country and would be dropped) |
 | `SSH_TAILNET_ONLY` | false | Restrict SSH/Mosh to `tailscale0`, closing them publicly (refuses unless the node key never expires) |
 | `XDG_STATE_HOME` | `$HOME/.local/state` | Set (not configurable) via `~/.config/environment.d/10-xdg-state.conf` and `~/.profile` so sdlc and acmd share one run registry |
 | `GITLAB_HOST` | gitlab.test | GitLab host for `glab` and `sdlc`, exported in `/etc/environment` and `~/.profile` |
