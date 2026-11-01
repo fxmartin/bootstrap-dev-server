@@ -1009,6 +1009,8 @@ After bootstrap, SSH is hardened:
 
 **GeoIP blocking** (optional): When enabled, only allows connections from whitelisted countries. Uses nftables backend with daily IP database updates. Tailscale provides bypass access if you get locked out.
 
+geoip-shell filters the **public interface only** (the default-route NIC, override with `GEOIP_IFACES`), never `-i all`: its whitelist ends in a drop and tailnet sources (100.64.0.0/10) belong to no country, so covering `tailscale0` drops every inbound tailnet connection (SSH, ntfy on 2586). Re-running the bootstrap reconfigures an existing install the same way. `tests/verify-server.sh` fails if geoip-shell covers `tailscale0`/all interfaces, or if Tailscale SSH is on (`tailscale debug prefs` shows `"RunSSH": true`; never pass `--ssh` - it hides a broken port 22 by answering inside tailscaled).
+
 ### Fail2Ban
 
 - **3 failed attempts** → 24-hour ban
@@ -1130,7 +1132,7 @@ If you're traveling and can't connect from a whitelisted country:
 
 4. **Add a country temporarily**:
    ```bash
-   sudo geoip-shell configure -z -m whitelist -c "LU FR GR US" -i all -l none
+   sudo geoip-shell configure -z -m whitelist -c "LU FR GR US" -i "$(ip -o route show default | awk '{print $5; exit}')" -l none
    ```
 
 5. **Check GeoIP status**:
@@ -1173,6 +1175,7 @@ Environment variables for the bootstrap script:
 | `UFW_RATE_LIMIT` | true | Enable UFW rate limiting for SSH |
 | `GEOIP_ENABLED` | true | Enable GeoIP country-based blocking |
 | `GEOIP_COUNTRIES` | LU,FR,GR | Comma-separated whitelist of country codes |
+| `GEOIP_IFACES` | default-route NIC | Interfaces geoip-shell filters. `all` and `tailscale0` are refused |
 | `ACM_NIX_ACCESS_TOKEN` | (unset) | Read-only GitHub token for the private acm flake input; stored in `~/.config/nix/nix.conf` `access-tokens` (mode 0600), never logged |
 | `ACM_PEERS_FILE` | `config/acm-peers.toml` | Peers for the [acm fleet aggregator](#acm-fleet-aggregator-android-app) |
 | `ACM_PHONE_KEYS_FILE` | `~/.config/acm/phone-keys.pub` if present, else `config/acm-phone-keys.pub` | Phone `authorized_keys` lines, as printed by `acm mobile key-line` (public keys only) |

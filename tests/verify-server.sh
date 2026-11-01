@@ -827,6 +827,37 @@ check_ntfy() {
 }
 check_ntfy
 
+# Test 18: geoip-shell must not cover tailscale0, and Tailscale SSH must be off.
+# Tailnet sources have no country, so geoip-shell's final drop kills every new
+# inbound tailnet connection; Tailscale SSH (--ssh) masks that by answering
+# port 22 inside tailscaled. Runs piped over ssh, so nothing is sourced.
+check_geoip_interfaces() {
+    if command -v geoip-shell &>/dev/null; then
+        local ruleset
+        ruleset="$(sudo nft list table inet geoip-shell 2>/dev/null || true)"
+        if [[ -z "${ruleset}" ]]; then
+            warn "geoip-shell is installed but its nftables table is not loaded"
+        elif ! grep -q 'iifname' <<<"${ruleset}"; then
+            fail "geoip-shell applies to ALL interfaces, tailnet connections are dropped - run: sudo geoip-shell configure -i <public-nic>"
+        elif grep 'iifname' <<<"${ruleset}" | grep -q 'tailscale0'; then
+            fail "geoip-shell applies to tailscale0, tailnet connections are dropped - run: sudo geoip-shell configure -i <public-nic>"
+        else
+            pass "geoip-shell is scoped to the public interface (not tailscale0)"
+        fi
+    else
+        info "geoip-shell not installed - skipping interface check"
+    fi
+
+    if command -v tailscale &>/dev/null; then
+        if tailscale debug prefs 2>/dev/null | tr -d '[:space:]' | grep -q '"RunSSH":true'; then
+            fail "Tailscale SSH is on (RunSSH: true) - run: sudo tailscale set --ssh=false"
+        else
+            pass "Tailscale SSH is off"
+        fi
+    fi
+}
+check_geoip_interfaces
+
 # ============================================================================
 # SUMMARY
 # ============================================================================
