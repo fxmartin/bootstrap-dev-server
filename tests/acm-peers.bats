@@ -311,6 +311,15 @@ EOF
     [ "$(cut -d' ' -f1,2 "${KEY}.pub")" = "${pub}" ]
 }
 
+@test "a re-run with an existing key prints the restricted line again, never the bare key" {
+    bash "${SETUP}"
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    echo "${output}" | grep -qE '^restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 '
+    run bash -c "echo \"\${1}\" | grep -E '^ssh-ed25519 '" _ "${output}"
+    [ "${status}" -ne 0 ]
+}
+
 @test "ssh to a peer uses the peer key: acmd's forward runs bare ssh with BatchMode" {
     bash "${SETUP}"
     grep -qxF 'Host omarchy-xps13 home-lab' "${SSH_CONFIG}"
