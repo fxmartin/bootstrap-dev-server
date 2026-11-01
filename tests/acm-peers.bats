@@ -64,6 +64,18 @@ teardown() {
     grep -q 'label = "home-lab"' "${peers}"
 }
 
+@test "the shipped peers log in as fxmartin, with each OS's acmd socket" {
+    local peers="${PROJECT_ROOT}/config/acm-peers.toml"
+    # The peers' login is fxmartin, not this server's user; the Macs run acmd
+    # under launchd at the darwin default, the XPS under systemd at XDG_RUNTIME_DIR.
+    grep -A2 '^label = "omarchy-xps13"$' "${peers}" | grep -qxF 'ssh = "fxmartin@omarchy-xps13"'
+    grep -A2 '^label = "omarchy-xps13"$' "${peers}" | grep -qxF 'socket = "/run/user/1000/acm.sock"'
+    grep -A2 '^label = "macbook-pro-m3-max"$' "${peers}" | grep -qxF 'ssh = "fxmartin@macbook-pro-m3-max"'
+    grep -A2 '^label = "macbook-pro-m3-max"$' "${peers}" | grep -qxF 'socket = "/Users/fxmartin/.local/state/acm/acm.sock"'
+    grep -A2 '^label = "home-lab"$' "${peers}" | grep -qxF 'ssh = "fxmartin@home-lab"'
+    grep -A2 '^label = "home-lab"$' "${peers}" | grep -qxF 'socket = "/Users/fxmartin/.local/state/acm/acm.sock"'
+}
+
 @test "every peer in the shipped file has an absolute socket" {
     local peers="${PROJECT_ROOT}/config/acm-peers.toml"
     [ "$(grep -c '^label' "${peers}")" -eq "$(grep -c '^socket = "/' "${peers}")" ]
