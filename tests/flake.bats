@@ -192,6 +192,14 @@ teardown() {
     done
 }
 
+@test "semgrep enters devPackages without its Python deps" {
+    # A bare pkgs.semgrep in a mkShell puts its python3.14 site-packages on
+    # PYTHONPATH, and the sdlc uv tool (python3.12) then imports the wrong
+    # jsonschema/rpds and crashes (No module named 'rpds.rpds').
+    run bash -c "sed -n '/devPackages = \\[/,/^        \\];/p' '${PROJECT_ROOT}/flake.nix' | grep -qE '^ +pkgs\\.semgrep\\s*(#.*)?\$'"
+    [ "$status" -ne 0 ]
+}
+
 @test "flake does not use removed nodePackages aliases (dropped from nixpkgs unstable)" {
     run grep "nodePackages" "${PROJECT_ROOT}/flake.nix"
     [ "$status" -ne 0 ]
