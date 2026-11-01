@@ -86,7 +86,9 @@ peer_row_valid() {
     local label="$1" dest="$2" socket="$3"
     [[ "${label}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
     [[ "${dest}" =~ ^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
-    [[ -z "${socket}" || "${socket}" =~ ^(/|~/)[A-Za-z0-9._/-]*$ ]]
+    # Absolute only: a peer without a known socket makes acmd run a remote command to
+    # find it, which a key restricted to the port forward cannot do.
+    [[ "${socket}" =~ ^/[A-Za-z0-9._/-]*$ ]]
 }
 
 # acmd opens one ssh forward per peer with BatchMode, so `ssh <host>` must find
@@ -131,7 +133,7 @@ setup_peers() {
 # Generated from config/acm-peers.toml by scripts/setup-acm-fleet.sh. Add your own peers outside this block."
     while IFS='|' read -r label dest socket; do
         if ! peer_row_valid "${label}" "${dest}" "${socket}"; then
-            log_error "Refusing peer '${label}' in ${PEERS_FILE}: it needs a valid label and ssh host, and socket must be absolute or start with ~/"
+            log_error "Refusing peer '${label}' in ${PEERS_FILE}: it needs a valid label and ssh host, and socket is required and must be an absolute path"
             REFUSED=true
             continue
         fi
@@ -145,10 +147,8 @@ setup_peers() {
 [[peers]]
 label = \"${label}\"
 ssh = \"${dest}\""
-        if [[ -n "${socket}" ]]; then
-            block+="
+        block+="
 socket = \"${socket}\""
-        fi
     done < <(peer_rows <"${PEERS_FILE}")
     block+=$'\n'"${PEERS_END}"
 
@@ -165,6 +165,12 @@ socket = \"${socket}\""
     write_peer_ssh_config "${hosts}"
 }
 
+# The key only ever opens `ssh -N -L`, which requests no session, so a forced
+# command that refuses every shell costs nothing and denies a stolen key a login.
+peer_authorized_line() {
+    printf 'restrict,port-forwarding,command="/usr/bin/false" %s\n' "$(cat "${PEER_KEY}.pub")"
+}
+
 # No passphrase: acmd uses this key unattended, from a user service.
 setup_peer_key() {
     if [[ ! -f "${PEER_KEY}" ]]; then
@@ -174,8 +180,8 @@ setup_peer_key() {
         ssh-keygen -y -P "" -f "${PEER_KEY}" >"${PEER_KEY}.pub"
     fi
 
-    log_info "Add this key to each peer (nix-install for the Macs, the XPS's authorized_keys):"
-    cat "${PEER_KEY}.pub"
+    log_info "Authorize this exact line on each peer (nix-install for the Macs, the XPS's authorized_keys): it allows the socket forward and nothing else"
+    peer_authorized_line
 }
 
 # Installs the valid lines. A key that is also authorized elsewhere in the file

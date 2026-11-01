@@ -201,3 +201,8 @@ section() {
 @test "runbook says the bootstrap names gh by path-free name, like glab" {
     grep -qF "git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'" "${RUNBOOK}"
 }
+
+@test "runbook and README document the restricted peer key line" {
+    grep -qF 'restrict,port-forwarding,command="/usr/bin/false"' "${RUNBOOK}"
+    grep -qF 'restrict,port-forwarding,command="/usr/bin/false"' "${README}"
+}
