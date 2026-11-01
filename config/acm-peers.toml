@@ -4,8 +4,9 @@
 # Same keys as acm's [[peers]]:
 #   label   host name the aggregator shows; keep it equal to the machine's acm label
 #   ssh     tailnet host, optionally user@host (the login defaults to this server's user)
-#   socket  the peer's acmd socket. Linux peers need it; leave it out on the Macs, for
-#           acm's darwin default (~/.local/state/acm/acm.sock)
+#   socket  the peer's acmd socket, always an absolute path (no ~): with it acmd runs no
+#           remote command, so the peer key can be limited to the socket forward. Macs:
+#           /Users/<user>/.local/state/acm/acm.sock; Linux: /run/user/<uid>/acm.sock
 #
 # Peers added by hand to config.toml, outside the block, are kept, and win over an
 # entry here with the same label.
@@ -18,7 +19,9 @@ socket = "/run/user/1000/acm.sock"
 [[peers]]
 label = "macbook-pro-m3-max"
 ssh = "macbook-pro-m3-max"
+socket = "/Users/fx/.local/state/acm/acm.sock"
 
 [[peers]]
 label = "home-lab"
 ssh = "home-lab"
+socket = "/run/user/1000/acm.sock"

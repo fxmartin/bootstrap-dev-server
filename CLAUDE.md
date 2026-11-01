@@ -48,6 +48,7 @@ This file provides guidance to Claude Code when working in this sub-project.
 
 **Fleet aggregator (acm Epic-17, Android app):**
 - acmd aggregates the XPS, M3 Max and home-lab (`config/acm-peers.toml`), over a dedicated key `~/.ssh/id_acm_peers`
+- Peers authorise the key as `restrict,port-forwarding,command="/usr/bin/false" …` (printed by setup-acm-fleet.sh); every peer needs an absolute `socket`
 - Phones reach `acm bridge` and nothing else (`config/acm-phone-keys.pub` or `~/.config/acm/phone-keys.pub`)
 - ntfy on the Tailscale IP only (port 2586), auth on, a user and topic per phone
 
