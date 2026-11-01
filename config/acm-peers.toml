@@ -3,7 +3,7 @@
 #
 # Same keys as acm's [[peers]]:
 #   label   host name the aggregator shows; keep it equal to the machine's acm label
-#   ssh     tailnet host, optionally user@host (the login defaults to this server's user)
+#   ssh     tailnet host as user@host: the peers log in as fxmartin, not this server's user
 #   socket  the peer's acmd socket, always an absolute path (no ~): with it acmd runs no
 #           remote command, so the peer key can be limited to the socket forward. Macs:
 #           /Users/<user>/.local/state/acm/acm.sock; Linux: /run/user/<uid>/acm.sock
@@ -13,15 +13,15 @@
 
 [[peers]]
 label = "omarchy-xps13"
-ssh = "omarchy-xps13"
+ssh = "fxmartin@omarchy-xps13"
 socket = "/run/user/1000/acm.sock"
 
 [[peers]]
 label = "macbook-pro-m3-max"
-ssh = "macbook-pro-m3-max"
-socket = "/Users/fx/.local/state/acm/acm.sock"
+ssh = "fxmartin@macbook-pro-m3-max"
+socket = "/Users/fxmartin/.local/state/acm/acm.sock"
 
 [[peers]]
 label = "home-lab"
-ssh = "home-lab"
-socket = "/run/user/1000/acm.sock"
+ssh = "fxmartin@home-lab"
+socket = "/Users/fxmartin/.local/state/acm/acm.sock"
