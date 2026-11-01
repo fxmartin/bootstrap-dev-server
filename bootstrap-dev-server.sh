@@ -65,6 +65,7 @@ MOSH_PORT_END="${MOSH_PORT_END:-60010}"
 UFW_RATE_LIMIT="${UFW_RATE_LIMIT:-true}"           # Enable UFW rate limiting for SSH
 GEOIP_ENABLED="${GEOIP_ENABLED:-true}"             # Enable GeoIP country blocking
 GEOIP_COUNTRIES="${GEOIP_COUNTRIES:-LU,FR,GR}"     # Whitelist: Luxembourg, France, Greece
+GEOIP_IFACES="${GEOIP_IFACES:-}"                   # Interfaces to filter (default: default-route NIC; never all/tailscale0)
 
 # Tailscale configuration
 # Restrict SSH and Mosh to the tailnet interface, closing them on the public
@@ -761,12 +762,31 @@ install_geoip_shell() {
 
     log_info "Installing geoip-shell for country-based SSH blocking..."
 
+    # Filter the public NIC only: tailnet sources have no country, so covering
+    # tailscale0 drops every inbound tailnet connection.
+    local geoip_lib="${REPO_CLONE_DIR}/${BOOTSTRAP_SUBDIR}/lib/geoip.sh"
+    if [[ ! -f "${geoip_lib}" ]]; then
+        log_error "lib/geoip.sh not found under ${REPO_CLONE_DIR}"
+        return 1
+    fi
+    # shellcheck source=lib/geoip.sh
+    source "${geoip_lib}"
+    local geoip_ifaces
+    if ! geoip_ifaces="$(geoip_interfaces)"; then
+        log_warn "No public interface for GeoIP (set GEOIP_IFACES; 'all' and tailscale0 are refused) - skipping GeoIP blocking"
+        return 1
+    fi
+    log_info "GeoIP blocking applies to interface(s): ${geoip_ifaces}"
+
     # Check if already installed
     if command -v geoip-shell &>/dev/null; then
         log_ok "geoip-shell already installed"
         log_info "Updating GeoIP whitelist to: ${GEOIP_COUNTRIES}"
-        # Update countries if already configured
-        sudo geoip-shell configure -z -m whitelist -c "${GEOIP_COUNTRIES//,/ }" -i all -l none 2>/dev/null || true
+        # Re-apply countries and interfaces: an older run configured "-i all"
+        if ! sudo geoip-shell configure -z -m whitelist -c "${GEOIP_COUNTRIES//,/ }" -i "${geoip_ifaces}" -l none; then
+            log_error "geoip-shell reconfiguration failed"
+            return 1
+        fi
         return 0
     fi
 
@@ -812,9 +832,9 @@ install_geoip_shell() {
     local countries_spaced="${GEOIP_COUNTRIES//,/ }"
     log_info "Configuring whitelist for countries: ${countries_spaced}"
 
-    # -i all: apply to all interfaces
+    # -i: public interface only, never tailscale0 (see geoip_interfaces)
     # -l none: no LAN subnets (cloud server)
-    if ! sudo geoip-shell configure -z -m whitelist -c "${countries_spaced}" -i all -l none; then
+    if ! sudo geoip-shell configure -z -m whitelist -c "${countries_spaced}" -i "${geoip_ifaces}" -l none; then
         log_error "geoip-shell configuration failed"
         log_warn "Continuing without GeoIP blocking - Tailscale provides backup access"
         return 1
