@@ -312,7 +312,7 @@ The bootstrap script transforms a bare Ubuntu 24.04 server into a complete dev e
 | `dev` | Enter full dev shell (same toolset as the profile) |
 | `dm` | Minimal environment (Claude + basics) |
 | `dp` | Python-focused environment |
-| `dev-update` | Apply `origin/main` now: reset the checkout, build `dev-env`, upgrade the profile (prints the commit applied) |
+| `dev-update` | Apply `origin/main` now: reset the checkout, build `dev-env`, upgrade the profile, then converge the sdlc controller to the tag pinned in `config/versions.env` (prints the commit applied) |
 | `claude` | Start Claude Code |
 
 ### Modern CLI Tools Guide
@@ -853,6 +853,7 @@ The repository is the only source of `flake.lock`. The server never runs `nix fl
 1. `git fetch` + `git reset --hard origin/main` on `~/.local/share/bootstrap-dev-server`, then `git submodule update --recursive`
 2. `nix build ~/.config/nix-dev-env#dev-env --no-update-lock-file`
 3. Only if the build succeeds, `nix profile upgrade dev-env`
+4. After the upgrade, `scripts/install-sdlc-controller.sh` converges the sdlc controller to the tag pinned in `config/versions.env` (same tag = no-op; refuses while an sdlc run is active). A missing, failing or refusing installer prints a warning naming `bash ~/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh` to re-run and does not fail the update
 
 A failed fetch or build leaves the previous profile in place; the weekly service reports `failed` in its email. Because the reset is hard, local edits to tracked files in the checkout are discarded - the service and `dev-update` log the file list and short stat (and any local commits) before they go, so nothing vanishes silently. Put changes in a merge request instead.
 
