@@ -20,3 +20,5 @@
 #
 # To keep the keys out of the repository, use ~/.config/acm/phone-keys.pub on the
 # server instead (it wins over this file), or point ACM_PHONE_KEYS_FILE at a file.
+
+command="/home/fx/.nix-profile/bin/acm bridge --allow p1",restrict ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ94POM9hEgrTqmD80uaO0evmVvVfnEhz7vEBRVbS34yBvMtpeBQK/8vOizTl2SgqWwd8o4tART0dIIx/qkcXRM= pixel-10-pro
