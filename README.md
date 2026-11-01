@@ -723,7 +723,7 @@ profile (it carries acm), skips the acmd service and the Nix cache warm-up, but 
 rest, so the SSH hardening is still applied; add the token and re-run. A service that cannot be set
 up is logged the same way. Check it with `systemctl --user status acmd`.
 The `[[peers]]` entry to add on the XPS aggregator, and the checks that follow, are in the [fleet onboarding runbook](docs/fleet-onboarding.md).
-The peer entry needs `socket = "/run/user/<uid>/acm.sock"` (acmd listens on `$XDG_RUNTIME_DIR/acm.sock` on Linux; the default path is darwin's). Peers reach it with `ssh -L`, which `AllowTcpForwarding no` also blocks, so the SSH hardening drop-in allows local forwards for the dev user only (`Match User`, remote forwarding stays off). That lands only when the hardening phase runs: do not pass `--skip-security-hardening` on the re-run.
+The peer entry needs `socket = "/run/user/<uid>/acm.sock"` (acmd listens on `$XDG_RUNTIME_DIR/acm.sock` on Linux; on a Mac it is the absolute `~/.local/state/acm/acm.sock`). Peers reach it with `ssh -L`, which `AllowTcpForwarding no` also blocks, so the SSH hardening drop-in allows local forwards for the dev user only (`Match User`, remote forwarding stays off). That lands only when the hardening phase runs: do not pass `--skip-security-hardening` on the re-run.
 
 Everything that builds the default toolset needs the same token: `dev`, `dev-update` and
 the weekly timer all fail without the token, so a server that lacks it keeps its previous profile and
@@ -860,7 +860,13 @@ outside the block stay, and win over a repository entry with the same label. A `
 `user@host`: without a user, the login is this server's user.
 
 **Peer key.** `~/.ssh/id_acm_peers` (ed25519, no passphrase, because acmd uses it unattended) is
-generated once, and its public key is printed on every run, to add to nix-install and the XPS. A marker
+generated once, and printed on every run as the restricted line each peer must authorise (nix-install for the Macs, the XPS's `authorized_keys`, home-lab):
+
+```
+restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 AAAA… acm-peers@dev-server
+```
+
+acmd only runs `ssh -N -L`, which requests no session, so the forced command never runs and a copy of the key gives no shell. This needs an absolute `socket` for every peer (the Macs: `/Users/<user>/.local/state/acm/acm.sock`), so acmd runs no remote command; a peer without one is refused. A marker
 block in `~/.ssh/config` selects it for the peers and accepts each peer's host key on first contact.
 
 **Phones.** Each line of `config/acm-phone-keys.pub`, or of `~/.config/acm/phone-keys.pub` if you would

@@ -45,6 +45,7 @@ socket = "/run/user/1000/acm.sock"
 [[peers]]
 label = "home-lab"
 ssh = "someone@home-lab"
+socket = "/home/fx/.local/state/acm/acm.sock"
 EOF
     # No phone lines in this suite: tests/acm-phone-keys.bats covers them.
     export ACM_PHONE_KEYS_FILE="${TEST_TEMP_DIR}/phones.pub"
@@ -61,7 +62,13 @@ teardown() {
     grep -q 'socket = "/run/user/1000/acm.sock"' "${peers}"
     grep -q 'label = "macbook-pro-m3-max"' "${peers}"
     grep -q 'label = "home-lab"' "${peers}"
-    [ "$(grep -c '^socket' "${peers}")" -eq 1 ]
+}
+
+@test "every peer in the shipped file has an absolute socket" {
+    local peers="${PROJECT_ROOT}/config/acm-peers.toml"
+    [ "$(grep -c '^label' "${peers}")" -eq "$(grep -c '^socket = "/' "${peers}")" ]
+    run grep -E '^socket = "~' "${peers}"
+    [ "${status}" -ne 0 ]
 }
 
 @test "a first run writes every peer into a marker block in config.toml" {
@@ -77,10 +84,30 @@ teardown() {
     [ "${output}" = "0" ]
 }
 
-@test "a peer without a socket gets no socket key, so acm applies the darwin default" {
-    bash "${SETUP}"
-    run sed -n '/label = "home-lab"/,/^$/p' "${CONFIG}"
-    assert_not_contains "${output}" "socket"
+@test "a peer without a socket is refused" {
+    printf '[[peers]]\nlabel = "nosock"\nssh = "nosock"\n' >"${ACM_PEERS_FILE}"
+    run bash "${SETUP}"
+    [ "${status}" -ne 0 ]
+    run grep -c 'nosock' "${CONFIG}"
+    [ "${output}" = "0" ]
+}
+
+@test "a relative or ~/ socket is refused" {
+    for sock in "acm.sock" "~/.local/state/acm/acm.sock"; do
+        rm -f "${CONFIG}"
+        printf '[[peers]]\nlabel = "relsock"\nssh = "relsock"\nsocket = "%s"\n' "${sock}" >"${ACM_PEERS_FILE}"
+        run bash "${SETUP}"
+        [ "${status}" -ne 0 ]
+        run grep -c 'relsock' "${CONFIG}"
+        [ "${output}" = "0" ]
+    done
+}
+
+@test "the printed authorisation line restricts the peer key to port forwarding" {
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    echo "${output}" | grep -qE '^restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 '
+    assert_contains "${output}" "acm-peers@"
 }
 
 @test "peers and tables the user added outside the block are kept" {
@@ -142,6 +169,7 @@ EOF
 [[peers]]
 label = "new-box"
 ssh = "new-box"
+socket = "/run/user/1000/acm.sock"
 EOF
     run bash "${SETUP}"
     [ "${status}" -eq 0 ]
@@ -205,6 +233,7 @@ EOF
 [[peers]]
 label = "home-lab"
 ssh = "home-lab"
+socket = "/run/user/1000/acm.sock"
 EOF
     bash "${SETUP}"
     run grep -c 'omarchy-xps13' "${CONFIG}"
@@ -280,6 +309,15 @@ EOF
     run bash "${SETUP}"
     [ "${status}" -eq 0 ]
     [ "$(cut -d' ' -f1,2 "${KEY}.pub")" = "${pub}" ]
+}
+
+@test "a re-run with an existing key prints the restricted line again, never the bare key" {
+    bash "${SETUP}"
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    echo "${output}" | grep -qE '^restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 '
+    run bash -c "echo \"\${1}\" | grep -E '^ssh-ed25519 '" _ "${output}"
+    [ "${status}" -ne 0 ]
 }
 
 @test "ssh to a peer uses the peer key: acmd's forward runs bare ssh with BatchMode" {
