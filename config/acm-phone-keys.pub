@@ -1,0 +1,17 @@
+# ABOUTME: Phones allowed to reach acm bridge on this server (public keys only)
+# ABOUTME: scripts/setup-acm-fleet.sh installs these lines into ~/.ssh/authorized_keys
+#
+# One line per phone, exactly as `acm mobile key-line` prints it. Run it on the server,
+# passing --acm so the forced command survives garbage collection:
+#
+#   acm mobile key-line --acm "$HOME/.nix-profile/bin/acm" --level p3 --name pixel-10-pro <pubkey-file>
+#
+# which gives:
+#
+#   command="/home/fx/.nix-profile/bin/acm bridge --allow p3",restrict ecdsa-sha2-nistp256 AAAA... pixel-10-pro
+#
+# Revoke a phone by removing its line and re-running scripts/setup-acm-fleet.sh
+# and scripts/install-ntfy.sh. Any other form of line is refused.
+#
+# To keep the keys out of the repository, use ~/.config/acm/phone-keys.pub on the
+# server instead (it wins over this file), or point ACM_PHONE_KEYS_FILE at a file.

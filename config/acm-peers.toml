@@ -1,0 +1,24 @@
+# ABOUTME: The machines this server's acmd aggregates for the Android app (acm Epic-17)
+# ABOUTME: scripts/setup-acm-fleet.sh copies them into a marker block in ~/.config/acm/config.toml
+#
+# Same keys as acm's [[peers]]:
+#   label   host name the aggregator shows; keep it equal to the machine's acm label
+#   ssh     tailnet host, optionally user@host (the login defaults to this server's user)
+#   socket  the peer's acmd socket. Linux peers need it; leave it out on the Macs, for
+#           acm's darwin default (~/.local/state/acm/acm.sock)
+#
+# Peers added by hand to config.toml, outside the block, are kept, and win over an
+# entry here with the same label.
+
+[[peers]]
+label = "omarchy-xps13"
+ssh = "omarchy-xps13"
+socket = "/run/user/1000/acm.sock"
+
+[[peers]]
+label = "macbook-pro-m3-max"
+ssh = "macbook-pro-m3-max"
+
+[[peers]]
+label = "home-lab"
+ssh = "home-lab"
