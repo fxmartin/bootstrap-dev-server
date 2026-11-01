@@ -170,7 +170,9 @@ setup_phone_keys() {
         return 1
     fi
 
-    touch "${AUTHORIZED_KEYS}"
+    # touch only when missing: on an existing file it would bump the mtime of a
+    # file this script may have no reason to change.
+    [[ -e "${AUTHORIZED_KEYS}" ]] || touch "${AUTHORIZED_KEYS}"
     chmod 600 "${AUTHORIZED_KEYS}"
     outside="$(without_block "${PHONES_BEGIN}" "${PHONES_END}" <"${AUTHORIZED_KEYS}")"
 

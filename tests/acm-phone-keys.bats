@@ -114,12 +114,53 @@ block() {
 
 @test "no phones and no block: authorized_keys is not touched at all" {
     : >"${ACM_PHONE_KEYS_FILE}"
+    # Back-dated so a write is caught even within stat's one-second resolution.
+    touch -d '2020-01-01 00:00:00' "${AUTH}"
     local before
     before="$(stat -c '%Y %s' "${AUTH}")"
     run bash "${SETUP}"
     [ "${status}" -eq 0 ]
     [ "$(stat -c '%Y %s' "${AUTH}")" = "${before}" ]
     [ "$(cat "${AUTH}")" = "${LAPTOP}" ]
+}
+
+# Line of the first match of an extended regex in a file, 0 when absent.
+first_line() {
+    grep -nE -- "$1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0
+}
+
+@test "the README revokes in the order that reaches the clone: merge, dev-update, then both scripts" {
+    local readme="${PROJECT_ROOT}/README.md"
+    local heading merge pull fleet ntfy
+    heading="$(first_line '^\*\*Revoking a phone\.\*\*' "${readme}")"
+    [ "${heading}" -gt 0 ]
+    local section="${TEST_TEMP_DIR}/revoking.md"
+    tail -n "+${heading}" "${readme}" | sed '/^\*\*ntfy\*\*/,$d' >"${section}"
+
+    merge="$(first_line 'merge request' "${section}")"
+    pull="$(first_line '^dev-update$' "${section}")"
+    fleet="$(first_line 'bash .*scripts/setup-acm-fleet\.sh' "${section}")"
+    ntfy="$(first_line 'bash .*scripts/install-ntfy\.sh' "${section}")"
+    [ "${merge}" -gt 0 ]
+    [ "${pull}" -gt "${merge}" ]
+    [ "${fleet}" -gt "${pull}" ]
+    [ "${ntfy}" -gt "${fleet}" ]
+}
+
+@test "the README's urgent revocation brings the override into force before the scripts run" {
+    local readme="${PROJECT_ROOT}/README.md"
+    local heading
+    heading="$(first_line '^\*\*Revoking a phone\.\*\*' "${readme}")"
+    tail -n "+${heading}" "${readme}" | sed '/^\*\*ntfy\*\*/,$d' >"${TEST_TEMP_DIR}/revoking.md"
+    grep -qF 'cp ~/.local/share/bootstrap-dev-server/config/acm-phone-keys.pub ~/.config/acm/phone-keys.pub' "${TEST_TEMP_DIR}/revoking.md"
+}
+
+@test "no revocation note promises a re-run alone, without bringing the clone up to date" {
+    run grep -n 'by removing its line and re-running' "${PROJECT_ROOT}/config/acm-phone-keys.pub"
+    [ "${status}" -ne 0 ]
+    run grep -n 'remove its line and re-run the bootstrap' "${PROJECT_ROOT}/docs/fleet-onboarding.md"
+    [ "${status}" -ne 0 ]
+    grep -q 'dev-update' "${PROJECT_ROOT}/config/acm-phone-keys.pub"
 }
 
 @test "a re-run with the same phones does not rewrite authorized_keys" {

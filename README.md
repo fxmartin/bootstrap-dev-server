@@ -875,12 +875,28 @@ The lines go into a marker block in `~/.ssh/authorized_keys`; your other keys ar
 in any other form is refused and fails the run, while the valid ones still apply. So is a `/nix/store`
 acm path, which garbage collection would delete, and a name other than letters, digits, `-` and `_`.
 
-**Revoking a phone.** Remove its line, then re-run both scripts (`dev-update` does not):
+**Revoking a phone.** The scripts read the server's clone and neither one updates it, and `dev-update`
+does not run them. So the order matters: remove the line by merge request, then on the server:
 
 ```bash
+dev-update
 bash ~/.local/share/bootstrap-dev-server/scripts/setup-acm-fleet.sh
 bash ~/.local/share/bootstrap-dev-server/scripts/install-ntfy.sh
 ```
+
+Do not edit the file in the clone: `dev-update` and the weekly timer reset it to `origin/main`, and the
+next run enrols the phone again.
+
+If a lost phone cannot wait for a merge, use the override, which only applies once it exists. This
+creates it from the current lines and leaves an existing one alone:
+
+```bash
+[[ -e ~/.config/acm/phone-keys.pub ]] || cp ~/.local/share/bootstrap-dev-server/config/acm-phone-keys.pub ~/.config/acm/phone-keys.pub
+```
+
+Remove the phone's line from `~/.config/acm/phone-keys.pub` and run both scripts (no `dev-update`
+needed). While that file exists the repository file is ignored, so keep making changes there, or merge
+the removal, delete the file and run both scripts again.
 
 **ntfy** carries acm's alerts to the phones through UnifiedPush. Like node_exporter it is pinned
 (`NTFY_VERSION` in `config/versions.env`), sha256-verified, run by a dedicated `ntfy` user, bound to the

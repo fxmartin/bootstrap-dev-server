@@ -10,8 +10,13 @@
 #
 #   command="/home/fx/.nix-profile/bin/acm bridge --allow p3",restrict ecdsa-sha2-nistp256 AAAA... pixel-10-pro
 #
-# Revoke a phone by removing its line and re-running scripts/setup-acm-fleet.sh
-# and scripts/install-ntfy.sh. Any other form of line is refused.
+# Any other form of line is refused.
+#
+# Revoke a phone by removing its line by merge request, then on the server run
+# dev-update, scripts/setup-acm-fleet.sh and scripts/install-ntfy.sh, in that order:
+# the scripts read the server's clone and do not update it. An edit made in the
+# clone is reset away. For a revocation that cannot wait, see "Revoking a phone"
+# in the README.
 #
 # To keep the keys out of the repository, use ~/.config/acm/phone-keys.pub on the
 # server instead (it wins over this file), or point ACM_PHONE_KEYS_FILE at a file.

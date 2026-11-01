@@ -186,4 +186,6 @@ cannot do. Join the tailnet first: after the first `tailscale up`, run `sudo sys
 5. **Check.** `~/.local/share/bootstrap-dev-server/tests/verify-server.sh` reports the peers, that the phone lines are restricted to
    `acm bridge`, and that ntfy listens on the Tailscale IP only.
 
-To revoke a phone, remove its line and re-run the bootstrap.
+To revoke a phone, follow [Revoking a phone](../README.md#acm-fleet-aggregator-android-app): merge the
+removal, then run `dev-update` and both scripts on the server. Editing the clone does not last, and a
+removal that has not reached the clone revokes nothing.
