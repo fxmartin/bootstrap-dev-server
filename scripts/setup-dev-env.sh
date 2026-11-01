@@ -199,6 +199,13 @@ dev-update() {
     return 1
   }
 
+  # Converge the sdlc controller to the tag pinned in config/versions.env. The
+  # profile upgrade already succeeded, so a failure or refusal only warns.
+  local sdlc_installer="$REPO_DIR/scripts/install-sdlc-controller.sh"
+  if [[ ! -f "$sdlc_installer" ]] || ! bash "$sdlc_installer"; then
+    echo "⚠️  sdlc controller not converged to the pinned tag; re-run: bash $sdlc_installer"
+  fi
+
   echo ""
   echo "✅ Dev environment updated to $(git -C "$REPO_DIR" log -1 --oneline)"
   echo "   Exit and run 'dev' to use new packages"
