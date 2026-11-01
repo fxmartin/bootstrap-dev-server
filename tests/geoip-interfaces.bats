@@ -87,3 +87,28 @@ load_installer() {
     run grep -n -- 'configure.* -i all' "${PROJECT_ROOT}/bootstrap-dev-server.sh"
     [ "${status}" -ne 0 ]
 }
+
+@test "accepts a comma-separated override and normalises it to spaces" {
+    GEOIP_IFACES="eth0,eth1" run geoip_interfaces
+    [ "${status}" -eq 0 ]
+    [ "${output}" = "eth0 eth1" ]
+}
+
+@test "refuses an override that mixes a public NIC with tailscale0" {
+    GEOIP_IFACES="eth0,tailscale0" run geoip_interfaces
+    [ "${status}" -ne 0 ]
+    [ -z "${output}" ]
+}
+
+@test "whitespace-only override yields no interface" {
+    GEOIP_IFACES="   " run geoip_interfaces
+    [ "${status}" -ne 0 ]
+    [ -z "${output}" ]
+}
+
+@test "install aborts when lib/geoip.sh is missing" {
+    load_installer
+    BOOTSTRAP_SUBDIR="no-such-dir" run install_geoip_shell
+    [ "${status}" -ne 0 ]
+    [ ! -s "${CALLS}" ]
+}
