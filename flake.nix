@@ -188,7 +188,12 @@
           # sdlc fleet worker: fleet-bootstrap.sh refuses without both scanners
           # (a missing one would pass the coverage gate as SKIPPED), and Go
           # repos such as agentic-coding-monitor need go for their preflight.
-          pkgs.semgrep
+          # semgrep goes in as its bin/ only: as a shell input its python3.14
+          # deps land on PYTHONPATH and break the sdlc uv tool (python3.12).
+          (pkgs.runCommand "semgrep-bin" { } ''
+            mkdir -p $out/bin
+            ln -s ${pkgs.semgrep}/bin/semgrep $out/bin/semgrep
+          '')
           pkgs.osv-scanner
           pkgs.go
 
