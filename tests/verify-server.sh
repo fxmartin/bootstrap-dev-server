@@ -833,13 +833,17 @@ check_ntfy
 # port 22 inside tailscaled. Runs piped over ssh, so nothing is sourced.
 check_geoip_interfaces() {
     if command -v geoip-shell &>/dev/null; then
-        local ruleset
+        local ruleset drops
         ruleset="$(sudo nft list table inet geoip-shell 2>/dev/null || true)"
+        # Judge the drop rules only: with "-i all" the loopback accept still names "lo"
+        drops="$(grep -w 'drop' <<<"${ruleset}" || true)"
         if [[ -z "${ruleset}" ]]; then
             warn "geoip-shell is installed but its nftables table is not loaded"
-        elif ! grep -q 'iifname' <<<"${ruleset}"; then
+        elif [[ -z "${drops}" ]]; then
+            warn "geoip-shell's nftables table has no drop rule - cannot tell which interfaces it filters"
+        elif grep -vq 'iifname' <<<"${drops}"; then
             fail "geoip-shell applies to ALL interfaces, tailnet connections are dropped - run: sudo geoip-shell configure -i <public-nic>"
-        elif grep 'iifname' <<<"${ruleset}" | grep -q 'tailscale0'; then
+        elif grep -q 'tailscale0' <<<"${drops}"; then
             fail "geoip-shell applies to tailscale0, tailnet connections are dropped - run: sudo geoip-shell configure -i <public-nic>"
         else
             pass "geoip-shell is scoped to the public interface (not tailscale0)"
