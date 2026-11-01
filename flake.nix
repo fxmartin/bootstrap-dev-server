@@ -185,6 +185,13 @@
           # Linting & testing
           pkgs.shellcheck  # Shell script linter
 
+          # sdlc fleet worker: fleet-bootstrap.sh refuses without both scanners
+          # (a missing one would pass the coverage gate as SKIPPED), and Go
+          # repos such as agentic-coding-monitor need go for their preflight.
+          pkgs.semgrep
+          pkgs.osv-scanner
+          pkgs.go
+
           # Documentation tools
           pkgs.glow  # Terminal markdown renderer
 
