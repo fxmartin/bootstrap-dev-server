@@ -215,7 +215,7 @@ Decided by FX on 2026-10-30: herdr is aligned with the rest of the fleet at **0.
 **Acceptance Criteria**:
 - **Given** `config/acm-peers.toml` **When** the bootstrap runs **Then** `~/.config/acm/config.toml` holds its `[[peers]]` in a marker block, peers added outside the block are kept and win over a repository entry with the same label, and acmd restarts only when the block changed.
 - **Given** no peer key **Then** `~/.ssh/id_acm_peers` is generated, `~/.ssh/config` selects it for the peers, and its public key is printed for nix-install and the XPS.
-- **Given** phone lines in `config/acm-phone-keys.pub` or `~/.config/acm/phone-keys.pub` **Then** only lines in the exact `acm mobile key-line` form, with no `/nix/store` path, reach `authorized_keys`. Removing a line and re-running revokes it, and a refused line does not hold other changes back.
+- **Given** phone lines in `config/acm-phone-keys.pub` or `~/.config/acm/phone-keys.pub` **Then** only lines in the exact `acm mobile key-line` form, with no `/nix/store` path, reach `authorized_keys`. Removing a line, bringing the server's clone up to date and re-running revokes it, and a refused line does not hold other changes back.
 - **Given** the bootstrap **Then** ntfy runs as a system service on the Tailscale IP only, UFW opens 2586 on `tailscale0` only, access is denied by default, and each phone has a user and a topic.
 - **Given** `tests/verify-server.sh` **Then** it checks the peers file, that phone lines are restricted to `acm bridge`, and that ntfy listens on the Tailscale IP only.
 - **Given** the suite **Then** all of this is covered by offline bats tests.

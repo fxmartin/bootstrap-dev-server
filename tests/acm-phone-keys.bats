@@ -124,6 +124,18 @@ block() {
     [ "$(cat "${AUTH}")" = "${LAPTOP}" ]
 }
 
+@test "a phones block with no end marker fails the run: a revocation that did not apply is never reported as done" {
+    phone_line >"${ACM_PHONE_KEYS_FILE}"
+    bash "${SETUP}"
+    sed -i "\\|^${END}\$|d" "${AUTH}"
+    : >"${ACM_PHONE_KEYS_FILE}"
+    run bash "${SETUP}"
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "closing marker"
+    [[ "${output}" != *"phone key(s) up to date"* ]]
+    [[ "${output}" != *"phone key(s) installed"* ]]
+}
+
 # Line of the first match of an extended regex in a file, 0 when absent.
 first_line() {
     grep -nE -- "$1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0
@@ -161,6 +173,10 @@ first_line() {
     run grep -n 'remove its line and re-run the bootstrap' "${PROJECT_ROOT}/docs/fleet-onboarding.md"
     [ "${status}" -ne 0 ]
     grep -q 'dev-update' "${PROJECT_ROOT}/config/acm-phone-keys.pub"
+    run grep -n 'after revoking a phone' "${SETUP}"
+    [ "${status}" -ne 0 ]
+    run grep -n 'Removing a line and re-running revokes it' "${PROJECT_ROOT}/docs/stories/epic-01-agentic-fleet-host.md"
+    [ "${status}" -ne 0 ]
 }
 
 @test "a re-run with the same phones does not rewrite authorized_keys" {

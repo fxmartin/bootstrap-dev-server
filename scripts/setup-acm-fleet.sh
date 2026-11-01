@@ -3,9 +3,11 @@
 # ABOUTME: Writes [[peers]], generates the peer SSH key and installs the restricted phone keys
 #
 # Idempotent: nothing is rewritten unless its content drifted, and everything
-# outside the marker blocks is left alone. Run by the bootstrap; run it by hand
-# after revoking a phone. Exits non-zero when a peer or phone line was refused,
-# having applied the valid ones, so one typo cannot hold a revocation back.
+# outside the marker blocks is left alone. Run by the bootstrap. It reads the
+# clone and does not update it, so to revoke a phone follow "Revoking a phone" in
+# the README. Exits non-zero when a peer or phone line was refused, having applied
+# the valid ones, so one typo cannot hold a revocation back, and when a marker
+# block could not be updated.
 
 set -euo pipefail
 
@@ -33,13 +35,27 @@ SSH_END="# <<< bootstrap-dev-server acm peer hosts <<<"
 PHONES_BEGIN="# >>> bootstrap-dev-server acm phones >>>"
 PHONES_END="# <<< bootstrap-dev-server acm phones <<<"
 
-# Set when a peer or phone line is refused: the run finishes, then exits non-zero.
+# Set when a peer, a phone line or a damaged block is refused: the run finishes,
+# then exits non-zero.
 REFUSED=false
 
 # Prints stdin without the marker block.
 without_block() {
     local begin="$1" end="$2"
     awk -v begin="${begin}" -v end="${end}" '$0 == begin { skip = 1 } !skip { print } $0 == end { skip = 0 }'
+}
+
+# write_rc_block with a refused block counted against the run, because logging it
+# as "up to date" would hide a phone revocation that never applied. Same return
+# codes; stdin is the block.
+converge_block() {
+    local status=0
+    write_rc_block "$@" || status=$?
+    if [[ "${status}" -eq 2 ]]; then
+        log_error "$1 was not updated: restore the '$3' line, then run this again"
+        REFUSED=true
+    fi
+    return "${status}"
 }
 
 # Prints "label|ssh|socket" for each [[peers]] table on stdin. Only the keys acm
@@ -86,7 +102,7 @@ Host ${hosts}
     IdentitiesOnly yes
     StrictHostKeyChecking accept-new
 ${SSH_END}"
-    write_rc_block "${SSH_CONFIG}" "${SSH_BEGIN}" "${SSH_END}" <<<"${block}" || true
+    converge_block "${SSH_CONFIG}" "${SSH_BEGIN}" "${SSH_END}" <<<"${block}" || true
     chmod 600 "${SSH_CONFIG}"
 }
 
@@ -125,6 +141,7 @@ setup_peers() {
             continue
         fi
         block+="
+
 [[peers]]
 label = \"${label}\"
 ssh = \"${dest}\""
@@ -132,16 +149,18 @@ ssh = \"${dest}\""
             block+="
 socket = \"${socket}\""
         fi
-        block+=$'\n'
     done < <(peer_rows <"${PEERS_FILE}")
-    block+="${PEERS_END}"
+    block+=$'\n'"${PEERS_END}"
 
-    if write_rc_block "${ACM_CONFIG}" "${PEERS_BEGIN}" "${PEERS_END}" <<<"${block}"; then
+    local result=0
+    converge_block "${ACM_CONFIG}" "${PEERS_BEGIN}" "${PEERS_END}" <<<"${block}" || result=$?
+    case "${result}" in
+    0)
         log_ok "Peers written to ${ACM_CONFIG}"
         restart_acmd
-    else
-        log_ok "Peers in ${ACM_CONFIG} are up to date"
-    fi
+        ;;
+    1) log_ok "Peers in ${ACM_CONFIG} are up to date" ;;
+    esac
 
     write_peer_ssh_config "${hosts}"
 }
@@ -207,11 +226,12 @@ setup_phone_keys() {
         return 0
     fi
 
-    if write_rc_block "${AUTHORIZED_KEYS}" "${PHONES_BEGIN}" "${PHONES_END}" <<<"${block}"; then
-        log_ok "authorized_keys: ${count} phone key(s) installed from ${keys_file}"
-    else
-        log_ok "authorized_keys: ${count} phone key(s) up to date"
-    fi
+    local result=0
+    converge_block "${AUTHORIZED_KEYS}" "${PHONES_BEGIN}" "${PHONES_END}" <<<"${block}" || result=$?
+    case "${result}" in
+    0) log_ok "authorized_keys: ${count} phone key(s) installed from ${keys_file}" ;;
+    1) log_ok "authorized_keys: ${count} phone key(s) up to date" ;;
+    esac
 }
 
 main() {

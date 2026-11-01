@@ -112,6 +112,80 @@ EOF
     grep -qxF 'label = "omarchy-xps13"' "${CONFIG}"
 }
 
+# Every repo label already defined by hand, so the generated block has no entries.
+define_repo_peers_by_hand() {
+    mkdir -p "$(dirname "${CONFIG}")"
+    cat >"${CONFIG}" <<'EOF'
+[[peers]]
+label = "omarchy-xps13"
+ssh = "my-xps"
+
+[[peers]]
+label = "home-lab"
+ssh = "my-lab"
+EOF
+}
+
+@test "with every repo peer defined by hand the block still closes" {
+    define_repo_peers_by_hand
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    grep -qxF "${BEGIN}" "${CONFIG}"
+    grep -qxF "${END}" "${CONFIG}"
+}
+
+@test "a block with no entries does not stop a later peer from landing" {
+    define_repo_peers_by_hand
+    bash "${SETUP}"
+    cat >>"${ACM_PEERS_FILE}" <<'EOF'
+
+[[peers]]
+label = "new-box"
+ssh = "new-box"
+EOF
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    grep -qxF 'label = "new-box"' "${CONFIG}"
+}
+
+@test "an empty peers file writes a closed block" {
+    : >"${ACM_PEERS_FILE}"
+    run bash "${SETUP}"
+    [ "${status}" -eq 0 ]
+    grep -qxF "${END}" "${CONFIG}"
+}
+
+@test "every peer refused still writes a closed block and fails the run" {
+    cat >"${ACM_PEERS_FILE}" <<'EOF'
+[[peers]]
+label = "-bad"
+ssh = "-oProxyCommand=evil"
+EOF
+    run bash "${SETUP}"
+    [ "${status}" -ne 0 ]
+    grep -qxF "${END}" "${CONFIG}"
+}
+
+@test "a block with no end marker fails the run and is not reported as up to date" {
+    bash "${SETUP}"
+    sed -i "\\|^${END}\$|d" "${CONFIG}"
+    local before
+    before="$(cat "${CONFIG}")"
+    run bash "${SETUP}"
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "closing marker"
+    [[ "${output}" != *"up to date"* ]]
+    [ "$(cat "${CONFIG}")" = "${before}" ]
+}
+
+@test "an ssh config block with no end marker fails the run" {
+    bash "${SETUP}"
+    sed -i '\|^# <<< bootstrap-dev-server acm peer hosts <<<$|d' "${SSH_CONFIG}"
+    run bash "${SETUP}"
+    [ "${status}" -ne 0 ]
+    assert_contains "${output}" "closing marker"
+}
+
 @test "a re-run with unchanged peers leaves config.toml alone and acmd running" {
     touch "${TEST_TEMP_DIR}/acmd-active"
     bash "${SETUP}"

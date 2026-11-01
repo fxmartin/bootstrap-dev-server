@@ -6,10 +6,12 @@
 # treating it as done froze the first-ever dev-update on provisioned servers.
 #
 # Same contract as install_systemd_unit: returns 0 when the file changed, 1 when
-# it was left as it is. stdin is the whole block, markers included. The block
-# keeps its position, and the file is written in place so a symlinked rc and its
-# mode survive. The previous content goes to <rc-file>.backup, because a block
-# on a live box may hold a hand edit. Callers provide log_warn.
+# it was already current. Beyond that contract, 2 when it was refused because the
+# block has no closing marker, so a caller can tell that from "current". stdin is
+# the whole block, markers included. The block keeps its position, and the file
+# is written in place so a symlinked rc and its mode survive. The previous content
+# goes to <rc-file>.backup, because a block on a live box may hold a hand edit.
+# Callers provide log_warn.
 #
 # Usage: write_rc_block <rc-file> <begin-marker> <end-marker> <<<"${block}"
 write_rc_block() {
@@ -36,7 +38,7 @@ write_rc_block() {
     if [[ -z "${last}" || "${last}" -lt "${first}" ]]; then
         log_warn "${rc_file}: '${begin}' has no closing marker - leaving the file as it is"
         rm -f "${block}"
-        return 1
+        return 2
     fi
 
     if sed -n "${first},${last}p" "${rc_file}" | cmp -s - "${block}"; then
