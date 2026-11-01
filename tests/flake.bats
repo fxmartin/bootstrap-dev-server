@@ -183,6 +183,15 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "devPackages carries the sdlc fleet worker's scanners and Go" {
+    # fleet-bootstrap.sh refuses to install the worker without semgrep and
+    # osv-scanner; Go repos (agentic-coding-monitor) need go for preflight.
+    for pkg in semgrep osv-scanner go; do
+        run bash -c "sed -n '/devPackages = \\[/,/^        \\];/p' '${PROJECT_ROOT}/flake.nix' | grep -qE 'pkgs\\.${pkg}\\b'"
+        [ "$status" -eq 0 ]
+    done
+}
+
 @test "flake does not use removed nodePackages aliases (dropped from nixpkgs unstable)" {
     run grep "nodePackages" "${PROJECT_ROOT}/flake.nix"
     [ "$status" -ne 0 ]
