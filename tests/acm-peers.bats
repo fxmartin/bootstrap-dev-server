@@ -169,6 +169,7 @@ EOF
 [[peers]]
 label = "new-box"
 ssh = "new-box"
+socket = "/run/user/1000/acm.sock"
 EOF
     run bash "${SETUP}"
     [ "${status}" -eq 0 ]
@@ -232,6 +233,7 @@ EOF
 [[peers]]
 label = "home-lab"
 ssh = "home-lab"
+socket = "/run/user/1000/acm.sock"
 EOF
     bash "${SETUP}"
     run grep -c 'omarchy-xps13' "${CONFIG}"
