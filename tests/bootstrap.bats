@@ -1267,3 +1267,173 @@ load_create_claude_md() {
     run grep "sshd -t" "${PROJECT_ROOT}/bootstrap-dev-server.sh"
     [ "$status" -eq 0 ]
 }
+
+# =============================================================================
+# sdlc controller convergence (#9)
+#
+# After a successful profile upgrade, dev-update and the weekly service run
+# scripts/install-sdlc-controller.sh so a merged SDLC_CONTROLLER_TAG bump
+# reaches the server. A missing, failing or refusing installer only warns.
+# =============================================================================
+
+# Put a stub installer in the checkout (untracked, so the hard reset keeps it).
+# $1 = exit code; it logs into the same file as the nix stub.
+install_stub_sdlc_installer() {
+    mkdir -p "${WORK_DIR}/scripts"
+    printf '#!/usr/bin/env bash\necho "sdlc-installer ran" >> "%s"\nexit %s\n' \
+        "${NIX_LOG}" "${1:-0}" > "${WORK_DIR}/scripts/install-sdlc-controller.sh"
+}
+
+@test "dev-update runs the sdlc installer once, after the profile upgrade" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+
+    run_dev_update
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'sdlc-installer ran' "${NIX_LOG}")" -eq 1 ]
+    [ "$(grep -n 'profile upgrade' "${NIX_LOG}" | cut -d: -f1)" -lt "$(grep -n 'sdlc-installer ran' "${NIX_LOG}" | cut -d: -f1)" ]
+}
+
+@test "dev-update with a failed build does not run the sdlc installer" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    export NIX_BUILD_RC=1
+
+    run_dev_update
+    [ "$status" -ne 0 ]
+    ! grep -q 'sdlc-installer ran' "${NIX_LOG}"
+}
+
+@test "dev-update with a failed fetch does not run the sdlc installer" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    git -C "${WORK_DIR}" remote set-url origin "${TEST_TEMP_DIR}/does-not-exist.git"
+
+    run_dev_update
+    [ "$status" -ne 0 ]
+    ! grep -q 'sdlc-installer ran' "${NIX_LOG}"
+}
+
+@test "dev-update with a failing sdlc installer warns and still succeeds" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 1
+
+    run_dev_update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"re-run: bash ${TEST_TEMP_DIR}/server-home/.local/share/bootstrap-dev-server/scripts/install-sdlc-controller.sh"* ]]
+    [[ "$output" == *"Dev environment updated to"* ]]
+}
+
+@test "dev-update without an sdlc installer warns and still succeeds" {
+    make_checkout_behind_origin
+    define_nix_stub
+
+    run_dev_update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"re-run: bash "*"install-sdlc-controller.sh"* ]]
+}
+
+@test "bootstrap dev-update and setup-dev-env.sh dev-update both call the sdlc installer after the upgrade" {
+    local text after
+    for text in "$(bootstrap_dev_update_text)" "$(setup_dev_env_function_text)"; do
+        after="${text#*nix profile upgrade dev-env}"
+        [[ "${after}" == *"install-sdlc-controller.sh"* ]]
+        [[ "${after}" == *"re-run: bash"* ]]
+    done
+}
+
+SDLC_UNIT_TIMER='^setup_nix_update_timer()'
+SDLC_UNIT_NOTIFY='Update the nix-flake-update service to include notification'
+
+# Run the named unit's ExecStart body against the fixture; sets $status/$output.
+run_unit_exec_start() {
+    local cmd_body
+    cmd_body="$(bind_unit_paths "$(extract_exec_start_body "$1")")"
+    run bash -c "${cmd_body}"
+}
+
+assert_installer_ran_once_after_upgrade() {
+    [ "$(grep -c 'sdlc-installer ran' "${NIX_LOG}")" -eq 1 ]
+    [ "$(grep -n 'profile upgrade' "${NIX_LOG}" | cut -d: -f1)" -lt "$(grep -n 'sdlc-installer ran' "${NIX_LOG}" | cut -d: -f1)" ]
+}
+
+@test "setup_nix_update_timer unit runs the sdlc installer once after the upgrade" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    run_unit_exec_start "${SDLC_UNIT_TIMER}"
+    [ "$status" -eq 0 ]
+    assert_installer_ran_once_after_upgrade
+}
+
+@test "configure_update_notifications unit runs the sdlc installer once after the upgrade" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    run_unit_exec_start "${SDLC_UNIT_NOTIFY}"
+    [ "$status" -eq 0 ]
+    assert_installer_ran_once_after_upgrade
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "setup_nix_update_timer unit survives a failing sdlc installer with a warning" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 1
+    run_unit_exec_start "${SDLC_UNIT_TIMER}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"re-run: bash ${WORK_DIR}/scripts/install-sdlc-controller.sh"* ]]
+}
+
+@test "configure_update_notifications unit survives a failing sdlc installer, status stays success" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 1
+    run_unit_exec_start "${SDLC_UNIT_NOTIFY}"
+    [ "$status" -eq 0 ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "success" ]
+    [[ "$(cat /tmp/nix-update-output.txt)" == *"re-run: bash ${WORK_DIR}/scripts/install-sdlc-controller.sh"* ]]
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "setup_nix_update_timer unit with a missing sdlc installer warns and succeeds" {
+    make_checkout_behind_origin
+    define_nix_stub
+    run_unit_exec_start "${SDLC_UNIT_TIMER}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"re-run: bash "* ]]
+}
+
+@test "configure_update_notifications unit with a missing sdlc installer warns and succeeds" {
+    make_checkout_behind_origin
+    define_nix_stub
+    run_unit_exec_start "${SDLC_UNIT_NOTIFY}"
+    [ "$status" -eq 0 ]
+    [ "$(cat /tmp/nix-update-status.txt)" = "success" ]
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}
+
+@test "setup_nix_update_timer unit with a failed build does not run the sdlc installer" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    export NIX_BUILD_RC=1
+    run_unit_exec_start "${SDLC_UNIT_TIMER}"
+    [ "$status" -ne 0 ]
+    ! grep -q 'sdlc-installer ran' "${NIX_LOG}"
+}
+
+@test "configure_update_notifications unit with a failed build does not run the sdlc installer" {
+    make_checkout_behind_origin
+    define_nix_stub
+    install_stub_sdlc_installer 0
+    export NIX_BUILD_RC=1
+    run_unit_exec_start "${SDLC_UNIT_NOTIFY}"
+    [ "$status" -ne 0 ]
+    ! grep -q 'sdlc-installer ran' "${NIX_LOG}"
+    rm -f /tmp/nix-update-status.txt /tmp/nix-update-output.txt
+}

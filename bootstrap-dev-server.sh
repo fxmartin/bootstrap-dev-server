@@ -1528,10 +1528,12 @@ Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 # The repository is the only source of flake.lock: hard-reset the checkout to
 # origin/main (logging any local diff or commits it discards), sync submodules,
 # build dev-env with lock updates refused, and only on success upgrade the
-# profile. A failed fetch or build leaves the previous profile in place and
+# profile, then converge the sdlc controller to the pinned tag (a failure or
+# refusal only warns: the profile upgrade already succeeded). A failed fetch or
+# build leaves the previous profile in place and
 # records status=failed so ExecStopPost's notification reports the real outcome
 # instead of always "success".
-ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; OUTPUT=\$( (git fetch --quiet origin && git diff --stat HEAD | sed "s/^/[discarded] /" && git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /" && git reset --hard --quiet origin/main && { git submodule update --recursive || echo "[warn] submodule update failed"; } && git log -1 --oneline | sed "s/^/[applied] /" && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link && nix profile upgrade dev-env) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
+ExecStart=/bin/bash -c 'cd ${REPO_DIR} || exit 1; OUTPUT=\$( (git fetch --quiet origin && git diff --stat HEAD | sed "s/^/[discarded] /" && git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /" && git reset --hard --quiet origin/main && { git submodule update --recursive || echo "[warn] submodule update failed"; } && git log -1 --oneline | sed "s/^/[applied] /" && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link && nix profile upgrade dev-env && { bash ${REPO_DIR}/scripts/install-sdlc-controller.sh || echo "[warn] sdlc controller not converged to the pinned tag; re-run: bash ${REPO_DIR}/scripts/install-sdlc-controller.sh"; }) 2>&1 ); if [ \$? -eq 0 ]; then echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "success" > /tmp/nix-update-status.txt; else echo "\$OUTPUT" > /tmp/nix-update-output.txt; echo "failed" > /tmp/nix-update-status.txt; exit 1; fi'
 
 # Send notification (runs as root to access msmtp config)
 ExecStopPost=/bin/bash -c 'sudo ${NOTIFY_SCRIPT} "\$(cat /tmp/nix-update-status.txt 2>/dev/null || echo unknown)" "\$(cat /tmp/nix-update-output.txt 2>/dev/null || echo No output)"'
@@ -1709,6 +1711,13 @@ dev-update() {
         echo "❌ nix profile upgrade dev-env failed"
         return 1
     }
+
+    # Converge the sdlc controller to the tag pinned in config/versions.env. The
+    # profile upgrade already succeeded, so a failure or refusal only warns.
+    local sdlc_installer="\${REPO_DIR}/scripts/install-sdlc-controller.sh"
+    if [[ ! -f "\${sdlc_installer}" ]] || ! bash "\${sdlc_installer}"; then
+        echo "⚠️  sdlc controller not converged to the pinned tag; re-run: bash \${sdlc_installer}"
+    fi
 
     echo ""
     echo "✅ Dev environment updated to \$(git -C "\${REPO_DIR}" log -1 --oneline)"
@@ -2436,7 +2445,7 @@ Environment="PATH=/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
 # origin/main (logging any local diff or commits it discards), sync submodules,
 # build dev-env with lock updates refused, and only on success upgrade the
 # profile. Any failure stops the unit with the previous profile still in place.
-ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git fetch --quiet origin; git diff --stat HEAD | sed "s/^/[discarded] /"; git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /"; git reset --hard --quiet origin/main; git submodule update --recursive || echo "[warn] submodule update failed"; git log -1 --oneline | sed "s/^/[applied] /"; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link; nix profile upgrade dev-env'
+ExecStart=/bin/bash -c 'set -e; cd ${REPO_DIR}; git fetch --quiet origin; git diff --stat HEAD | sed "s/^/[discarded] /"; git log --oneline origin/main..HEAD | sed "s/^/[discarded commit] /"; git reset --hard --quiet origin/main; git submodule update --recursive || echo "[warn] submodule update failed"; git log -1 --oneline | sed "s/^/[applied] /"; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; nix build ${FLAKE_DIR}#dev-env --no-update-lock-file --no-link; nix profile upgrade dev-env; { bash ${REPO_DIR}/scripts/install-sdlc-controller.sh || echo "[warn] sdlc controller not converged to the pinned tag; re-run: bash ${REPO_DIR}/scripts/install-sdlc-controller.sh"; }'
 SERVICEEOF
             UNITS_CHANGED=1
         fi
