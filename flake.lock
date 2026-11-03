@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793569193,
-        "narHash": "sha256-Wcgdzj8HfnEPlSC/gxZQ3iHbc523vk7C0JvoXqeSWMc=",
+        "lastModified": 1793744272,
+        "narHash": "sha256-WfKX+5NqkzgxY3O57Nzn0zMEBgEVKA4Et/u4KBp3tJg=",
         "owner": "fxmartin",
         "repo": "agentic-coding-monitor",
-        "rev": "56c853a93b6373b48ee22f7ad2766e624084a03c",
+        "rev": "e7e05b864e411cf987db7cca0b58faa3500a8f7b",
         "type": "github"
       },
       "original": {
