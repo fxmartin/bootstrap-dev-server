@@ -3,7 +3,8 @@
 #
 # Same keys as acm's [[peers]]:
 #   label   host name the aggregator shows; keep it equal to the machine's acm label
-#   ssh     tailnet host as user@host: the peers log in as fxmartin, not this server's user
+#   ssh     tailnet host as user@host: the peers log in as fxmartin (agent-memory as root),
+#           not this server's user
 #   socket  the peer's acmd socket, always an absolute path (no ~): with it acmd runs no
 #           remote command, so the peer key can be limited to the socket forward. Macs:
 #           /Users/<user>/.local/state/acm/acm.sock; Linux: /run/user/<uid>/acm.sock
@@ -25,3 +26,10 @@ socket = "/Users/fxmartin/.local/state/acm/acm.sock"
 label = "home-lab"
 ssh = "fxmartin@home-lab"
 socket = "/Users/fxmartin/.local/state/acm/acm.sock"
+
+# Resources only: acmd runs as root in monitor role (acm Story 16.5-001), no herdr or sdlc.
+# Its root authorized_keys must hold this server's ~/.ssh/id_acm_peers.pub.
+[[peers]]
+label = "agent-memory"
+ssh = "root@hermes-agent"
+socket = "/run/user/0/acm.sock"

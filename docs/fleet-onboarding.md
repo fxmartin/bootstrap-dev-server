@@ -169,10 +169,10 @@ cannot do. Join the tailnet first: after the first `tailscale up`, run `sudo sys
 
 1. **Trust the peer key.** The bootstrap prints the restricted line
    `restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 … acm-peers@dev-server`. Add that
-   exact line, never the bare key, to nix-install for the two Macs, to the XPS's `authorized_keys` and
-   to home-lab. acmd only runs `ssh -N -L`, which requests no session, so the forced command never
+   exact line, never the bare key, to nix-install for the two Macs, to the XPS's `authorized_keys`,
+   to home-lab, and to root's `authorized_keys` on agent-memory (`hermes-agent`, monitor-only). acmd only runs `ssh -N -L`, which requests no session, so the forced command never
    runs and the key gives no shell. Every peer needs an absolute `socket` in `config/acm-peers.toml`. Then, on the server, `acm peers` must list
-   `omarchy-xps13`, `macbook-pro-m3-max` and `home-lab` as `connected`.
+   `omarchy-xps13`, `macbook-pro-m3-max` and `home-lab` as `connected`, and `agent-memory` as `monitor`.
 2. **Open the tailnet ACL** (nix-install `docs/apps/security/tailscale-acl.md`): the Pixel reaches this
    server on 22 and 2586, and this server reaches the three peers on 22.
 3. **Enrol the phone.** Copy the public key the app shows into a file on the server, and print its line:
