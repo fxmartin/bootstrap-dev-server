@@ -76,6 +76,14 @@ teardown() {
     grep -A2 '^label = "home-lab"$' "${peers}" | grep -qxF 'socket = "/Users/fxmartin/.local/state/acm/acm.sock"'
 }
 
+@test "the shipped file lists agent-memory as root, with root's acmd socket" {
+    local peers="${PROJECT_ROOT}/config/acm-peers.toml"
+    # agent-memory (Tailscale node hermes-agent) runs acmd as root in monitor
+    # role (acm Story 16.5-001), so its socket is under XDG_RUNTIME_DIR /run/user/0.
+    grep -A2 '^label = "agent-memory"$' "${peers}" | grep -qxF 'ssh = "root@hermes-agent"'
+    grep -A2 '^label = "agent-memory"$' "${peers}" | grep -qxF 'socket = "/run/user/0/acm.sock"'
+}
+
 @test "every peer in the shipped file has an absolute socket" {
     local peers="${PROJECT_ROOT}/config/acm-peers.toml"
     [ "$(grep -c '^label' "${peers}")" -eq "$(grep -c '^socket = "/' "${peers}")" ]
